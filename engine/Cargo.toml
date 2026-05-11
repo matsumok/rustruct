@@ -1,0 +1,13 @@
+[workspace]
+members = [
+    "rustruct-types",
+    "rustruct-calc",
+    "rustruct-wasm",
+]
+resolver = "2"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+nalgebra = "0.33"
+wasm-bindgen = "0.2"
+tsify-next = "0.5"
