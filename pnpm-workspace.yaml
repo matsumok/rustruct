@@ -1,0 +1,7 @@
+packages:
+  - app
+  - edge
+allowBuilds:
+  esbuild: true
+  sharp: false
+  workerd: true
