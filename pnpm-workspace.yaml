@@ -3,5 +3,6 @@ packages:
   - edge
 allowBuilds:
   esbuild: true
+  msw: true
   sharp: false
   workerd: true
