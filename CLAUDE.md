@@ -287,7 +287,7 @@ pub struct WaveParseConfig {
 ### バイナリ保存・参照フロー
 
 ```
-ブラウザ → GET /api/waveforms/:id/binary
+ブラウザ → GET /api/items/:id/binary
 → Workers: D1からr2_keyを取得
 → Workers: R2.get(r2_key)
 → Workers: バイナリをレスポンスとして返す
@@ -437,16 +437,15 @@ Dialog内（shadcn/ui <Dialog>）:
 
 ### データ保存先
 
-|データ         |保存先   |備考                        |
-|------------|------|--------------------------|
-|ユーザー情報      |D1    |Better Auth が管理            |
-|セッション       |D1    |Better Auth が管理            |
-|プロジェクト      |D1    |                          |
-|計算ケース（メタデータ）|D1    |tool_type・r2_key等          |
-|計算入力・結果     |R2    |JSONでまとめて保存               |
-|観測波形メタデータ   |D1    |                          |
-|観測波形本体      |R2    |float64バイナリ（Originalのみ）    |
-|マスターデータ     |静的アセット|全件メモリ展開・JSでフィルタ           |
+|データ      |保存先   |備考                              |
+|---------|------|--------------------------------|
+|ユーザー情報   |D1    |Better Auth が管理                  |
+|セッション    |D1    |Better Auth が管理                  |
+|プロジェクト   |D1    |                                |
+|アイテム（全種）|D1    |波形・計算入力等のメタデータ。type で種別を区別      |
+|波形バイナリ   |R2    |float64バイナリ（Originalのみ）          |
+|計算結果     |R2    |JSONでまとめて保存。`items.r2_key` で参照   |
+|マスターデータ  |静的アセット|全件メモリ展開・JSでフィルタ                 |
 
 ### D1スキーマ
 
@@ -470,71 +469,39 @@ verification (id, identifier, value, expires_at, created_at, updated_at)
 アプリが管理するテーブル：
 
 ```sql
-projects        (id, user_id, name, created_at)
+projects (id, user_id, name, created_at)
 
--- 解析ケース（ツール単位の括り）
-analysis_cases  (id, project_id, name, tool_type, comment, created_at)
-                -- tool_type: 'response_spectrum' | 'time_history' | 'section' など
+items    (id,
+          user_id    TEXT NOT NULL,  -- 常にセット（所有者）
+          project_id TEXT,           -- NULL = ユーザーライブラリ、セット = プロジェクト内
+          type       TEXT NOT NULL,  -- 'waveform' | 'response_spectrum' | 'time_history' | 'section' | ...
+          name       TEXT NOT NULL,
+          data       TEXT,           -- JSON（ツール固有のインプット・メタデータ）
+          r2_key     TEXT,           -- 波形バイナリ or 計算結果JSON。未計算・不要はNULL
+          status     TEXT,           -- NULL | 'pending' | 'done' | 'error'（計算系のみ）
+          created_at)
+```
 
--- 解析セット（減衰 × 波形 の1組。ケースに紐づく）
-analysis_sets   (id, analysis_case_id, waveform_id, damping,
-                 status, r2_key, calculated_at, created_at)
-                -- status: 'pending' | 'done' | 'error'
-                -- r2_key: 計算完了時のみセット。未計算はNULL
-                -- waveform_id・damping: 断面計算など波形不要のツールはNULL
+`data` JSON の例：
 
-waveforms       (id, user_id, name, kind, dt, duration, pgv, r2_key, created_at)
-                -- kind: 'observed' | 'code'
-                -- pgv: 既往波のみ（cm/s）。告示波はNULL
+```json
+// type = 'waveform'
+{ "kind": "observed", "dt": 0.02, "duration": 54.0, "pgv": 35.2 }
+
+// type = 'response_spectrum'
+{ "waveform_item_id": "xxx", "damping": 0.05, "mass": [...], ... }
+
+// type = 'section'
+{ "tool": "steel_h_bending", "section_id": "H-400x200x...", "moment": 120.5, ... }
 ```
 
 ### R2のデータ構造
 
 ```
-waveforms/{user_id}/{waveform_id}.bin                        ← float64バイナリ（Originalのみ）
-analysis_results/{analysis_case_id}/{analysis_set_id}.json   ← セットごとの計算結果
+items/{item_id}   ← 波形バイナリ（float64）または計算結果JSON。items.r2_key で参照
 ```
 
-#### ツール種別ごとの結果JSONスキーマ
-
-**response_spectrum（応答スペクトル）**
-
-```json
-{
-  "waveform_id": "abc123",
-  "damping": 0.05,
-  "periods": [0.1, 0.105, "...250点"],
-  "Sv": [...],
-  "Sa": [...],
-  "Sd": [...]
-}
-```
-
-**time_history（40質点時刻歴解析）**
-
-```json
-{
-  "waveform_id": "abc123",
-  "damping": 0.05,
-  "floors": [1, 2, "...40"],
-  "max_drift_angle": [...],
-  "max_shear_force": [...],
-  "time": [0.0, 0.02, "..."],
-  "displacement": [[...], [...]]
-}
-```
-
-**section（断面計算）**
-
-```json
-{
-  "tool": "steel_h_bending",
-  "input": { "...": "断面・荷重パラメータ" },
-  "output": { "...": "応力・検定比など" }
-}
-```
-
-断面計算は波形・減衰が不要なため `analysis_sets` の `waveform_id` / `damping` は NULL。結果は1セットのみ。
+R2キーは `items.r2_key` カラムに保持する。アイテム削除時は R2 オブジェクトも合わせて削除する。
 
 ### Cloudflareストレージ無料枠（使用量見積もり）
 
@@ -736,12 +703,15 @@ pnpm dlx @biomejs/biome init
 
 ```typescript
 // edge/src/db/schema.ts
-export const analysisCases = sqliteTable('analysis_cases', {
+export const items = sqliteTable('items', {
   id: text('id').primaryKey(),
-  projectId: text('project_id').notNull(),
+  userId: text('user_id').notNull(),
+  projectId: text('project_id'),
+  type: text('type').notNull(),
   name: text('name').notNull(),
-  toolType: text('tool_type').notNull(),
-  comment: text('comment'),
+  data: text('data'),
+  r2Key: text('r2_key'),
+  status: text('status'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 })
 ```
