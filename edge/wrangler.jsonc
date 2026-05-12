@@ -21,6 +21,12 @@
       "database_name": "rustruct",
       "database_id": "de40cb28-d0a9-4092-920c-1abec8519b34"
     }
+  ],
+  "routes": [
+    {
+      "pattern": "rustruct.matsumok.com/*",
+      "zone_name": "matsumok.com"
+    }
   ]
   // "ai": {
   //   "binding": "AI"
