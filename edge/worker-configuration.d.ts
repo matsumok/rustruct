@@ -6,7 +6,6 @@ declare namespace Cloudflare {
     mainModule: typeof import("./src/index");
   }
   interface Env {
-    SESSION: KVNamespace;
     STORAGE: R2Bucket;
     DB: D1Database;
   }
