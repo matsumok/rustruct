@@ -661,6 +661,14 @@ pnpm --filter edge deploy
 
 > `wrangler secret put` で登録した値はCloudflare側から後から確認できない。必ずパスワードマネージャーに控えておくこと。
 
+### 型定義の更新
+
+`wrangler.jsonc` の `vars` を変更したら型を再生成すること：
+
+```bash
+pnpm --filter edge cf-typegen
+```
+
 ### ローカル DB リセット
 
 ```bash
