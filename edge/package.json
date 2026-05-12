@@ -12,12 +12,14 @@
   "dependencies": {
     "@hono/swagger-ui": "^0.6.1",
     "@hono/zod-openapi": "^1.4.0",
+    "better-auth": "^1.6.10",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.18",
+    "resend": "^6.12.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "drizzle-kit": "^0.31.10",
-    "wrangler": "^4.4.0"
+    "wrangler": "^4.90.0"
   }
 }

@@ -4,7 +4,7 @@
 
 ## プロジェクト概要
 
-- **対象ユーザー**：構造設計者（招待制・約30人規模）
+- **対象ユーザー**：構造設計者（メール認証制・約30人規模）
 - **公開方針**：計算機能は未ログインでも使用可。保存機能はログイン必須
 - **運用方針**：Cloudflare無料枠内で完結。セルフホスト不要
 
@@ -23,8 +23,8 @@
 |数式表示   |KaTeX                                                          |
 |PDF出力  |react-to-print                                                 |
 |バックエンド |Hono（TypeScript）                                               |
+|認証     |Better Auth（メール＋パスワード・admin プラグイン）                             |
 |DB     |Cloudflare D1                                                  |
-|セッション  |Cloudflare KV                                                  |
 |ストレージ  |Cloudflare R2                                                  |
 |メール送信  |Resend（月3,000通無料）                                              |
 |デプロイ   |Cloudflare Workers                                             |
@@ -437,72 +437,191 @@ Dialog内（shadcn/ui <Dialog>）:
 
 ### データ保存先
 
-|データ         |保存先   |備考               |
-|------------|------|-----------------|
-|ユーザー情報      |D1    |                 |
-|プロジェクト      |D1    |                 |
-|計算ケース（メタデータ）|D1    |tool_type・r2_key等|
-|計算入力・結果     |R2    |JSONでまとめて保存      |
-|セッション       |KV    |TTL: 24時間        |
-|観測波形メタデータ   |D1    |                 |
-|観測波形本体      |R2    |float64バイナリ（Originalのみ）|
-|マスターデータ     |静的アセット|全件メモリ展開・JSでフィルタ  |
+|データ         |保存先   |備考                        |
+|------------|------|--------------------------|
+|ユーザー情報      |D1    |Better Auth が管理            |
+|セッション       |D1    |Better Auth が管理            |
+|プロジェクト      |D1    |                          |
+|計算ケース（メタデータ）|D1    |tool_type・r2_key等          |
+|計算入力・結果     |R2    |JSONでまとめて保存               |
+|観測波形メタデータ   |D1    |                          |
+|観測波形本体      |R2    |float64バイナリ（Originalのみ）    |
+|マスターデータ     |静的アセット|全件メモリ展開・JSでフィルタ           |
 
 ### D1スキーマ
 
+Better Auth が管理するテーブル（CLIで自動生成。直接編集しない）：
+
 ```sql
-users        (id, email, password_hash, is_admin, created_at)
-applications (id, name, email, purpose, status, created_at)
-             -- status: 'pending' | 'approved' | 'rejected'
-invitations  (id, token, email, used, expires_at, created_at)
-admin_emails (id, email, created_at)
-projects     (id, user_id, name, created_at)
-calc_cases   (id, project_id, name, tool_type, comment, r2_key, calculated_at, created_at)
-waveforms    (id, user_id, name, kind, dt, duration, pgv, r2_key, created_at)
-             -- kind: 'observed' | 'code'
-             -- pgv: 既往波のみ（cm/s）。告示波はNULL
+-- Better Auth コアテーブル
+user         (id, name, email, email_verified, image, created_at, updated_at,
+              role, banned, ban_reason, ban_expires)
+              -- role: 'user' | 'admin'（admin プラグインが追加）
+              -- banned 〜 ban_expires: admin プラグインが追加
+session      (id, user_id, token, expires_at, ip_address, user_agent,
+              created_at, updated_at,
+              impersonated_by)
+              -- impersonated_by: admin プラグインが追加
+account      (id, user_id, account_id, provider_id,
+              access_token, refresh_token, ...)
+verification (id, identifier, value, expires_at, created_at, updated_at)
+```
+
+アプリが管理するテーブル：
+
+```sql
+projects        (id, user_id, name, created_at)
+
+-- 解析ケース（ツール単位の括り）
+analysis_cases  (id, project_id, name, tool_type, comment, created_at)
+                -- tool_type: 'response_spectrum' | 'time_history' | 'section' など
+
+-- 解析セット（減衰 × 波形 の1組。ケースに紐づく）
+analysis_sets   (id, analysis_case_id, waveform_id, damping,
+                 status, r2_key, calculated_at, created_at)
+                -- status: 'pending' | 'done' | 'error'
+                -- r2_key: 計算完了時のみセット。未計算はNULL
+                -- waveform_id・damping: 断面計算など波形不要のツールはNULL
+
+waveforms       (id, user_id, name, kind, dt, duration, pgv, r2_key, created_at)
+                -- kind: 'observed' | 'code'
+                -- pgv: 既往波のみ（cm/s）。告示波はNULL
 ```
 
 ### R2のデータ構造
 
 ```
-waveforms/{user_id}/{waveform_id}.bin   ← float64バイナリ（Originalのみ）
-calc_cases/{calc_case_id}.json          ← 入力 + 計算結果
+waveforms/{user_id}/{waveform_id}.bin                        ← float64バイナリ（Originalのみ）
+analysis_results/{analysis_case_id}/{analysis_set_id}.json   ← セットごとの計算結果
 ```
+
+#### ツール種別ごとの結果JSONスキーマ
+
+**response_spectrum（応答スペクトル）**
+
+```json
+{
+  "waveform_id": "abc123",
+  "damping": 0.05,
+  "periods": [0.1, 0.105, "...250点"],
+  "Sv": [...],
+  "Sa": [...],
+  "Sd": [...]
+}
+```
+
+**time_history（40質点時刻歴解析）**
+
+```json
+{
+  "waveform_id": "abc123",
+  "damping": 0.05,
+  "floors": [1, 2, "...40"],
+  "max_drift_angle": [...],
+  "max_shear_force": [...],
+  "time": [0.0, 0.02, "..."],
+  "displacement": [[...], [...]]
+}
+```
+
+**section（断面計算）**
+
+```json
+{
+  "tool": "steel_h_bending",
+  "input": { "...": "断面・荷重パラメータ" },
+  "output": { "...": "応力・検定比など" }
+}
+```
+
+断面計算は波形・減衰が不要なため `analysis_sets` の `waveform_id` / `damping` は NULL。結果は1セットのみ。
 
 ### Cloudflareストレージ無料枠（使用量見積もり）
 
 |サービス|用途     |無料枠 |推定使用量      |
 |----|-------|----|-----------|
-|D1  |メタデータ全般|5GB |~35MB（7%）  |
+|D1  |メタデータ・セッション全般|5GB |~35MB（7%）  |
 |R2  |波形・計算結果|10GB|~50MB（0.5%）|
-|KV  |セッション  |1GB |軽微         |
+
+KVは使用しない。セッションはD1の `session` テーブルで管理する（Better Auth に委譲）。
 
 -----
 
 ## 認証・ユーザー管理
 
+認証は **Better Auth** に全面委譲する。自前のパスワードハッシュ・セッション管理は行わない。
+
 ### 登録フロー
 
 ```
-1. ユーザーが申請フォームに入力（名前・メール・用途）
-2. D1のapplicationsに保存（status: pending）
-3. Resendで管理者にメール通知
-4. 管理者が管理画面で承認
-5. Resendでユーザーに招待メール送信（/register?token=xxx）
-6. ユーザーがパスワード設定 → アカウント作成
+1. ユーザーが登録フォームに入力（メールアドレス・パスワード）
+2. Better Auth がアカウントを作成（メール未認証状態）
+3. Resend でメール認証リンクを送信
+4. ユーザーがリンクをクリック → メール認証完了
+5. ログイン可能になる
 ```
 
-- パスワードは `argon2` でハッシュ
-- セッションはKVに保存（TTL: 24時間）
+- メール認証が完了するまでログイン不可（スパム対策）
+- パスワードハッシュは Better Auth が内部で処理（自前実装なし）
+- セッションは D1 の `session` テーブルで管理（TTL は Better Auth のデフォルト: 7日）
+
+### Better Auth 設定概要
+
+```typescript
+// edge/src/auth/index.ts
+import { betterAuth } from 'better-auth'
+import { drizzleAdapter } from 'better-auth/adapters/drizzle'
+import { admin } from 'better-auth/plugins'
+
+export const auth = (env: Env) => betterAuth({
+  database: drizzleAdapter(db, { provider: 'sqlite' }),
+  emailAndPassword: {
+    enabled: true,
+    requireEmailVerification: true,
+    // requireEmailVerification: true により未認証ユーザーはログイン不可
+    // requireEmailVerification と admin() を併用する場合は customSyntheticUser が必要
+    customSyntheticUser: ({ coreFields, additionalFields, id }) => ({
+      ...coreFields,
+      // admin プラグインが追加するフィールドをスキーマ順に明示する
+      role: 'user',
+      banned: false,
+      banReason: null,
+      banExpires: null,
+      ...additionalFields,
+      id,
+    }),
+  },
+  emailVerification: {
+    sendVerificationEmail: async ({ user, url }) => {
+      // Resend でメール送信
+    },
+  },
+  plugins: [admin()],
+})
+```
+
+### スキーマ生成
+
+Better Auth CLI でスキーマを生成し、Drizzle でマイグレーションする：
+
+```bash
+npx auth@latest generate   # edge/src/db/auth.schema.ts を生成
+pnpm --filter edge drizzle-kit migrate
+```
+
+`auth.schema.ts` は **git管理する**。プラグイン追加・変更時のみ `generate` を再実行し、差分をコミットする。自動生成ファイルだが gitignore には含めない（マイグレーション履歴の一部として扱う）。
 
 ### 管理画面ルート
 
 ```
-/admin/applications  ← 申請一覧・承認・却下
-/admin/users         ← ユーザー一覧・停止
-/admin/invitations   ← 招待履歴
+/admin/users  ← ユーザー一覧・ロール変更・BAN（Better Auth admin プラグイン経由）
 ```
+
+管理者は `user.role = 'admin'` で識別する。初期管理者は D1 を直接操作して設定する。
+
+### Resend の用途
+
+メール認証リンクの送信のみ。管理者通知・招待メールは廃止。
 
 -----
 
@@ -521,6 +640,32 @@ calc_cases/{calc_case_id}.json          ← 入力 + 計算結果
     }
   ]
 }
+```
+
+### 環境変数
+
+| 変数 | ローカル | 本番 |
+|---|---|---|
+| `BETTER_AUTH_URL` | `http://localhost:8787`（`.dev.vars`） | `https://rustruct.matsumok.com`（`wrangler.jsonc` vars） |
+| `BETTER_AUTH_SECRET` | `.dev.vars` | `wrangler secret put` |
+| `RESEND_API_KEY` | `.dev.vars` | `wrangler secret put` |
+
+**本番デプロイ手順：**
+
+```bash
+wrangler secret put BETTER_AUTH_SECRET   # 対話的に入力
+wrangler secret put RESEND_API_KEY
+pnpm --filter edge db:migrate:remote
+pnpm --filter edge deploy
+```
+
+> `wrangler secret put` で登録した値はCloudflare側から後から確認できない。必ずパスワードマネージャーに控えておくこと。
+
+### ローカル DB リセット
+
+```bash
+rm edge/.wrangler/state/v3/d1/miniflare-D1DatabaseObject/*.sqlite*
+pnpm --filter edge db:migrate:local
 ```
 
 -----
@@ -583,16 +728,24 @@ pnpm dlx @biomejs/biome init
 
 ```typescript
 // edge/src/db/schema.ts
-export const calcCases = sqliteTable('calc_cases', {
+export const analysisCases = sqliteTable('analysis_cases', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull(),
   name: text('name').notNull(),
   toolType: text('tool_type').notNull(),
   comment: text('comment'),
-  r2Key: text('r2_key').notNull(),
-  calculatedAt: integer('calculated_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 })
+```
+
+Better Auth が生成する `auth.schema.ts` とアプリのスキーマは分離して管理し、マイグレーション時にマージする：
+
+```typescript
+// edge/src/db/index.ts
+import * as authSchema from './auth.schema'   // Better Auth CLI 生成
+import * as appSchema from './schema'          // アプリ側
+
+export const schema = { ...authSchema, ...appSchema }
 ```
 
 ### スタイルバリアント管理：Tailwind Variants（未導入・要検討）

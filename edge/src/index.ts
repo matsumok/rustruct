@@ -1,7 +1,13 @@
 import { swaggerUI } from "@hono/swagger-ui";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createAuth } from "./auth";
 
 const app = new OpenAPIHono<{ Bindings: CloudflareBindings }>();
+
+app.all("/api/auth/*", (c) => {
+  const auth = createAuth(c.env);
+  return auth.handler(c.req.raw);
+});
 
 app.get("/", (c) => {
   return c.text("Hello Hono!");

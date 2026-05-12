@@ -3,18 +3,12 @@
   "name": "rustruct",
   "main": "src/index.ts",
   "compatibility_date": "2026-05-11",
-  // "compatibility_flags": [
-  //   "nodejs_compat"
-  // ],
-  // "vars": {
-  //   "MY_VAR": "my-variable"
-  // },
-  "kv_namespaces": [
-    {
-      "binding": "SESSION",
-      "id": "25fca3591fd04da6a2a7446d7b40a05e"
-    }
+  "compatibility_flags": [
+    "nodejs_compat"
   ],
+  "vars": {
+    "BETTER_AUTH_URL": "https://rustruct.matsumok.com"
+  },
   "r2_buckets": [
     {
       "binding": "STORAGE",
