@@ -1,0 +1,7 @@
+[workspace]
+resolver = "3"
+members = ["rustruct-calc", "rustruct-server","rustruct-types", "rustruct-ui"]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
