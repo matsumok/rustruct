@@ -3225,6 +3225,7 @@ dependencies = [
  "eframe",
  "ehttp",
  "rustruct-types",
+ "serde_json",
 ]
 
 [[package]]
