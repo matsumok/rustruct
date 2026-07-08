@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 eframe = "0.35.0"
+ehttp = { version = "0.7.1", features = ["json"] }
 rustruct-types = { path = "../rustruct-types" }

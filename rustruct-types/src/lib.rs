@@ -21,6 +21,18 @@ pub struct SeismicModel {
     pub stories: Vec<Story>,
 }
 
+impl SeismicModel {
+    pub fn story_count(&self) -> usize {
+        self.stories.len()
+    }
+    pub fn add_story(&mut self, story: Story) {
+        self.stories.push(story);
+    }
+    pub fn remove_story(&mut self, index: usize) {
+        self.stories.remove(index);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
