@@ -80,6 +80,7 @@ mod tests {
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use http_body_util::BodyExt;
+    use rustruct_types::Story;
     use tower::ServiceExt;
 
     #[tokio::test]
@@ -104,16 +105,30 @@ mod tests {
     fn sample_model() -> SeismicModel {
         SeismicModel {
             name: "Sample".to_string(),
-            story_masses: vec![1.0, 2.0, 3.0],
-            story_stiffnesses: vec![4.0, 5.0, 6.0],
-            story_heights: vec![7.0, 8.0, 9.0],
+            stories: vec![
+                Story {
+                    mass: 1.0,
+                    stiffness: 5.0,
+                    height: 4.0,
+                },
+                Story {
+                    mass: 1.0,
+                    stiffness: 5.0,
+                    height: 4.0,
+                },
+                Story {
+                    mass: 1.0,
+                    stiffness: 5.0,
+                    height: 4.0,
+                },
+            ],
         }
     }
 
     fn sample_request() -> CalcRequest {
         CalcRequest {
             model: sample_model(),
-            relative_displacements: vec![7.0, 8.0, 9.0],
+            relative_displacements: vec![0.2, 0.2, 0.2],
         }
     }
 
@@ -143,7 +158,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let result = serde_json::from_slice::<Vec<f64>>(&body).unwrap();
-        assert_eq!(result, [1.0, 1.0, 1.0]);
+        assert_eq!(result, [0.05, 0.05, 0.05]);
     }
 
     #[tokio::test]

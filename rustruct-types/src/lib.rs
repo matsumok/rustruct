@@ -1,11 +1,24 @@
+//! 共有ドメイン型クレート
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Copy)]
+/// 階のデータ
+pub struct Story {
+    /// 質量 ton
+    pub mass: f64,
+    /// 剛性 kN/m
+    pub stiffness: f64,
+    /// 高さ m
+    pub height: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// 解析モデル
 pub struct SeismicModel {
+    /// モデル名
     pub name: String,
-    pub story_masses: Vec<f64>,
-    pub story_stiffnesses: Vec<f64>,
-    pub story_heights: Vec<f64>,
+    /// 階データ　最下層がindex0
+    pub stories: Vec<Story>,
 }
 
 #[cfg(test)]
@@ -16,9 +29,23 @@ mod tests {
     fn test_serialize() {
         let model = SeismicModel {
             name: "Sample".to_string(),
-            story_masses: vec![1.0, 2.0, 3.0],
-            story_stiffnesses: vec![4.0, 5.0, 6.0],
-            story_heights: vec![7.0, 8.0, 9.0],
+            stories: vec![
+                Story {
+                    mass: 1.0,
+                    stiffness: 5.0,
+                    height: 4.0,
+                },
+                Story {
+                    mass: 1.0,
+                    stiffness: 5.0,
+                    height: 4.0,
+                },
+                Story {
+                    mass: 1.0,
+                    stiffness: 5.0,
+                    height: 4.0,
+                },
+            ],
         };
 
         let json = dbg!(serde_json::to_string(&model).unwrap());
