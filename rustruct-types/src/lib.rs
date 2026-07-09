@@ -33,6 +33,12 @@ impl SeismicModel {
     }
 }
 
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct SavedModel {
+    pub id: i64,
+    pub model: SeismicModel,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

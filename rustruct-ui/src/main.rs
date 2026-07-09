@@ -113,8 +113,7 @@ impl eframe::App for RustructApp {
                             ui.label(&model.name);
                             ui.label(format!("階数: {}", model.story_count()));
                             if ui.button("読込").clicked() {
-                                // to_load = Some(model.clone());
-                                to_load = Some(*model);
+                                to_load = Some(model.clone());
                             }
                         });
                     }

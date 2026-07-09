@@ -1,11 +1,11 @@
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
-    routing::{get, post},
+    routing::{get, post, put},
 };
 use rustruct_calc::story_drift_ratios;
-use rustruct_types::SeismicModel;
+use rustruct_types::{SavedModel, SeismicModel};
 use serde::{Deserialize, Serialize};
 
 async fn health() -> &'static str {
@@ -33,6 +33,7 @@ fn app(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/calc", post(calc))
         .route("/models", post(create_model).get(list_models))
+        .route("/models/{id}", put(update_model))
         .with_state(state)
 }
 
@@ -49,16 +50,37 @@ async fn create_model(
     Ok(StatusCode::CREATED)
 }
 
-async fn list_models(State(state): State<AppState>) -> Result<Json<Vec<SeismicModel>>, StatusCode> {
-    let models: Vec<String> = sqlx::query_scalar("SELECT data FROM models")
+async fn list_models(State(state): State<AppState>) -> Result<Json<Vec<SavedModel>>, StatusCode> {
+    let rows: Vec<(i64, String)> = sqlx::query_as("SELECT id, data FROM models")
         .fetch_all(&state.pool)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let result = models
-        .iter()
-        .map(|m| serde_json::from_str(&m).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR))
-        .collect::<Result<Vec<_>, _>>()?;
+    let result: Vec<SavedModel> = rows
+        .into_iter()
+        .map(|(id, m)| {
+            let model = serde_json::from_str(&m).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            Ok(SavedModel { id, model })
+        })
+        .collect::<Result<Vec<_>, StatusCode>>()?;
     Ok(Json(result))
+}
+
+async fn update_model(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(model): Json<SeismicModel>,
+) -> Result<StatusCode, StatusCode> {
+    let result = sqlx::query("UPDATE models SET name = ?, data = ? WHERE id = ?")
+        .bind(&model.name)
+        .bind(serde_json::to_string(&model).unwrap())
+        .bind(id)
+        .execute(&state.pool)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if result.rows_affected() == 0 {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    Ok(StatusCode::OK)
 }
 
 #[tokio::main]
@@ -232,8 +254,8 @@ mod tests {
             .await
             .unwrap();
         let body = response.into_body().collect().await.unwrap().to_bytes();
-        let result = serde_json::from_slice::<Vec<SeismicModel>>(&body).unwrap();
+        let result = serde_json::from_slice::<Vec<SavedModel>>(&body).unwrap();
 
-        assert_eq!(result, [req])
+        assert_eq!(result, [SavedModel { id: 1, model: req }])
     }
 }
