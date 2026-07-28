@@ -1,0 +1,4 @@
+[toolchain]
+# topcoat の MSRV は 1.95 (edition 2024)。PoC の再現性のため固定する。
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]
