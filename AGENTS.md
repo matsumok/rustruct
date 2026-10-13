@@ -8,7 +8,8 @@
 Rust は stable。`rust-toolchain.toml` が channel と wasm ターゲットを指定する。`dx` は Dioxus CLI 0.7 系（`cargo install dioxus-cli --version 0.7.10 --locked`、または GitHub Releases のビルド済みバイナリ）。
 
 - 起動: `dx serve` をリポジトリ直下で。`default-members` が `rustruct-web` を指すので `-p` は不要。`web` / `server` の feature を dx が自動検出して fullstack で起動する
-- テスト: `cargo test --workspace`。feature なしのネイティブで、WASM もブラウザも使わない。CI（`.github/workflows/ci.yml`）も push ごとに同じテストを `--locked` で回す
+- テスト: `cargo test --workspace`。feature なしのネイティブで、WASM もブラウザも使わない
+- CI（`.github/workflows/ci.yml`）は push ごとに fmt、依存の向き（`scripts/check-deps.sh`）、clippy、wasm32 の check、test を順に回す。手元で同じものを回すときはそのファイルの step をそのまま実行する
 
 ## Agent skills
 
