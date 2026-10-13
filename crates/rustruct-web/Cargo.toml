@@ -1,0 +1,22 @@
+[package]
+name = "rustruct-web"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+rustruct-types.workspace = true
+rustruct-calc.workspace = true
+charta.workspace = true
+dioxus.workspace = true
+
+[dev-dependencies]
+dioxus-ssr.workspace = true
+
+[features]
+default = []
+web = ["dioxus/web"]
+server = ["dioxus/server"]

@@ -1,0 +1,20 @@
+name: CI
+
+# push ごとに回す。同じリポジトリのブランチからの PR には push の結果がそのまま表示されるので
+# pull_request トリガーは付けない（付けると PR ブランチへの push が二重に走る）。
+on:
+  push:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: cargo test --workspace
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --locked
