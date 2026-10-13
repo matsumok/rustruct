@@ -32,20 +32,18 @@ pub fn App() -> Element {
     }
 }
 
-/// サイト名。`rustruct` は `ink` の 500、`.matsumok.com` は 400 で、ドットは `ink` のまま
-/// `matsumok.com` だけ `muted`（tokens.json の `wordmark` の usage）。
+/// サイト名。`rustruct` は `ink` の 500、`.matsumok.com` はドットごと `muted` の 400
+/// （tokens.json の `wordmark` の usage。2026-10-14 に dx serve で見て決めた）。
 #[component]
 fn Wordmark() -> Element {
-    let (name, domain) = WORDMARK
-        .split_once('.')
+    let dot = WORDMARK
+        .find('.')
         .expect("wordmark はドメインなのでドットを含む");
+    let (name, domain) = WORDMARK.split_at(dot);
     rsx! {
         span { class: "font-mono text-wordmark text-ink",
             {name}
-            span { class: "font-normal",
-                "."
-                span { class: "text-muted", {domain} }
-            }
+            span { class: "text-muted font-normal", {domain} }
         }
     }
 }

@@ -28,16 +28,12 @@ fn text_of(html: &str) -> String {
 }
 
 #[test]
-fn wordmark_is_split_so_the_domain_part_can_be_muted_while_the_dot_stays_with_rustruct() {
+fn wordmark_is_split_so_the_dot_and_domain_can_be_muted() {
     let html = dioxus_ssr::render_element(rsx! { rustruct_web::App {} });
-    // matsumok.com だけが別の要素に入っている（muted にするため）。ドットは rustruct 側に残る
+    // .matsumok.com がドットごと別の要素に入っている（muted にするため）
     let domain = html
-        .find(">matsumok.com<")
-        .expect("matsumok.com が単独の要素でない");
+        .find(">.matsumok.com<")
+        .expect(".matsumok.com が単独の要素でない");
     let rustruct = html.find("rustruct").expect("rustruct が無い");
     assert!(rustruct < domain, "順序が違う: {html}");
-    assert!(
-        !html.contains(">.matsumok.com<"),
-        "ドットが muted 側に入っている: {html}"
-    );
 }
