@@ -1,7 +1,0 @@
-[package]
-name = "rustruct-calc"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-rustruct-types = { path = "../rustruct-types" }
