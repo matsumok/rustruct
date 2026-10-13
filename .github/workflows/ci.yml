@@ -2,6 +2,7 @@ name: CI
 
 # push ごとに回す。同じリポジトリのブランチからの PR には push の結果がそのまま表示されるので
 # pull_request トリガーは付けない（付けると PR ブランチへの push が二重に走る）。
+# 各 step のコマンドは scripts/check.sh にある。手元でも同じものを回せる。
 on:
   push:
 
@@ -11,7 +12,7 @@ concurrency:
 
 jobs:
   check:
-    name: fmt / deps / clippy / wasm / test
+    name: fmt / deps / markup / clippy / wasm / test / theme
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -22,24 +23,25 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: fmt
-        run: cargo fmt --all --check
+        run: sh scripts/check.sh fmt
 
       - name: deps (docs/stack.md の依存の向き)
-        run: sh scripts/check-deps.sh
+        run: sh scripts/check.sh deps
+
+      - name: markup (マークアップに値を書かない)
+        run: sh scripts/check.sh markup
 
       - name: clippy (feature なし)
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: sh scripts/check.sh clippy
 
       - name: clippy (server)
-        run: cargo clippy -p rustruct-web --features server --locked -- -D warnings
+        run: sh scripts/check.sh server
 
       - name: check (web, wasm32)
-        run: cargo check -p rustruct-web --features web --target wasm32-unknown-unknown --locked
+        run: sh scripts/check.sh wasm
 
       - name: test
-        run: cargo test --workspace --locked
+        run: sh scripts/check.sh test
 
-      # build.rs が tokens.json から theme.css を作り直す。差分が出たら、tokens.json を変えたのに
-      # 生成物を commit し忘れている
       - name: theme.css が tokens.json と合っている
-        run: git diff --exit-code -- crates/rustruct-web/theme.css
+        run: sh scripts/check.sh theme

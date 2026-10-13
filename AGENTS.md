@@ -9,7 +9,10 @@ Rust は stable。`rust-toolchain.toml` が channel と wasm ターゲットを�
 
 - 起動: `dx serve` をリポジトリ直下で。`default-members` が `rustruct-web` を指すので `-p` は不要。`web` / `server` の feature を dx が自動検出して fullstack で起動する
 - テスト: `cargo test --workspace`。feature なしのネイティブで、WASM もブラウザも使わない
-- CI（`.github/workflows/ci.yml`）は push ごとに fmt、依存の向き（`scripts/check-deps.sh`）、clippy、wasm32 の check、test を順に回す。手元で同じものを回すときはそのファイルの step をそのまま実行する
+- 検査: `sh scripts/check.sh` が CI（`.github/workflows/ci.yml`）と同じものを同じ順で回す。一つだけなら `sh scripts/check.sh clippy` のように名前で
+- 見た目の確認: `dx serve` 中に `sh scripts/screenshot.sh` でスマホ幅のライト・ダークを撮れる
+- dx はツール（Tailwind など）を `~/.local/share/.dx/tools` に落とす。落とせなくても黙って続行するので、`assets/tailwind.css` が更新されないときはそこを見る
+- レビューの規則は `CODING_STANDARDS.md`
 
 ## Agent skills
 
