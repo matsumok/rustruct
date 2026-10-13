@@ -13,8 +13,13 @@ rustruct-calc.workspace = true
 charta.workspace = true
 dioxus.workspace = true
 
+# tokens.json → @theme の生成器（src/theme.rs）は build.rs と test だけが使う。配信物には入らない
+[build-dependencies]
+serde_json.workspace = true
+
 [dev-dependencies]
 dioxus-ssr.workspace = true
+serde_json.workspace = true
 
 [features]
 default = []

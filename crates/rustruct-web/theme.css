@@ -1,0 +1,149 @@
+/* docs/design/tokens.json から生成した Tailwind v4 の @theme。手で編集しない。
+   生成: crates/rustruct-web/build.rs（tokens.json を変えると cargo のビルドで更新される） */
+
+@custom-variant dark (@media (prefers-color-scheme: dark));
+
+@theme {
+  /* 色: 役割名。bg-paper / text-ink / border-line のように使う */
+  --color-*: initial;
+  --color-paper: #ffffff;
+  --color-fill: #f0f0f3;
+  --color-line: #e0e1e6;
+  --color-line-strong: #8b8d98;
+  --color-ink: #1c2024;
+  --color-muted: #60646c;
+  --color-ng: #ce2c31;
+  --color-on-ink: #ffffff;
+  --color-accent: #3e63dd;
+  --color-accent-soft: #c1d0ff;
+  --color-chart-1: #ab6400;
+  --color-chart-2: #00a2c7;
+  --color-chart-3: #1c2024;
+  --color-chart-4: #e54666;
+  --color-chart-5: #6e56cf;
+  --color-seq-1: #f7f9ff;
+  --color-seq-2: #dbe4ff;
+  --color-seq-3: #becffc;
+  --color-seq-4: #a3baf7;
+  --color-seq-5: #88a5f1;
+  --color-seq-6: #6e90eb;
+  --color-seq-7: #5d81e6;
+  --color-seq-8: #456adf;
+  --color-seq-9: #3959c2;
+  --color-seq-10: #304a9e;
+  --color-seq-11: #273b7c;
+  --color-seq-12: #1f2d5c;
+  --color-div-1: #1f2d5c;
+  --color-div-2: #2f499e;
+  --color-div-3: #4369df;
+  --color-div-4: #7495ed;
+  --color-div-5: #a9bff8;
+  --color-div-6: #e1e8fb;
+  --color-div-7: #f6f0d1;
+  --color-div-8: #fed45b;
+  --color-div-9: #e1a12a;
+  --color-div-10: #b8730c;
+  --color-div-11: #85501b;
+  --color-div-12: #4f3422;
+
+  /* 書体: font-sans / font-mono */
+  --font-serif: initial;
+  --font-mono: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;
+  --font-sans: "IBM Plex Sans JP", "Hiragino Sans", "BIZ UDPGothic", sans-serif;
+
+  /* 文字: 役割ごとに大きさ・行送り・太さ・字間の組。text-body のように使う */
+  --text-*: initial;
+  --text-display: 30px;
+  --text-display--line-height: 40px;
+  --text-display--font-weight: 300;
+  --text-display--letter-spacing: -0.01em;
+  --text-title: 22px;
+  --text-title--line-height: 30px;
+  --text-title--font-weight: 300;
+  --text-heading: 13px;
+  --text-heading--line-height: 20px;
+  --text-heading--font-weight: 500;
+  --text-body: 13px;
+  --text-body--line-height: 22px;
+  --text-body--font-weight: 400;
+  --text-prose: 15px;
+  --text-prose--line-height: 28px;
+  --text-prose--font-weight: 400;
+  --text-label: 11px;
+  --text-label--line-height: 16px;
+  --text-label--font-weight: 400;
+  --text-path: 11px;
+  --text-path--line-height: 16px;
+  --text-path--font-weight: 400;
+  --text-num: 13px;
+  --text-num--line-height: 20px;
+  --text-num--font-weight: 400;
+  --text-wordmark: 12px;
+  --text-wordmark--line-height: 16px;
+  --text-wordmark--font-weight: 500;
+  --text-figure: 56px;
+  --text-figure--line-height: 56px;
+  --text-figure--font-weight: 300;
+
+  /* 余白: space-<n> を p-<n> / gap-<n> / m-<n> で使う */
+  --spacing: initial;
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 20px;
+  --spacing-6: 28px;
+  --spacing-7: 40px;
+  --spacing-8: 48px;
+
+  /* 角丸: radius-<n> を rounded-<n> で使う */
+  --radius-*: initial;
+  --radius-0: 0px;
+  --radius-8: 8px;
+  --radius-full: 9999px;
+}
+
+/* ダーク: 同じ役割名の色を OS 設定で切り替える。切替 UI は無い */
+:root {
+  @variant dark {
+    --color-paper: #111113;
+    --color-fill: #212225;
+    --color-line: #2e3135;
+    --color-line-strong: #696e77;
+    --color-ink: #edeef0;
+    --color-muted: #b0b4ba;
+    --color-ng: #ff9592;
+    --color-on-ink: #111113;
+    --color-accent: #3e63dd;
+    --color-accent-soft: #304384;
+    --color-chart-1: #ffca16;
+    --color-chart-2: #00a2c7;
+    --color-chart-3: #edeef0;
+    --color-chart-4: #e54666;
+    --color-chart-5: #6e56cf;
+    --color-seq-1: #141726;
+    --color-seq-2: #1b2545;
+    --color-seq-3: #223467;
+    --color-seq-4: #2b428b;
+    --color-seq-5: #3351b0;
+    --color-seq-6: #3d61d7;
+    --color-seq-7: #4c70e3;
+    --color-seq-8: #6887ed;
+    --color-seq-9: #849df7;
+    --color-seq-10: #a1b4ff;
+    --color-seq-11: #bbcaff;
+    --color-seq-12: #d6e1ff;
+    --color-div-1: #9eb1ff;
+    --color-div-2: #7390f1;
+    --color-div-3: #4a6ee2;
+    --color-div-4: #3453b4;
+    --color-div-5: #273d7d;
+    --color-div-6: #292f42;
+    --color-div-7: #3c2e1e;
+    --color-div-8: #694706;
+    --color-div-9: #966d17;
+    --color-div-10: #c69529;
+    --color-div-11: #f8bf3a;
+    --color-div-12: #ffe7b3;
+  }
+}

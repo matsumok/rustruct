@@ -38,3 +38,8 @@ jobs:
 
       - name: test
         run: cargo test --workspace --locked
+
+      # build.rs が tokens.json から theme.css を作り直す。差分が出たら、tokens.json を変えたのに
+      # 生成物を commit し忘れている
+      - name: theme.css が tokens.json と合っている
+        run: git diff --exit-code -- crates/rustruct-web/theme.css

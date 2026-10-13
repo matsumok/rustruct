@@ -17,5 +17,6 @@ rustruct-calc = { path = "crates/rustruct-calc" }
 charta = { path = "crates/charta" }
 
 serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
 dioxus = { version = "0.7", features = ["fullstack"] }
 dioxus-ssr = { version = "0.7" }

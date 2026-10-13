@@ -23,6 +23,9 @@
 - ブラウザでしか決まらない値は初回描画で読まず、起動後に `use_effect` で読む
 - CSS は Tailwind v4。`dx` 内蔵の単体 CLI を使い、Node は入れない
 - 値の源は `docs/design/tokens.json` の一箇所。Tailwind の `@theme` ブロック（色・文字・余白・角丸）は Rust の小さなビルド工程で tokens.json から生成し、手では書かない。`charta` も同じ JSON から色を読む
+  - 生成器は `crates/rustruct-web/src/theme.rs` の純粋関数で、`build.rs` が `crates/rustruct-web/theme.css` に書く。`tailwind.css` がそれを `@import` し、dx が `assets/tailwind.css` に出力する。`theme.css` と `assets/tailwind.css` はどちらも生成物だが、`asset!` がコンパイル時にファイルを要求するのでリポジトリに入れる（手で編集しない）
+  - 生成した `@theme` は色・文字・余白・角丸の名前空間で Tailwind の既定値（`bg-red-500`、`text-sm`、`p-3.5` など）を消す。役割名のクラスだけが存在し、tokens.json にない値はマークアップに書けない。`--spacing` の既定の目盛りも消えるので、`w-*` / `max-w-*` / `gap-*` の数値も `space-1`〜`space-8` の範囲だけになる
+  - `dx serve` は `docs/` を監視しないので、tokens.json を変えたら `.rs` を保存し直すか `dx serve` を再起動する
 - ライトとダークを最初から両方作る。色は役割名トークンで指定し、`@custom-variant dark` の1行で切り替える
 - コントラスト検査は Rust のテストとして tokens.json を読んで行い、CI で回す。WCAG 比（usage に書かれた 3:1 / 4.5:1）を必須、APCA を警告として出す。最初の一本には含めない
 - フォントは IBM Plex Sans JP と Plex Mono。まず Google Fonts CDN
