@@ -3,7 +3,8 @@
 # assets/tailwind.css は dx（serve / build）が内蔵 Tailwind でマークアップから作る。dx が動いていない
 # 環境でクラスを足すと生成物が古いまま commit され、dx serve 無しの確認では見た目に出ない。
 # ここでは src の class: "..." に書かれた各クラスが生成物にセレクタとして存在するかを見る。
-# Tailwind CLI は要らない。dx build を CI で回すようになったら git diff --exit-code に置き換える。
+# Tailwind CLI は要らない。CI では dx build 後に check.sh の tailwind（git diff）も回るが、dx は Tailwind の
+# 失敗を黙殺して差分ゼロで通すことがあるので、この検査は残す。
 set -eu
 cd "$(dirname "$0")/.."
 css=crates/rustruct-web/assets/tailwind.css

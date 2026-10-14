@@ -20,6 +20,9 @@ step() {
     # SSG（ADR-0001）。client → server の順に建てる。並行だと server の SSG が client の index.html（殻）
     # を待たずに走り、WASM を読まない HTML になる。出力の検査は check-ssg.sh
     ssg)     dx build --ssg --release --force-sequential && sh scripts/check-ssg.sh ;;
+    # dx build が内蔵 Tailwind で assets/tailwind.css を作り直す。差分が出たら生成物の commit 忘れ。
+    # dx は Tailwind の失敗を黙殺するので、走らなかったときは差分ゼロで素通りする。classes が補う
+    tailwind) git diff --exit-code -- crates/rustruct-web/assets/tailwind.css ;;
     *) echo "unknown step: $1" >&2; exit 2 ;;
   esac
 }
@@ -27,7 +30,7 @@ step() {
 if [ "$#" -gt 0 ]; then
   for s in "$@"; do step "$s"; done
 else
-  for s in fmt deps markup classes clippy server wasm test theme ssg; do
+  for s in fmt deps markup classes clippy server wasm test theme ssg tailwind; do
     echo "== $s"; step "$s"
   done
 fi

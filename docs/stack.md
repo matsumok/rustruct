@@ -26,14 +26,7 @@
   - 生成器は `crates/rustruct-web/src/theme.rs` の純粋関数で、`build.rs` が `crates/rustruct-web/theme.css` に書く。`tailwind.css` がそれを `@import` し、dx が `assets/tailwind.css` に出力する。`theme.css` と `assets/tailwind.css` はどちらも生成物だが、`asset!` がコンパイル時にファイルを要求するのでリポジトリに入れる（手で編集しない）
   - 生成した `@theme` は色・文字・余白・角丸の名前空間で Tailwind の既定値（`bg-red-500`、`text-sm`、`p-3.5` など）を消す。役割名のクラスだけが存在し、tokens.json にない値はマークアップに書けない。`--spacing` の既定の目盛りも消えるので、`w-*` / `max-w-*` / `gap-*` の数値も `space-1`〜`space-8` の範囲だけになる
   - `dx serve` は `docs/` を監視しないので、tokens.json を変えたら `.rs` を保存し直すか `dx serve` を再起動する
-- Dioxus 0.7 の勘所（2026-10-14 に #11 で vendored ソースを読んで確かめた。コードから読めないことだけ）
-  - `router` は `dioxus` の既定 feature に無い。`Cargo.toml` で足して初めて `Router` / `Link` / `Routable` が prelude に出る
-  - `#[route("/tools", SectionPage)]` の第2引数でコンポーネントを指定できる。共有するコンポーネントは `use_route::<Route>()` で自分のルートを知る
-  - ネイティブ描画は `VirtualDom` に `Rc<dyn History>`（`dioxus::history::MemoryHistory`）と `Rc<dyn Document>` を root context で渡せば動く。`document::Title` / `Meta` は `Document` の `set_title` / `create_head_element` に来る（`crates/rustruct-web/src/prerender.rs`）
-  - `document::Meta` は初回描画後の props 変更を head に反映しない（SPA 遷移で description は変わらない。SSG の HTML には各ページの値が入る）
-  - `dx build --ssg` はサーバーを起動し、`POST /api/static_routes` が返す `Vec<String>` のパスを順に取得する。`Route::static_routes()` がその列挙元（引数のあるルート、つまり not-found の catch-all は入らない）。保存はサーバー側の仕事で、`ServeConfig::new().incremental(IncrementalRendererConfig::new().static_dir(public))` が無いと何も書かれない（`crates/rustruct-web/src/ssg.rs`）。書き先は `public/<住所>/index.html` で、`/` は client が書いた殻の `index.html` を上書きする
-  - client と server のビルドは既定で並行に走り、server の SSG は client の殻（`public/index.html`、WASM の読込を含む）を待たない。`--force-sequential`（`CI` 環境変数があれば自動）で client → server の順にする。`dx serve`（開発サーバーの下）では SSG の書込をしない。再ビルドのたびに古い HTML が残り、`/` の分が殻として読まれてしまうため
-  - dx はツール（wasm-bindgen、wasm-opt、Tailwind）を `DX_HOME`（既定 `~/.local/share/.dx`）の `tools/` に落とす。release ビルドは wasm-opt が無いと止まる
+- Dioxus 0.7 でコードから読めない挙動（router の feature、SSG の書込先、並行ビルドの順、dx のツール置き場など）は `docs/dioxus-0.7.md`。無いことは vendored ソースを grep する
 - not-found は `/404` に 1 ファイルだけ書き出す（`NOT_FOUND_PATH`）。配信側が未知の住所すべてにこれを返す。どの住所で開かれても同じ中身が届くので、求められた住所は初回描画に入れず、起動後に `use_effect` で出す（上の規則の適用例）
 - CI は `dx build --ssg --release --force-sequential` の出力を `scripts/check-ssg.sh` で検査する（住所ごとの HTML、本文と `<title>`・description、1 つの WASM、HTML → 読込スクリプト → WASM の参照）。hydration の成否はブラウザが要るので CI では見ない
 - ライトとダークを最初から両方作る。色は役割名トークンで指定し、`@custom-variant dark` の1行で切り替える
