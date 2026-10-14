@@ -6,6 +6,8 @@
 # 本文が返り、HTML が参照する CSS・読込スクリプト・WASM が届き、WASM の Content-Type が application/wasm
 # （ストリーミング compile の条件）。フォントの link とダーク追従の CSS も、配信物に入っていることだけ見る。
 # hydration の成否はブラウザが要るので見ない（scripts/hydrate-check.sh に URL を渡す）。
+# 公開前はサイト全体に Cloudflare Access が掛かっている（docs/deploy.md の「公開前の非公開」）。環境変数
+# CF_ACCESS_CLIENT_ID と CF_ACCESS_CLIENT_SECRET（Access のサービストークン）があれば、そのヘッダを付けて通る。
 # set -e は付けない。curl が失敗しても status 000 の NG として続け、落ちている点を全部並べる。
 set -u
 url=${1:?URL を渡す（例: https://rustruct.matsumok.com）}
@@ -15,9 +17,36 @@ rm -rf "$dir"; mkdir -p "$dir"
 fail=0
 ng() { echo "NG: $1"; fail=1; }
 
+# サービストークンのヘッダ。curl の -H は設定ファイル経由で渡し、秘密をプロセス一覧に出さない
+auth=$dir/access.curlrc
+: >"$auth"
+if [ -n "${CF_ACCESS_CLIENT_ID:-}" ] && [ -n "${CF_ACCESS_CLIENT_SECRET:-}" ]; then
+  printf 'header = "CF-Access-Client-Id: %s"\nheader = "CF-Access-Client-Secret: %s"\n' \
+    "$CF_ACCESS_CLIENT_ID" "$CF_ACCESS_CLIENT_SECRET" >"$auth"
+fi
+
+# Access に弾かれたときの手がかり。トークンの値は出さず、形だけ言う。Access は無効なトークンにも
+# 無いときと同じ転送を返すので、値の取り違え（ダッシュボードが見せる「CF-Access-Client-Id: …」の行ごと
+# Secrets に入れた、など）はここでしか分からない（2026-10-14 に PR #18 で起きた）
+token_shape() {
+  if [ ! -s "$auth" ]; then
+    echo "サービストークンが渡されていない"
+    return
+  fi
+  shape="サービストークンは渡したが通らない。ポリシー（Service Auth）か値を見る。ID の形:"
+  case "$CF_ACCESS_CLIENT_ID" in
+    *.access) shape="$shape .access で終わる" ;;
+    *) shape="$shape .access で終わらない" ;;
+  esac
+  case "$CF_ACCESS_CLIENT_ID$CF_ACCESS_CLIENT_SECRET" in
+    *:* | *' '* | *"$(printf '\t')"*) shape="$shape、ID か Secret に「:」か空白が混じる（ヘッダ名ごと入れていないか）" ;;
+  esac
+  echo "$shape"
+}
+
 # fetch 住所 保存先 → 標準出力に status、Location は $dir/location に
 fetch() {
-  curl -sS -o "$2" -D "$dir/headers" -w '%{http_code}' "$url$1"
+  curl -sS -K "$auth" -o "$2" -D "$dir/headers" -w '%{http_code}' "$url$1"
   sed -n 's/^[Ll]ocation: *//p' "$dir/headers" | tr -d '\r' >"$dir/location"
 }
 # 直前の fetch が弾かれた理由の手がかり。Cloudflare の防御（Bot Fight Mode、WAF）は cf-mitigated を付ける。
@@ -25,6 +54,7 @@ fetch() {
 why() {
   m=$(sed -n 's/^[Cc][Ff]-[Mm]itigated: *//p' "$dir/headers" | tr -d '\r')
   [ -n "$m" ] && printf ' (cf-mitigated: %s)' "$m"
+  grep -q 'cloudflareaccess\.com' "$dir/location" && printf ' (Cloudflare Access のログインへ転送された。%s)' "$(token_shape)"
   [ -s "$dir/page.html" ] && printf ' 本文: %s' "$(tr -d '\n' <"$dir/page.html" | head -c 120)"
   return 0
 }
@@ -39,7 +69,7 @@ done
 [ "$waited" -gt 0 ] && echo "   $waited 秒待った"
 
 # 住所ごとの HTML。一覧は crates/rustruct-web/src/ssg.rs の static_paths と同じ（check-ssg.sh と同様、not-found は別に見る）。
-# /root/ に Cloudflare Access を掛けたら（docs/stack.md）ここは 200 でなくなるので、そのときこの一覧から外す
+# /root/ に Cloudflare Access を掛けたら（docs/stack.md）、サービストークンを通さない限りここは 200 でなくなる
 for p in / /tools/ /studies/ /notes/ /root/; do
   status=$(fetch "$p" "$dir/page.html")
   [ "$status" = 200 ] || ng "$p が 200 でない: $status$(why)"

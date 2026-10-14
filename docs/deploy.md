@@ -63,6 +63,20 @@ GitHub の Environments（`production`、`preview`）は最初の run が自動�
 - PR を閉じる（merge を含む）と `cleanup` job がプレビューを消す。無料枠は Worker ごと 100 プレビューまで
 - **既知の制限**: プレビューでは未知の住所が本文の無い 404 になる（`wrangler preview` が `not_found_handling` を落とす。cloudflare/workers-sdk#16047、2026-10-14 時点で open）。`check-live.sh` は workers.dev に限りこれを注意に留める。not-found の見た目はプレビューでは確かめられないので本番で見る。直ったら `check-live.sh` のその分岐を消す
 
+## 公開前の非公開
+
+公開するまでは、本番（`rustruct.matsumok.com`）とプレビュー（`*.workers.dev`）の全体に Cloudflare Access を掛け、root だけが見られるようにする（2026-10-14 に決めた）。ADR-0002 の「Access は `/private/` だけ」は公開後の形で、これはそれまでの一時的な措置。#15（検索エンジンに載せる準備）は公開まで寝かせる。
+
+CI の live（`scripts/check-live.sh`）は Access のサービストークンで通る。Secrets の `CF_ACCESS_CLIENT_ID` と `CF_ACCESS_CLIENT_SECRET` を環境変数で渡すと、curl がそのヘッダを付ける。無いと Access のログインへ転送され、live が「Cloudflare Access のログインへ転送された」と言って落ちる。
+
+人がやること（Cloudflare Zero Trust のダッシュボード。順に）:
+
+1. **サービストークンを作る**。Access controls → Service credentials → Service Tokens → Create。名前は `rustruct-ci`、期限は無期限か長め。Client ID と Client Secret は一度しか表示されないので、その場で GitHub の Secrets（`CF_ACCESS_CLIENT_ID`、`CF_ACCESS_CLIENT_SECRET`）に Web UI から入れる
+2. **本番の Access アプリケーションを作る**。Access controls → Applications → Add → Self-hosted。ドメインは `rustruct.matsumok.com`（パスは空＝全体）。ポリシーは2つ: Allow（Include = Emails = root のメールアドレス）と Service Auth（Include = Service Token = `rustruct-ci`）
+3. **プレビューにも掛ける**。Workers & Pages → rustruct → Settings → Domains & Routes → workers.dev と Preview URLs の Cloudflare Access を有効にする。Access アプリケーションが自動で作られるので、2 と同じ2つのポリシーにそろえる
+
+公開するとき: 2 のアプリケーションを消すか、パスを `/private/` に絞る。3 を無効にする（プレビューは閉じたままでもよい）。この節を消す。
+
 ## 人の目で見ること
 
 CI が見ないのは hydration と見た目。本番とプレビューの URL をスマホで開いて、
@@ -71,7 +85,7 @@ CI が見ないのは hydration と見た目。本番とプレビューの URL �
 - OS をダークにして配色が変わる。和文が Plex Sans JP、パスと wordmark が Plex Mono
 - 存在しない住所で not-found の骨組みが出て、起動後に住所の行が埋まる
 
-`/root/` に Cloudflare Access を掛けたら（`docs/stack.md`）、`scripts/check-live.sh` の住所一覧から `/root/` を外す。掛けた瞬間に本番の「live」が落ちる。
+公開後に `/root/` だけに Cloudflare Access を掛けるなら（`docs/stack.md`）、サービストークンをそのポリシーにも入れるか、`scripts/check-live.sh` の住所一覧から `/root/` を外す。どちらも無いと本番の「live」が落ちる。公開前は上の「公開前の非公開」で全体を閉じている。
 
 headless Chrome で DOM の印を見るなら `sh scripts/hydrate-check.sh https://rustruct.matsumok.com / /tools/ /404/`（サンドボックスの外で）。結果は Issue #8 に記録する。
 
