@@ -15,6 +15,9 @@ width=400
 height=800
 mkdir -p "$dir"
 
+# dev server が無いと Chrome は何も書かずに終わるので、先に確かめる（このスクリプトはサンドボックスの外で動く）
+curl -sf -m 5 -o /dev/null "$url" || { echo "$url に届かない。dx serve が動いているか見る" >&2; exit 1; }
+
 browser=
 for c in chromium chromium-browser google-chrome google-chrome-stable \
   "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe" \
