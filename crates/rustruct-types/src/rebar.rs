@@ -1,5 +1,5 @@
 //! 鉄筋（JIS G 3112:2025 の異形棒鋼）。言葉は `docs/materials/GLOSSARY.md`、値と出典は
-//! `docs/materials/adr/0002`。呼び名が持つのは公称直径だけで、ほかの諸元は JIS と同じ式と丸めで求める。
+//! `docs/materials/adr/0002`（諸元）と `docs/materials/adr/0003`（許容応力度）。呼び名が持つのは公称直径だけで、ほかの諸元は JIS と同じ式と丸めで求める。
 //! 種類と呼び名は、列挙子・一覧・記号・値を一つの表から作り、一覧への足し忘れを起こさない。
 
 use rust_decimal::Decimal;
@@ -7,16 +7,33 @@ use rust_decimal::RoundingStrategy;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal_macros::dec;
 
-use crate::quantity::{Area, Length, LinearMass};
+use crate::allowable_stress::AllowableStress;
+use crate::quantity::{Area, Length, LinearMass, Stress};
 
-/// 鉄筋の種類の表の1行。列が増えたらフィールドを足す
+/// 鉄筋の種類の表の1行。列が増えたらフィールドを足す。許容応力度は RC 規準 表 6.2 [N/mm²]
 struct KindRow {
     symbol: &'static str,
+    /// 長期 引張・圧縮（D25 以下）
+    long: f64,
+    /// 長期 引張・圧縮（D29 以上。表 6.2 注 *）
+    long_d29_or_larger: f64,
+    /// 長期 せん断補強
+    long_shear: f64,
+    /// 短期 引張・圧縮
+    short: f64,
+    /// 短期 せん断補強
+    short_shear: f64,
 }
 
 macro_rules! rebar_kinds {
-    ($($(#[$doc:meta])* $variant:ident => $symbol:literal,)+) => {
-        /// 鉄筋の種類。JIS G 3112 表1 の異形棒鋼の記号。強度は使う Tool の一本で規準と一緒に決める。
+    ($($(#[$doc:meta])* $variant:ident => $symbol:literal {
+        long: $long:literal,
+        long_d29_or_larger: $long_d29:literal,
+        long_shear: $long_shear:literal,
+        short: $short:literal,
+        short_shear: $short_shear:literal $(,)?
+    },)+) => {
+        /// 鉄筋の種類。JIS G 3112 表1 の異形棒鋼の記号のうち、RC 規準 表 6.2 に許容応力度があるもの。
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         pub enum RebarKind {
             $($(#[$doc])* $variant,)+
@@ -27,31 +44,63 @@ macro_rules! rebar_kinds {
 
             fn row(self) -> &'static KindRow {
                 match self {
-                    $(Self::$variant => &KindRow { symbol: $symbol },)+
+                    $(Self::$variant => &KindRow {
+                        symbol: $symbol,
+                        long: $long,
+                        long_d29_or_larger: $long_d29,
+                        long_shear: $long_shear,
+                        short: $short,
+                        short_shear: $short_shear,
+                    },)+
                 }
             }
         }
     };
 }
 
+// 表 6.2 の「SD295A および B」は JIS G 3112:2020 で SD295 に一本化された
 rebar_kinds! {
-    Sd295 => "SD295",
-    Sd345 => "SD345",
-    Sd390 => "SD390",
-    Sd490 => "SD490",
-    Sd590A => "SD590A",
-    Sd590B => "SD590B",
-    Sd685A => "SD685A",
-    Sd685B => "SD685B",
-    /// 主にせん断補強筋に用いる（表1 注 a）
-    Sd685R => "SD685R",
-    /// 主にせん断補強筋に用いる（表1 注 a）
-    Sd785R => "SD785R",
+    Sd295 => "SD295" { long: 195.0, long_d29_or_larger: 195.0, long_shear: 195.0, short: 295.0, short_shear: 295.0 },
+    Sd345 => "SD345" { long: 215.0, long_d29_or_larger: 195.0, long_shear: 195.0, short: 345.0, short_shear: 345.0 },
+    Sd390 => "SD390" { long: 215.0, long_d29_or_larger: 195.0, long_shear: 195.0, short: 390.0, short_shear: 390.0 },
+    Sd490 => "SD490" { long: 215.0, long_d29_or_larger: 195.0, long_shear: 195.0, short: 490.0, short_shear: 490.0 },
+    // RC 規準 表 6.2 に許容応力度が無いので扱わない（2026-10-14 本人の判断）。値の出どころを決めたら戻す
+    // Sd590A => "SD590A",
+    // Sd590B => "SD590B",
+    // Sd685A => "SD685A",
+    // Sd685B => "SD685B",
+    // /// 主にせん断補強筋に用いる（JIS G 3112 表1 注 a）
+    // Sd685R => "SD685R",
+    // /// 主にせん断補強筋に用いる（JIS G 3112 表1 注 a）
+    // Sd785R => "SD785R",
 }
 
 impl RebarKind {
     pub fn symbol(self) -> &'static str {
         self.row().symbol
+    }
+
+    /// 引張・圧縮の許容応力度（RC 規準 表 6.2）。長期は D29 以上の太さで小さくなる（注 *）
+    pub fn allowable_tension_compression(self, designation: BarDesignation) -> AllowableStress {
+        let row = self.row();
+        let long = if designation.nominal_diameter() >= BarDesignation::D29.nominal_diameter() {
+            row.long_d29_or_larger
+        } else {
+            row.long
+        };
+        AllowableStress {
+            long_term: Stress::n_per_mm2(long),
+            short_term: Stress::n_per_mm2(row.short),
+        }
+    }
+
+    /// せん断補強筋としての許容引張応力度（RC 規準 表 6.2）
+    pub fn allowable_shear_reinforcement(self) -> AllowableStress {
+        let row = self.row();
+        AllowableStress {
+            long_term: Stress::n_per_mm2(row.long_shear),
+            short_term: Stress::n_per_mm2(row.short_shear),
+        }
     }
 }
 

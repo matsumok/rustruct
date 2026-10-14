@@ -3,6 +3,7 @@
 
 use std::fmt;
 
+use crate::allowable_stress::AllowableStress;
 use crate::quantity::{Stress, UnitWeight};
 
 /// コンクリートの種類。
@@ -57,6 +58,15 @@ unit_weight_table! {
     ..=60.0 => 24.0,
     ..=80.0 => 24.5,
     ..=FC_MAX => 25.0,
+}
+
+/// 鉄筋の位置。許容付着応力度を分ける（表 6.3 注 1）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BarPosition {
+    /// 上端筋: 曲げ材で、その鉄筋の下に 300 mm 以上のコンクリートが打ち込まれる水平鉄筋
+    Top,
+    /// その他の鉄筋
+    Other,
 }
 
 /// 設計基準強度と種類で特定されるコンクリート。Fc は正の有限値に限る。
@@ -146,6 +156,38 @@ impl Concrete {
         match self.kind {
             ConcreteKind::Normal => normal_unit_weight(self.fc),
         }
+    }
+
+    /// 許容圧縮応力度。長期 Fc/3、短期は長期の 2 倍（RC 規準 表 6.1）
+    pub fn allowable_compression(self) -> AllowableStress {
+        AllowableStress::short_term_times(Stress::n_per_mm2(self.fc_value() / 3.0), 2.0)
+    }
+
+    /// 許容せん断応力度。長期 Fc/30 かつ (0.49 + Fc/100) 以下、短期は長期の 1.5 倍（RC 規準 表 6.1）
+    pub fn allowable_shear(self) -> AllowableStress {
+        let fc = self.fc_value();
+        let long = match self.kind {
+            ConcreteKind::Normal => (fc / 30.0).min(0.49 + fc / 100.0),
+        };
+        AllowableStress::short_term_times(Stress::n_per_mm2(long), 1.5)
+    }
+
+    /// 異形鉄筋の許容付着応力度。短期は長期の 1.5 倍（RC 規準 表 6.3）。
+    /// かぶりが鉄筋径の 1.5 倍未満のときの低減（注 3）は含まない
+    pub fn allowable_bond(self, position: BarPosition) -> AllowableStress {
+        let fc = self.fc_value();
+        let long = match position {
+            // Fc/15 かつ (0.9 + 2Fc/75) 以下
+            BarPosition::Top => (fc / 15.0).min(0.9 + 2.0 * fc / 75.0),
+            // Fc/10 かつ (1.35 + Fc/25) 以下
+            BarPosition::Other => (fc / 10.0).min(1.35 + fc / 25.0),
+        };
+        AllowableStress::short_term_times(Stress::n_per_mm2(long), 1.5)
+    }
+
+    /// Fc [N/mm²]。RC 規準の式は N/mm² で書かれている
+    fn fc_value(self) -> f64 {
+        self.fc.as_n_per_mm2()
     }
 
     /// 鉄筋コンクリートの単位体積重量 γ₁ = γ + 1 kN/m³

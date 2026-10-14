@@ -64,13 +64,7 @@ fn designations_are_named_as_in_jis() {
 }
 
 #[test]
-fn kinds_are_the_ten_jis_symbols() {
+fn kinds_are_the_four_with_allowable_stresses_in_the_rc_standard() {
     let symbols: Vec<_> = RebarKind::ALL.iter().map(|g| g.symbol()).collect();
-    assert_eq!(
-        symbols,
-        [
-            "SD295", "SD345", "SD390", "SD490", "SD590A", "SD590B", "SD685A", "SD685B", "SD685R",
-            "SD785R"
-        ]
-    );
+    assert_eq!(symbols, ["SD295", "SD345", "SD390", "SD490"]);
 }
