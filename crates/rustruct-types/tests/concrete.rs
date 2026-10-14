@@ -66,11 +66,18 @@ fn young_modulus_follows_the_rc_standard_formula() {
 }
 
 #[test]
-fn fc_must_be_positive_and_finite() {
-    for fc in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+fn fc_must_be_finite() {
+    for fc in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert_eq!(normal(fc).unwrap_err(), ConcreteError::NotFinite, "Fc {fc}");
+    }
+}
+
+#[test]
+fn fc_below_18_cannot_be_made() {
+    for fc in [18.0_f64.next_down(), 0.0, -1.0] {
         assert_eq!(
             normal(fc).unwrap_err(),
-            ConcreteError::NotPositive,
+            ConcreteError::BelowMinimum,
             "Fc {fc}"
         );
     }

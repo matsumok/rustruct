@@ -12,7 +12,7 @@ pub enum ConcreteKind {
     Normal,
 }
 
-/// 設計基準強度と種類で特定されるコンクリート。Fc は表の区分の中（0 < Fc ≦ 100 N/mm²）に限る。
+/// 設計基準強度と種類で特定されるコンクリート。Fc は 18 以上 100 以下（N/mm²）に限る。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Concrete {
     fc: Stress,
@@ -22,8 +22,10 @@ pub struct Concrete {
 /// コンクリートを作れない理由。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConcreteError {
-    /// Fc が正の有限値でない
-    NotPositive,
+    /// Fc が有限値でない
+    NotFinite,
+    /// Fc が下限（18 N/mm²）に満たない
+    BelowMinimum,
     /// Fc が単位体積重量の表の区分（100 N/mm² 以下）を超える
     AboveTable,
 }
@@ -31,7 +33,8 @@ pub enum ConcreteError {
 impl fmt::Display for ConcreteError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NotPositive => f.write_str("Fc が正の有限値でない"),
+            Self::NotFinite => f.write_str("Fc が有限値でない"),
+            Self::BelowMinimum => write!(f, "Fc が下限 {FC_MIN} N/mm² に満たない"),
             Self::AboveTable => write!(f, "Fc が単位体積重量の表の上限 {FC_MAX} N/mm² を超える"),
         }
     }
@@ -49,14 +52,20 @@ const NORMAL_UNIT_WEIGHTS: [(f64, f64); 5] = [
     (FC_MAX, 25.0),
 ];
 
+/// Fc の下限 [N/mm²]。これに満たない Fc のコンクリートは作れない
+const FC_MIN: f64 = 18.0;
+
 /// 単位体積重量の表の上限 [N/mm²]。これを超える Fc のコンクリートは作れない
 const FC_MAX: f64 = 100.0;
 
 impl Concrete {
     pub fn new(fc: Stress, kind: ConcreteKind) -> Result<Self, ConcreteError> {
         let value = fc.as_n_per_mm2();
-        if !value.is_finite() || value <= 0.0 {
-            return Err(ConcreteError::NotPositive);
+        if !value.is_finite() {
+            return Err(ConcreteError::NotFinite);
+        }
+        if value < FC_MIN {
+            return Err(ConcreteError::BelowMinimum);
         }
         if value > FC_MAX {
             return Err(ConcreteError::AboveTable);
