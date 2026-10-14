@@ -213,7 +213,43 @@ fn concrete_page_reads_input_then_results_then_their_basis() {
 }
 
 #[test]
-fn results_carry_their_unit_after_the_number() {
+fn units_sit_in_column_heads_and_table_titles_not_after_numbers() {
     let text = text_of(&render_path("/data/concrete"));
-    assert_in_order(&text, &["23.0 kN/m³", "2.27×10⁴ N/mm²"]);
+    assert_in_order(
+        &text,
+        &[
+            "γ（kN/m³）",
+            "E（N/mm²）",
+            "23.0",
+            "2.27×10⁴",
+            "許容応力度（N/mm²）",
+        ],
+    );
+    for after_number in ["23.0 kN/m³", "2.27×10⁴ N/mm²"] {
+        assert!(
+            !text.contains(after_number),
+            "数字の後に単位がある: {after_number}"
+        );
+    }
+}
+
+#[test]
+fn allowable_stress_basis_has_long_and_short_term_columns_and_no_notes() {
+    let text = text_of(&render_path("/data/concrete"));
+    assert_in_order(
+        &text,
+        &[
+            "長期",
+            "短期",
+            "圧縮",
+            "Fc/3",
+            "長期 × 2",
+            "せん断",
+            "min(Fc/30, 0.49+Fc/100)",
+            "長期 × 1.5",
+        ],
+    );
+    for note in ["短期は長期の", "かぶりが", "Fc は N/mm²"] {
+        assert!(!text.contains(note), "注記「{note}」が出ている");
+    }
 }

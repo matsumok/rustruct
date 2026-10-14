@@ -131,6 +131,14 @@ impl Allowable {
         }
     }
 
+    /// 短期の根拠。規準の「長期に対する値の n 倍」
+    fn short_term_formula(self) -> &'static str {
+        match self {
+            Self::Compression => "長期 × 2",
+            Self::Shear | Self::BondTop | Self::BondOther => "長期 × 1.5",
+        }
+    }
+
     fn of(self, c: &Concrete) -> AllowableStress {
         match self {
             Self::Compression => c.allowable_compression(),
@@ -241,14 +249,16 @@ pub(crate) fn ConcretePage() -> Element {
                     }
                     div { class: "mt-6",
                         Table {
+                            thead {
+                                HeadRow {
+                                    HeadCell { "気乾単位体積重量 γ（kN/m³）" }
+                                    HeadCell { "ヤング係数 E（N/mm²）" }
+                                }
+                            }
                             tbody {
                                 Row {
-                                    TextCell { first: true, "気乾単位体積重量 γ" }
-                                    NumCell { {with_unit(&unit_weight, "kN/m³")} }
-                                }
-                                Row {
-                                    TextCell { first: true, "ヤング係数 E" }
-                                    NumCell { {with_unit(&young_modulus, "N/mm²")} }
+                                    NumCell { {unit_weight} }
+                                    NumCell { {young_modulus} }
                                 }
                             }
                         }
@@ -273,7 +283,7 @@ pub(crate) fn ConcretePage() -> Element {
                         }
                     }
                 }
-                Column { id: "basis",
+                Column { id: "basis", divided: true,
                     Caption { first: true, "気乾単位体積重量" }
                     Table {
                         thead {
@@ -301,26 +311,26 @@ pub(crate) fn ConcretePage() -> Element {
                         "E = 3.35×10⁴ × (γ/24)² × (Fc/60)"
                         sup { "1/3" }
                     }
-                    Notes {
-                        li { "Fc は N/mm²、γ は kN/m³" }
-                    }
                     // 出典: RC 規準（2024 年版）（画面には出さない。ADR に書いてある）
 
-                    Caption { "許容応力度（長期、N/mm²）" }
+                    Caption { "許容応力度（N/mm²）" }
                     Table {
+                        thead {
+                            HeadRow {
+                                HeadCell { first: true, "" }
+                                HeadCell { first: true, "長期" }
+                                HeadCell { first: true, "短期" }
+                            }
+                        }
                         tbody {
                             for a in Allowable::ALL {
                                 Row {
                                     TextCell { first: true, {a.name()} }
                                     FormulaCell { {a.long_term_formula()} }
+                                    FormulaCell { {a.short_term_formula()} }
                                 }
                             }
                         }
-                    }
-                    Notes {
-                        li { "短期は長期の 1.5 倍。圧縮だけ 2 倍" }
-                        li { "付着は異形鉄筋。上端筋は、曲げ材でその鉄筋の下に 300 mm 以上のコンクリートが打ち込まれる水平鉄筋" }
-                        li { "かぶりが鉄筋径の 1.5 倍未満なら、付着に かぶり厚さ /（鉄筋径 × 1.5）を掛ける" }
                     }
                     // 出典: RC 規準（2024 年版）表 6.1・6.3（画面には出さない。ADR に書いてある）
                 }
@@ -339,19 +349,24 @@ fn Columns(children: Element) -> Element {
 }
 
 /// 本文の1列。幅は1単位まで。スマホで縦に積むとき、2列目からは `space-7` を空ける。
-/// `id` を付けると住所の `#id` でその列へ飛べる。
+/// `divided` の列は前の列との間に `line` の区切りを引く（スマホでは上、PC では左）。入力と結果の列と、
+/// 入力に依らない根拠の列を分けるのに使う。`id` を付けると住所の `#id` でその列へ飛べる。
 #[component]
 fn Column(
     #[props(default)] first: bool,
+    #[props(default)] divided: bool,
     #[props(default)] id: &'static str,
     children: Element,
 ) -> Element {
-    rsx! {
-        div {
-            class: if first { "w-full min-w-0 max-w-column" } else { "mt-7 md:mt-0 w-full min-w-0 max-w-column" },
-            id: (!id.is_empty()).then_some(id),
-            {children}
+    let class = match (first, divided) {
+        (true, _) => "w-full min-w-0 max-w-column",
+        (false, false) => "mt-7 md:mt-0 w-full min-w-0 max-w-column",
+        (false, true) => {
+            "mt-7 pt-7 border-t border-line md:mt-0 md:pt-0 md:border-t-0 md:border-l md:pl-4 w-full min-w-0 max-w-column"
         }
+    };
+    rsx! {
+        div { class, id: (!id.is_empty()).then_some(id), {children} }
     }
 }
 
@@ -513,15 +528,6 @@ pub(crate) fn RebarPage() -> Element {
                 }
             }
         }
-    }
-}
-
-/// 数字の後に付ける単位は括弧なし（「23.0 kN/m³」）。計算できない「—」には付けない
-fn with_unit(value: &str, unit: &str) -> String {
-    if value == NOT_COMPUTED {
-        value.to_string()
-    } else {
-        format!("{value} {unit}")
     }
 }
 

@@ -282,6 +282,10 @@
     border-style: var(--tw-border-style);
     border-width: 2px;
   }
+  .border-t {
+    border-top-style: var(--tw-border-style);
+    border-top-width: 1px;
+  }
   .border-b {
     border-bottom-style: var(--tw-border-style);
     border-bottom-width: 1px;
@@ -318,6 +322,9 @@
   }
   .py-8 {
     padding-block: var(--spacing-8);
+  }
+  .pt-7 {
+    padding-top: var(--spacing-7);
   }
   .pr-3 {
     padding-right: var(--spacing-3);
@@ -421,6 +428,23 @@
   .md\:gap-x-4 {
     @media (width >= 48rem) {
       column-gap: var(--spacing-4);
+    }
+  }
+  .md\:border-t-0 {
+    @media (width >= 48rem) {
+      border-top-style: var(--tw-border-style);
+      border-top-width: 0px;
+    }
+  }
+  .md\:border-l {
+    @media (width >= 48rem) {
+      border-left-style: var(--tw-border-style);
+      border-left-width: 1px;
+    }
+  }
+  .md\:pl-4 {
+    @media (width >= 48rem) {
+      padding-left: var(--spacing-4);
     }
   }
 }
