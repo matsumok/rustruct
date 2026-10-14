@@ -19,7 +19,8 @@ step() {
     theme)   git diff --exit-code -- crates/rustruct-web/theme.css ;;
     # SSG（ADR-0001）。client → server の順に建てる。並行だと server の SSG が client の index.html（殻）
     # を待たずに走り、WASM を読まない HTML になる
-    build)   dx build --ssg --release --force-sequential ;;
+    # 前のビルドの出力は先に消す。dx は古いハッシュ付きのアセットを残し、smoke が「1 つずつ」で落ちる
+    build)   rm -rf target/dx/rustruct-web/release/web && dx build --ssg --release --force-sequential ;;
     # SSG の出力のスモークテスト。CI では build と別の step にして、建たないのか中身が違うのかを分ける
     smoke)   sh scripts/check-ssg.sh ;;
     ssg)     step build && step smoke ;;
