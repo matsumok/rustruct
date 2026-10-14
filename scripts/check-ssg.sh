@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# SSG 出力の煙テスト（Issue #12）。`dx build --ssg --release --force-sequential` が出した配信物を外から見る。
+# SSG 出力のスモークテスト（Issue #12）。`dx build --ssg --release --force-sequential` が出した配信物を外から見る。
 #   sh scripts/check-ssg.sh [出力ディレクトリ]
 #   既定: target/dx/rustruct-web/release/web/public
 # 見るもの: 住所ごとの HTML が静的なファイルとしてあり（SPA のフォールバックに頼らない）、JavaScript 無しで

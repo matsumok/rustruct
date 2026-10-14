@@ -1,6 +1,6 @@
 name: CI
 
-# main への push: 検査 → ビルド → 煙テスト → 本番へ配置 → 本番 URL の煙テスト。
+# main への push: 検査 → ビルド → スモークテスト → 本番へ配置 → 本番 URL のスモークテスト。
 # PR: 同じ検査のあとプレビューへ配置し、URL を PR のコメントと deployment に付ける。PR が閉じたらプレビューを消す。
 # 以前は push ごとに回していたが、プレビューを PR に結ぶには PR の番号が要るので pull_request に変えた。
 # 両方に付けると PR ブランチへの push が二重に走るため、push は main に絞る（PR の無いブランチは回らない）。
@@ -31,7 +31,7 @@ env:
 
 jobs:
   check:
-    name: 検査 → ビルド → 煙テスト
+    name: 検査 → ビルド → スモークテスト
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
@@ -124,7 +124,7 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: ${{ env.WRANGLER_VERSION }}
           command: deploy
-      - name: live (本番 URL の煙テスト)
+      - name: live (本番 URL のスモークテスト)
         run: sh scripts/check-live.sh https://rustruct.matsumok.com
 
   preview:
@@ -159,7 +159,7 @@ jobs:
         run: |
           test -n "$URL" || { echo "wrangler preview が URL を返さなかった"; exit 1; }
           gh pr comment "$PR" --edit-last --create-if-none --body "プレビュー: $URL （$SHA）"
-      - name: live (プレビュー URL の煙テスト)
+      - name: live (プレビュー URL のスモークテスト)
         run: sh scripts/check-live.sh "${{ steps.preview.outputs.preview-url }}"
 
   cleanup:

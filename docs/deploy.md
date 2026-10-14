@@ -7,11 +7,11 @@
 ## 全体像
 
 ```
-main に push ──→ GitHub Actions ──→ 検査（fmt … test）──→ dx build --ssg ──→ 煙テスト（check-ssg.sh）
+main に push ──→ GitHub Actions ──→ 検査（fmt … test）──→ dx build --ssg ──→ スモークテスト（check-ssg.sh）
                                      ──→ stage-deploy.sh（404/index.html → 404.html）
                                      ──→ wrangler deploy ──→ Worker「rustruct」の静的アセット ──→ rustruct.matsumok.com
-                                     ──→ check-live.sh（本番 URL の煙テスト）
-PR を開く／更新 ──→ 同じ検査・ビルド・煙テスト・stage-deploy.sh ──→ wrangler preview --name pr-<番号>
+                                     ──→ check-live.sh（本番 URL のスモークテスト）
+PR を開く／更新 ──→ 同じ検査・ビルド・スモークテスト・stage-deploy.sh ──→ wrangler preview --name pr-<番号>
                                      ──→ https://pr-<番号>-rustruct.<サブドメイン>.workers.dev ──→ check-live.sh
                                      ──→ PR にコメント（1 つを書き換える）と deployment「preview」
 PR を閉じる ──→ wrangler preview delete
@@ -19,7 +19,7 @@ PR を閉じる ──→ wrangler preview delete
 
 - 設定は `wrangler.toml` 1 枚。Worker のスクリプト（JS）は無く、`assets` だけ。wrangler は CI が npm から落として使う道具で、リポジトリに Node の物は置かない
 - 配信物は `sh scripts/check.sh stage`（`scripts/stage-deploy.sh`）が作る `target/deploy`。SSG の出力との違いは not-found の置き場だけ（下の「not-found」）
-- CI の job は 検査→ビルド→煙テスト（`check`）、本番配置（`deploy`）、プレビュー配置（`preview`）、掃除（`cleanup`）に分かれ、どこで落ちたかが job と step の名前で分かる
+- CI の job は 検査→ビルド→スモークテスト（`check`）、本番配置（`deploy`）、プレビュー配置（`preview`）、掃除（`cleanup`）に分かれ、どこで落ちたかが job と step の名前で分かる
 
 ## 一度だけ人がやること（Cloudflare 側）
 

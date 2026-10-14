@@ -20,7 +20,7 @@ step() {
     # SSG（ADR-0001）。client → server の順に建てる。並行だと server の SSG が client の index.html（殻）
     # を待たずに走り、WASM を読まない HTML になる
     build)   dx build --ssg --release --force-sequential ;;
-    # SSG の出力の煙テスト。CI では build と別の step にして、建たないのか中身が違うのかを分ける
+    # SSG の出力のスモークテスト。CI では build と別の step にして、建たないのか中身が違うのかを分ける
     smoke)   sh scripts/check-ssg.sh ;;
     ssg)     step build && step smoke ;;
     # 配信用ディレクトリ target/deploy（not-found を 404.html に）。CI はこれを配置の job へ渡す

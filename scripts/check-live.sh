@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# 配置後の煙テスト（Issue #13）。本番やプレビューの URL を外から見る。CI が配置の直後に回す。
+# 配置後のスモークテスト（Issue #13）。本番やプレビューの URL を外から見る。CI が配置の直後に回す。
 #   sh scripts/check-live.sh URL
 #   例: sh scripts/check-live.sh https://rustruct.matsumok.com
 # 見るもの: 住所ごとの HTML が 200 で届き、末尾スラッシュ無しは 307 で揃えられ、未知の住所は 404 で not-found の
