@@ -27,4 +27,4 @@ The five canonical triage roles use their default label strings (`needs-triage`,
 
 ### Domain docs
 
-Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Multi-context: `GLOSSARY-MAP.md` at the repo root points at the site-wide `GLOSSARY.md` and one `docs/tools/<tool>/GLOSSARY.md` per Tool. Site-wide decisions live in `docs/adr/`, Tool-specific ones in `docs/tools/<tool>/adr/`. See `docs/agents/domain.md`.

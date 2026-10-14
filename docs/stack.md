@@ -9,7 +9,7 @@
 
 | クレート | 役割 | 依存 |
 |---|---|---|
-| `rustruct-types` | 共有型。Model と保存形式 | serde のみ |
+| `rustruct-types` | 共有型。物理量（ADR-0004）、材料とその性質を求めるメソッド（`docs/materials/`）、Model と保存形式 | serde のみ |
 | `rustruct-calc` | 計算核。I/O も非同期も持たない純粋関数 | `rustruct-types` |
 | `rustruct-web` | Dioxus fullstack アプリ。`web` / `server` feature で切替。SSG のプリレンダーもここ | 上2つ、`charta` |
 | `charta` | グラフ描画クレート。汎用。`rustruct-types` に依存しない。後で別リポジトリに出せる。設計メモは `docs/ui-decisions.md` のグラフ描画ライブラリの節 | なし |
