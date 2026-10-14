@@ -2,6 +2,5 @@
 //! 役割と依存の向きは `docs/stack.md`。
 
 pub mod concrete;
-mod jis_rounding;
 pub mod quantity;
 pub mod rebar;

@@ -8,10 +8,10 @@ fail=0
 tree() { pkg=$1; shift; cargo tree -p "$pkg" -e normal --prefix none --locked "$@"; }
 direct_deps() { tree "$1" --depth 1 | tail -n +2 | awk '{print $1}' | sort -u; }
 
-# rustruct-types の直接依存は serde だけ
-got=$(direct_deps rustruct-types)
-if [ "$got" != "serde" ]; then
-  echo "NG: rustruct-types の直接依存が docs/stack.md（serde のみ）と違う:"; echo "$got"; fail=1
+# rustruct-types の直接依存は serde と rust_decimal（JIS の丸め、docs/materials/adr/0002）だけ
+got=$(direct_deps rustruct-types | tr '\n' ' ')
+if [ "$got" != "rust_decimal rust_decimal_macros serde " ]; then
+  echo "NG: rustruct-types の直接依存が docs/stack.md（serde、rust_decimal）と違う: $got"; fail=1
 fi
 
 # rustruct-calc の直接依存は rustruct-types だけ

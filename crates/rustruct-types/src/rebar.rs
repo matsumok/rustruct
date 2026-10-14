@@ -2,7 +2,11 @@
 //! `docs/materials/adr/0002`。呼び名が持つのは公称直径だけで、ほかの諸元は JIS と同じ式と丸めで求める。
 //! 種類と呼び名は、列挙子・一覧・記号・値を一つの表から作り、一覧への足し忘れを起こさない。
 
-use crate::jis_rounding::Decimal;
+use rust_decimal::Decimal;
+use rust_decimal::RoundingStrategy;
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal_macros::dec;
+
 use crate::quantity::{Area, Length, LinearMass};
 
 /// 鉄筋の種類の表の1行。列が増えたらフィールドを足す
@@ -54,12 +58,12 @@ impl RebarKind {
 /// 呼び名の表の1行。列が増えたらフィールドを足す
 struct DesignationRow {
     name: &'static str,
-    /// 公称直径 d [0.01 mm]。表6 の値。呼び名が持つ唯一の値
-    diameter_hundredths_of_mm: i128,
+    /// 公称直径 d [mm]。表6 の値。呼び名が持つ唯一の値
+    diameter_mm: Decimal,
 }
 
 macro_rules! bar_designations {
-    ($($variant:ident => $diameter_hundredths_of_mm:literal,)+) => {
+    ($($variant:ident => $diameter_mm:literal,)+) => {
         /// 呼び名。JIS G 3112 表6 の異形棒鋼。
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         pub enum BarDesignation {
@@ -69,11 +73,11 @@ macro_rules! bar_designations {
         impl BarDesignation {
             pub const ALL: &[Self] = &[$(Self::$variant,)+];
 
-            fn row(self) -> &'static DesignationRow {
+            fn row(self) -> DesignationRow {
                 match self {
-                    $(Self::$variant => &DesignationRow {
+                    $(Self::$variant => DesignationRow {
                         name: stringify!($variant),
-                        diameter_hundredths_of_mm: $diameter_hundredths_of_mm,
+                        diameter_mm: dec!($diameter_mm),
                     },)+
                 }
             }
@@ -81,32 +85,34 @@ macro_rules! bar_designations {
     };
 }
 
-// 呼び名 => 公称直径 [0.01 mm]
+// 呼び名 => 公称直径 [mm]
 bar_designations! {
-    D4 => 423,
-    D5 => 529,
-    D6 => 635,
-    D8 => 794,
-    D10 => 953,
-    D13 => 1270,
-    D16 => 1590,
-    D19 => 1910,
-    D22 => 2220,
-    D25 => 2540,
-    D29 => 2860,
-    D32 => 3180,
-    D35 => 3490,
-    D38 => 3810,
-    D41 => 4130,
-    D51 => 5080,
+    D4 => 4.23,
+    D5 => 5.29,
+    D6 => 6.35,
+    D8 => 7.94,
+    D10 => 9.53,
+    D13 => 12.7,
+    D16 => 15.9,
+    D19 => 19.1,
+    D22 => 22.2,
+    D25 => 25.4,
+    D29 => 28.6,
+    D32 => 31.8,
+    D35 => 34.9,
+    D38 => 38.1,
+    D41 => 41.3,
+    D51 => 50.8,
 }
 
 /// 公称周長 l = 3.142 × d（表6 注 a）
-const PERIMETER_COEFFICIENT: Decimal = Decimal::new(3142, 3);
+const PERIMETER_COEFFICIENT: Decimal = dec!(3.142);
 /// 公称断面積 S = 0.7854 × d²（表6 注 a）
-const AREA_COEFFICIENT: Decimal = Decimal::new(7854, 4);
+const AREA_COEFFICIENT: Decimal = dec!(0.7854);
 /// 単位質量 w = 7.85 × 10⁻³ × S。鋼 1 cm³ を 7.85 g とする（表6 注 a）。S [mm²] から w [kg/m]
-const MASS_COEFFICIENT: Decimal = Decimal::new(785, 5);
+const MASS_COEFFICIENT: Decimal = dec!(0.00785);
+/// JIS Z 8401 の規則A: 丸めの幅の整数倍のうち近い方、等しく近ければ偶数倍の方
+const RULE_A: RoundingStrategy = RoundingStrategy::MidpointNearestEven;
 
 impl BarDesignation {
     pub fn name(self) -> &'static str {
@@ -115,34 +121,57 @@ impl BarDesignation {
 
     /// 公称直径 d [mm] を 10 進で正確に
     fn exact_diameter(self) -> Decimal {
-        Decimal::new(self.row().diameter_hundredths_of_mm, 2)
+        self.row().diameter_mm
     }
 
     /// 公称断面積 S [mm²] を 10 進で正確に。有効数字 4 桁に規則A で丸めた値。単位質量はこの値から求める
     fn exact_area(self) -> Decimal {
         let d = self.exact_diameter();
-        AREA_COEFFICIENT.mul(d).mul(d).round_significant(4)
+        (AREA_COEFFICIENT * d * d)
+            .round_sf_with_strategy(4, RULE_A)
+            .expect("桁は 28 桁に遠く及ばない")
     }
 
     pub fn nominal_diameter(self) -> Length {
-        Length::mm(self.exact_diameter().to_f64())
+        Length::mm(to_f64(self.exact_diameter()))
     }
 
     /// 公称周長 l。小数点以下 1 桁に規則A で丸める
     pub fn nominal_perimeter(self) -> Length {
-        let l = PERIMETER_COEFFICIENT
-            .mul(self.exact_diameter())
-            .round_decimal_places(1);
-        Length::mm(l.to_f64())
+        let l = (PERIMETER_COEFFICIENT * self.exact_diameter()).round_dp_with_strategy(1, RULE_A);
+        Length::mm(to_f64(l))
     }
 
     pub fn nominal_area(self) -> Area {
-        Area::mm2(self.exact_area().to_f64())
+        Area::mm2(to_f64(self.exact_area()))
     }
 
     /// 単位質量 w。丸めた公称断面積から求め、有効数字 3 桁に規則A で丸める
     pub fn unit_mass(self) -> LinearMass {
-        let w = MASS_COEFFICIENT.mul(self.exact_area()).round_significant(3);
-        LinearMass::kg_per_m(w.to_f64())
+        let w = (MASS_COEFFICIENT * self.exact_area())
+            .round_sf_with_strategy(3, RULE_A)
+            .expect("桁は 28 桁に遠く及ばない");
+        LinearMass::kg_per_m(to_f64(w))
+    }
+}
+
+fn to_f64(value: Decimal) -> f64 {
+    value.to_f64().expect("諸元は f64 に収まる")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 表6 には丸めのちょうど中間が無く、表との照合では規則A と四捨五入を区別できないので、ここで確かめる
+    #[test]
+    fn rule_a_rounds_a_tie_to_the_even_neighbour() {
+        // JIS Z 8401 の例: 丸めの幅 0.1 で 12.25 → 12.2、12.35 → 12.4
+        assert_eq!(dec!(12.25).round_dp_with_strategy(1, RULE_A), dec!(12.2));
+        assert_eq!(dec!(12.35).round_dp_with_strategy(1, RULE_A), dec!(12.4));
+        assert_eq!(
+            dec!(1138.5).round_sf_with_strategy(4, RULE_A),
+            Some(dec!(1138))
+        );
     }
 }

@@ -18,5 +18,7 @@ charta = { path = "crates/charta" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
+rust_decimal = { version = "1.43", default-features = false }
+rust_decimal_macros = { version = "1.40" }
 dioxus = { version = "0.7", features = ["fullstack", "router"] }
 dioxus-ssr = { version = "0.7" }
