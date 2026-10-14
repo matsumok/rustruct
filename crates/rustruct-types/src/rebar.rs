@@ -5,6 +5,11 @@
 use crate::jis_rounding::Decimal;
 use crate::quantity::{Area, Length, LinearMass};
 
+/// 鉄筋の種類の表の1行。列が増えたらフィールドを足す
+struct KindRow {
+    symbol: &'static str,
+}
+
 macro_rules! rebar_kinds {
     ($($(#[$doc:meta])* $variant:ident => $symbol:literal,)+) => {
         /// 鉄筋の種類。JIS G 3112 表1 の異形棒鋼の記号。強度は使う Tool の一本で規準と一緒に決める。
@@ -16,9 +21,9 @@ macro_rules! rebar_kinds {
         impl RebarKind {
             pub const ALL: &[Self] = &[$(Self::$variant,)+];
 
-            pub fn symbol(self) -> &'static str {
+            fn row(self) -> &'static KindRow {
                 match self {
-                    $(Self::$variant => $symbol,)+
+                    $(Self::$variant => &KindRow { symbol: $symbol },)+
                 }
             }
         }
@@ -40,8 +45,21 @@ rebar_kinds! {
     Sd785R => "SD785R",
 }
 
+impl RebarKind {
+    pub fn symbol(self) -> &'static str {
+        self.row().symbol
+    }
+}
+
+/// 呼び名の表の1行。列が増えたらフィールドを足す
+struct DesignationRow {
+    name: &'static str,
+    /// 公称直径 d [0.01 mm]。表6 の値。呼び名が持つ唯一の値
+    diameter_hundredths_of_mm: i128,
+}
+
 macro_rules! bar_designations {
-    ($($variant:ident => $hundredths_of_mm:literal,)+) => {
+    ($($variant:ident => $diameter_hundredths_of_mm:literal,)+) => {
         /// 呼び名。JIS G 3112 表6 の異形棒鋼。
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         pub enum BarDesignation {
@@ -51,16 +69,12 @@ macro_rules! bar_designations {
         impl BarDesignation {
             pub const ALL: &[Self] = &[$(Self::$variant,)+];
 
-            pub fn name(self) -> &'static str {
+            fn row(self) -> &'static DesignationRow {
                 match self {
-                    $(Self::$variant => stringify!($variant),)+
-                }
-            }
-
-            /// 公称直径 d [mm] を 10 進で正確に。表6 の値。呼び名が持つ唯一の値
-            fn exact_diameter(self) -> Decimal {
-                match self {
-                    $(Self::$variant => Decimal::new($hundredths_of_mm, 2),)+
+                    $(Self::$variant => &DesignationRow {
+                        name: stringify!($variant),
+                        diameter_hundredths_of_mm: $diameter_hundredths_of_mm,
+                    },)+
                 }
             }
         }
@@ -95,6 +109,15 @@ const AREA_COEFFICIENT: Decimal = Decimal::new(7854, 4);
 const MASS_COEFFICIENT: Decimal = Decimal::new(785, 5);
 
 impl BarDesignation {
+    pub fn name(self) -> &'static str {
+        self.row().name
+    }
+
+    /// 公称直径 d [mm] を 10 進で正確に
+    fn exact_diameter(self) -> Decimal {
+        Decimal::new(self.row().diameter_hundredths_of_mm, 2)
+    }
+
     /// 公称断面積 S [mm²] を 10 進で正確に。有効数字 4 桁に規則A で丸めた値。単位質量はこの値から求める
     fn exact_area(self) -> Decimal {
         let d = self.exact_diameter();
