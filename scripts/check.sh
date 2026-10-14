@@ -18,8 +18,13 @@ step() {
     # build.rs が tokens.json から theme.css を作り直す。差分が出たら生成物の commit 忘れ
     theme)   git diff --exit-code -- crates/rustruct-web/theme.css ;;
     # SSG（ADR-0001）。client → server の順に建てる。並行だと server の SSG が client の index.html（殻）
-    # を待たずに走り、WASM を読まない HTML になる。出力の検査は check-ssg.sh
-    ssg)     dx build --ssg --release --force-sequential && sh scripts/check-ssg.sh ;;
+    # を待たずに走り、WASM を読まない HTML になる
+    build)   dx build --ssg --release --force-sequential ;;
+    # SSG の出力の煙テスト。CI では build と別の step にして、建たないのか中身が違うのかを分ける
+    smoke)   sh scripts/check-ssg.sh ;;
+    ssg)     step build && step smoke ;;
+    # 配信用ディレクトリ target/deploy（not-found を 404.html に）。CI はこれを配置の job へ渡す
+    stage)   sh scripts/stage-deploy.sh ;;
     # dx build が内蔵 Tailwind で assets/tailwind.css を作り直す。差分が出たら生成物の commit 忘れ。
     # dx は Tailwind の失敗を黙殺するので、走らなかったときは差分ゼロで素通りする。classes が補う
     tailwind) git diff --exit-code -- crates/rustruct-web/assets/tailwind.css ;;
@@ -30,7 +35,7 @@ step() {
 if [ "$#" -gt 0 ]; then
   for s in "$@"; do step "$s"; done
 else
-  for s in fmt deps markup classes clippy server wasm test theme ssg tailwind; do
+  for s in fmt deps markup classes clippy server wasm test theme build smoke tailwind stage; do
     echo "== $s"; step "$s"
   done
 fi

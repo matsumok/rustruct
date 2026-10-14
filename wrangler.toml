@@ -1,0 +1,25 @@
+# Cloudflare Workers Static Assets の設定（Issue #13、ADR-0002）。配信物は HTML・WASM・CSS だけで、
+# Worker のスクリプト（main）は持たない。wrangler は CI（.github/workflows/ci.yml）が道具として使うだけ。
+# 手順は docs/deploy.md
+name = "rustruct"
+compatibility_date = "2026-10-01"
+
+# 本番はカスタムドメインだけ。workers.dev の本番 URL は作らない（同じ中身の住所を 2 つ作らない）。
+# custom_domain = true で、wrangler deploy が Worker にドメインを結び、DNS レコードは Cloudflare が作る
+workers_dev = false
+routes = [{ pattern = "rustruct.matsumok.com", custom_domain = true }]
+# PR のプレビュー（wrangler preview）は workers.dev に出す: https://pr-<番号>-rustruct.<サブドメイン>.workers.dev
+# preview_urls は Worker の workers.dev 側のプレビュー URL の有効・無効（Version URLs と共通の設定）。省略すると
+# 初期値が workers_dev に従って無効になりうるので明示する。省略しても既に入った設定は変わらない
+preview_urls = true
+
+[assets]
+# scripts/stage-deploy.sh の出力（SSG の出力の not-found を 404.html に移したもの）
+directory = "target/deploy"
+# /tools は 307 で /tools/ へ、/tools/ が tools/index.html。SSG が書く住所ごとの index.html に合わせる
+html_handling = "auto-trailing-slash"
+# 未知の住所にはルートの 404.html を 404 で返す。SPA のフォールバック（index.html を返す）にはしない
+not_found_handling = "404-page"
+
+# wrangler preview に必須。本番と別の設定（バインディングなど）は無いので空
+[previews]

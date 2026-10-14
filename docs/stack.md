@@ -37,8 +37,10 @@
 
 ## 配信
 
-- Cloudflare Workers Static Assets に配置する（Pages は維持モードのため使わない）
-- GitHub Actions で `dx build --ssg` し、wrangler で配置。`main` への push で本番、PR でプレビュー URL
+- Cloudflare Workers Static Assets に配置する（Pages は維持モードのため使わない）。設定は `wrangler.toml` 1 枚で、Worker のスクリプトは無く `assets` だけ。手順と困ったときは `docs/deploy.md`
+- GitHub Actions で `dx build --ssg` し、wrangler で配置。`main` への push で本番（`wrangler deploy`、カスタムドメイン `rustruct.matsumok.com`。workers.dev の本番 URL は作らない）、PR で `wrangler preview --name pr-<番号>` のプレビュー URL（workers.dev）。PR を閉じるとプレビューを消す。wrangler は CI が npm から落として使う道具で、リポジトリに JS も package.json も置かない
+- 配信物は `scripts/stage-deploy.sh` が SSG の出力から作る `target/deploy`。違いは not-found だけで、SSG の `404/index.html` を配信側が探すルートの `404.html` に移す（`not_found_handling = "404-page"`）。`html_handling = "auto-trailing-slash"` で `/tools` は `/tools/` に転送され、SSG の `tools/index.html` が届く
+- 配置の直後に `scripts/check-live.sh <URL>` が本番とプレビューを外から見る（住所ごとの HTML、転送、未知の住所の 404、CSS・WASM と Content-Type）。hydration と見た目は人の目（`docs/deploy.md`）
 - 公開面にサーバープロセスは置かない。計算はブラウザ内で完結する（ADR-0002）
 
 ## 認証と制限

@@ -1,18 +1,35 @@
 name: CI
 
-# push ごとに回す。同じリポジトリのブランチからの PR には push の結果がそのまま表示されるので
-# pull_request トリガーは付けない（付けると PR ブランチへの push が二重に走る）。
-# 各 step のコマンドは scripts/check.sh にある。手元でも同じものを回せる。
+# main への push: 検査 → ビルド → 煙テスト → 本番へ配置 → 本番 URL の煙テスト。
+# PR: 同じ検査のあとプレビューへ配置し、URL を PR のコメントと deployment に付ける。PR が閉じたらプレビューを消す。
+# 以前は push ごとに回していたが、プレビューを PR に結ぶには PR の番号が要るので pull_request に変えた。
+# 両方に付けると PR ブランチへの push が二重に走るため、push は main に絞る（PR の無いブランチは回らない）。
+# 各 step のコマンドは scripts/check.sh にある。手元でも同じものを回せる。配置の手順と秘密は docs/deploy.md
 on:
   push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
 
+permissions:
+  contents: read
+  pull-requests: write
+
+# PR では古い run を取り消す。main では取り消さない（配置の途中で止めない。順に待つ）
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # preview コマンドと preview-url 出力は wrangler 4.136.3 以上、wrangler-action v4.1.3 以上（action.yml の記述）
+  WRANGLER_VERSION: "4.145.0"
+  # PR ごとに 1 つのプレビュー。push のたびに同じ URL が新しい中身になる（push のときは空で、使わない）
+  PREVIEW_NAME: pr-${{ github.event.pull_request.number }}
 
 jobs:
   check:
-    name: fmt / deps / markup / classes / clippy / wasm / test / theme / ssg
+    name: 検査 → ビルド → 煙テスト
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -63,8 +80,94 @@ jobs:
       - name: theme.css が tokens.json と合っている
         run: sh scripts/check.sh theme
 
-      - name: ssg (dx build --ssg の出力に住所ごとの HTML と WASM がある)
-        run: sh scripts/check.sh ssg
+      - name: build (dx build --ssg)
+        run: sh scripts/check.sh build
+
+      - name: smoke (SSG の出力に住所ごとの HTML と WASM がある)
+        run: sh scripts/check.sh smoke
 
       - name: assets/tailwind.css がマークアップと合っている (dx build が作り直した生成物に差分が無い)
         run: sh scripts/check.sh tailwind
+
+      # 配信物。not-found を Workers Static Assets が探す 404.html に移す。配置の job へ渡す
+      - name: stage (配信用ディレクトリ target/deploy)
+        run: sh scripts/check.sh stage
+      - uses: actions/upload-artifact@v7
+        with:
+          name: site
+          path: target/deploy
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy:
+    name: 配置 (本番)
+    needs: check
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://rustruct.matsumok.com
+    steps:
+      - uses: actions/checkout@v7 # wrangler.toml と scripts/ のため
+      - uses: actions/download-artifact@v8
+        with:
+          name: site
+          path: target/deploy
+      # wrangler は npm から落として使うだけ。リポジトリに JS も package.json も持たない
+      - name: wrangler deploy
+        uses: cloudflare/wrangler-action@v4.1.3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: ${{ env.WRANGLER_VERSION }}
+          command: deploy
+      - name: live (本番 URL の煙テスト)
+        run: sh scripts/check-live.sh https://rustruct.matsumok.com
+
+  preview:
+    name: 配置 (プレビュー)
+    needs: check
+    # fork からの PR には Secrets が渡らないので、同じリポジトリのブランチだけ
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment:
+      name: preview
+      url: ${{ steps.preview.outputs.preview-url }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: site
+          path: target/deploy
+      - name: wrangler preview
+        id: preview
+        uses: cloudflare/wrangler-action@v4.1.3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: ${{ env.WRANGLER_VERSION }}
+          command: preview --name ${{ env.PREVIEW_NAME }}
+      - name: PR にプレビュー URL を書く (コメントは 1 つを書き換える)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          URL: ${{ steps.preview.outputs.preview-url }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test -n "$URL" || { echo "wrangler preview が URL を返さなかった"; exit 1; }
+          gh pr comment "$PR" --edit-last --create-if-none --body "プレビュー: $URL （$SHA）"
+      - name: live (プレビュー URL の煙テスト)
+        run: sh scripts/check-live.sh "${{ steps.preview.outputs.preview-url }}"
+
+  cleanup:
+    name: プレビューを消す
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cloudflare/wrangler-action@v4.1.3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: ${{ env.WRANGLER_VERSION }}
+          command: preview delete --name ${{ env.PREVIEW_NAME }} --skip-confirmation
