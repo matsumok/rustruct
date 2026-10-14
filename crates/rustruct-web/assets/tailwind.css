@@ -316,6 +316,9 @@
   .pr-3 {
     padding-right: var(--spacing-3);
   }
+  .pb-2 {
+    padding-bottom: var(--spacing-2);
+  }
   .pl-3 {
     padding-left: var(--spacing-3);
   }
@@ -324,6 +327,9 @@
   }
   .text-right {
     text-align: right;
+  }
+  .align-top {
+    vertical-align: top;
   }
   .font-mono {
     font-family: var(--font-mono);

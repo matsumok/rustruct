@@ -173,7 +173,8 @@ fn unit_weight_rows() -> Vec<(String, String, String)> {
         .collect()
 }
 
-/// `/data/concrete`。カルキュレータ、気乾単位体積重量の表、ヤング係数の式。
+/// `/data/concrete`。入力（Fc）、結果（γ・γ₁・E・許容応力度）、根拠（表と式）の順に分けて置く。
+/// 結果は入力から出た値、根拠は入力に依らない規準の表と式だと、部の見出しで分かるようにする。
 #[component]
 pub(crate) fn ConcretePage() -> Element {
     let mut fc = use_signal(|| "24".to_string());
@@ -192,7 +193,7 @@ pub(crate) fn ConcretePage() -> Element {
         .as_n_per_mm2();
     rsx! {
         Page { route: Route::DataConcrete {},
-            section {
+            Part { title: "入力", first: true,
                 label { class: "block",
                     span { class: if error.is_some() { "block text-label text-ng" } else { "block text-label text-muted" },
                         "Fc（N/mm²）"
@@ -215,13 +216,15 @@ pub(crate) fn ConcretePage() -> Element {
                 if let Some(message) = warning {
                     p { class: "mt-1 text-label", "! {message}" }
                 }
-                dl { class: "mt-3 grid grid-cols-2 gap-x-4 gap-y-2 max-w-sm",
+            }
+            Part { title: "結果",
+                dl { class: "grid grid-cols-2 gap-x-4 gap-y-2 max-w-sm",
                     ResultRow { name: "γ", value: unit_weight, unit: "kN/m³" }
                     ResultRow { name: "γ₁", value: rc_unit_weight, unit: "kN/m³" }
                     ResultRow { name: "E", value: young_modulus, unit: "N/mm²" }
                 }
-                h2 { class: "mt-6 text-heading", "許容応力度（N/mm²）" }
-                table { class: "mt-3",
+                Caption { "許容応力度（N/mm²）" }
+                table { class: "mt-2",
                     thead {
                         tr { class: "border-b border-line",
                             HeadCell { first: true, "" }
@@ -239,13 +242,10 @@ pub(crate) fn ConcretePage() -> Element {
                         }
                     }
                 }
-                p { class: "mt-2 text-label text-muted",
-                    "RC 規準 表 6.1・6.3。圧縮 Fc/3、せん断 Fc/30 かつ 0.49 + Fc/100 以下、付着は異形鉄筋で上端筋 Fc/15 かつ 0.9 + 2Fc/75 以下、その他 Fc/10 かつ 1.35 + Fc/25 以下。短期は圧縮が長期の 2 倍、ほかは 1.5 倍。かぶりが鉄筋径の 1.5 倍未満なら付着を低減する。"
-                }
             }
-            section { class: "mt-7",
-                h2 { class: "text-heading", "気乾単位体積重量 γ" }
-                table { class: "mt-3",
+            Part { title: "根拠",
+                Caption { first: true, "気乾単位体積重量 γ と鉄筋コンクリートの単位体積重量 γ₁" }
+                table { class: "mt-2",
                     thead {
                         tr { class: "border-b border-line",
                             HeadCell { first: true, "Fc（N/mm²）" }
@@ -263,18 +263,83 @@ pub(crate) fn ConcretePage() -> Element {
                         }
                     }
                 }
-                p { class: "mt-2 text-label text-muted",
-                    "鉄筋コンクリートの単位体積重量 γ₁ = γ + 1。Fc {fc_max} を超えると最後の区分を使う。"
+                Note { "γ は慣例の値。γ₁ = γ + 1。Fc {fc_max} を超えると最後の区分を使う。" }
+                Caption { "ヤング係数 E" }
+                p { class: "mt-2 font-mono text-num", "E = 3.35×10⁴ × (γ/24)² × (Fc/60)^(1/3)" }
+                Note { "RC 規準（2024 年版）。E と Fc は N/mm²、γ は kN/m³。" }
+                Caption { "許容応力度" }
+                table { class: "mt-2",
+                    thead {
+                        tr { class: "border-b border-line",
+                            HeadCell { first: true, "" }
+                            HeadCell { first: true, "長期" }
+                            HeadCell { first: true, "短期" }
+                        }
+                    }
+                    tbody {
+                        for (name, long, short) in ALLOWABLE_FORMULAS {
+                            tr { class: "border-b border-line align-top",
+                                td { class: "py-2 pr-3 text-body", {name} }
+                                td { class: "py-2 pr-3 text-body", {long} }
+                                td { class: "py-2 text-body", {short} }
+                            }
+                        }
+                    }
                 }
-            }
-            section { class: "mt-7",
-                h2 { class: "text-heading", "ヤング係数 E" }
-                p { class: "mt-3 font-mono text-num", "E = 3.35×10⁴ × (γ/24)² × (Fc/60)^(1/3)" }
-                p { class: "mt-2 text-label text-muted",
-                    "RC 規準（2024 年版）。E と Fc は N/mm²、γ は kN/m³。"
+                Note {
+                    "RC 規準（2024 年版）表 6.1・6.3。付着は異形鉄筋。上端筋は曲げ材でその鉄筋の下に 300 mm 以上のコンクリートが打ち込まれる水平鉄筋。かぶりが鉄筋径の 1.5 倍未満なら付着に「かぶり厚さ/(鉄筋径の 1.5 倍)」を掛ける。"
                 }
             }
         }
+    }
+}
+
+/// 許容応力度の根拠の式: (名前, 長期, 短期)。名前は `ALLOWABLE_NAMES` と同じ順
+const ALLOWABLE_FORMULAS: [(&str, &str, &str); 4] = [
+    (ALLOWABLE_NAMES[0], "Fc/3", "長期の 2 倍"),
+    (
+        ALLOWABLE_NAMES[1],
+        "Fc/30 かつ 0.49 + Fc/100 以下",
+        "長期の 1.5 倍",
+    ),
+    (
+        ALLOWABLE_NAMES[2],
+        "Fc/15 かつ 0.9 + 2Fc/75 以下",
+        "長期の 1.5 倍",
+    ),
+    (
+        ALLOWABLE_NAMES[3],
+        "Fc/10 かつ 1.35 + Fc/25 以下",
+        "長期の 1.5 倍",
+    ),
+];
+
+/// ページの部（入力・結果・根拠）。見出しの下に区切り線を引き、部と部の間は `space-7`。
+#[component]
+fn Part(title: &'static str, #[props(default)] first: bool, children: Element) -> Element {
+    rsx! {
+        section { class: if first { "" } else { "mt-7" },
+            h2 { class: "text-heading pb-2 border-b border-line", {title} }
+            div { class: "mt-3", {children} }
+        }
+    }
+}
+
+/// 部の中の小見出し（表や式の名前）。前の中身との間は `space-6`。
+#[component]
+fn Caption(#[props(default)] first: bool, children: Element) -> Element {
+    rsx! {
+        h3 { class: if first { "text-label text-muted" } else { "mt-6 text-label text-muted" },
+            {children}
+        }
+    }
+}
+
+/// 表や式に添える注記。
+#[component]
+fn Note(children: Element) -> Element {
+    rsx! {
+        p { class: "mt-2 text-label text-muted", {children} }
     }
 }
 

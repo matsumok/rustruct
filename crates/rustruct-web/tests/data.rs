@@ -207,3 +207,22 @@ fn readout_is_unusable_with_an_error_when_fc_cannot_be_used() {
         );
     }
 }
+
+#[test]
+fn concrete_page_reads_input_then_results_then_their_basis() {
+    let text = text_of(&render_path("/data/concrete"));
+    assert_in_order(
+        &text,
+        &[
+            "入力",
+            "Fc（N/mm²）",
+            "結果",
+            "2.27×10⁴",
+            "0.730",
+            "根拠",
+            "Fc ≦ 36",
+            "E = 3.35×10⁴ × (γ/24)² × (Fc/60)^(1/3)",
+            "Fc/30 かつ 0.49 + Fc/100 以下",
+        ],
+    );
+}
