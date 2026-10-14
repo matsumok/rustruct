@@ -25,6 +25,25 @@ if [ -n "${CF_ACCESS_CLIENT_ID:-}" ] && [ -n "${CF_ACCESS_CLIENT_SECRET:-}" ]; t
     "$CF_ACCESS_CLIENT_ID" "$CF_ACCESS_CLIENT_SECRET" >"$auth"
 fi
 
+# Access に弾かれたときの手がかり。トークンの値は出さず、形だけ言う。Access は無効なトークンにも
+# 無いときと同じ転送を返すので、値の取り違え（ダッシュボードが見せる「CF-Access-Client-Id: …」の行ごと
+# Secrets に入れた、など）はここでしか分からない（2026-10-14 に PR #18 で起きた）
+token_shape() {
+  if [ ! -s "$auth" ]; then
+    echo "サービストークンが渡されていない"
+    return
+  fi
+  shape="サービストークンは渡したが通らない。ポリシー（Service Auth）か値を見る。ID の形:"
+  case "$CF_ACCESS_CLIENT_ID" in
+    *.access) shape="$shape .access で終わる" ;;
+    *) shape="$shape .access で終わらない" ;;
+  esac
+  case "$CF_ACCESS_CLIENT_ID$CF_ACCESS_CLIENT_SECRET" in
+    *:* | *' '* | *"$(printf '\t')"*) shape="$shape、ID か Secret に「:」か空白が混じる（ヘッダ名ごと入れていないか）" ;;
+  esac
+  echo "$shape"
+}
+
 # fetch 住所 保存先 → 標準出力に status、Location は $dir/location に
 fetch() {
   curl -sS -K "$auth" -o "$2" -D "$dir/headers" -w '%{http_code}' "$url$1"
@@ -35,7 +54,7 @@ fetch() {
 why() {
   m=$(sed -n 's/^[Cc][Ff]-[Mm]itigated: *//p' "$dir/headers" | tr -d '\r')
   [ -n "$m" ] && printf ' (cf-mitigated: %s)' "$m"
-  grep -q 'cloudflareaccess\.com' "$dir/location" && printf ' (Cloudflare Access のログインへ転送された。サービストークンが無いか、ポリシーに入っていない)'
+  grep -q 'cloudflareaccess\.com' "$dir/location" && printf ' (Cloudflare Access のログインへ転送された。%s)' "$(token_shape)"
   [ -s "$dir/page.html" ] && printf ' 本文: %s' "$(tr -d '\n' <"$dir/page.html" | head -c 120)"
   return 0
 }
