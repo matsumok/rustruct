@@ -269,7 +269,7 @@ pub(crate) fn ConcretePage() -> Element {
                     }
                     tbody {
                         for row in allowable_rows {
-                            tr {
+                            tr { class: "border-b border-line-strong",
                                 td { class: "py-2 pr-3 text-body", {row.name} }
                                 ResultCell { {row.long_term} }
                                 ResultCell { {row.short_term} }
@@ -379,23 +379,23 @@ fn Source(children: Element) -> Element {
     }
 }
 
-/// 結果の1行: 名前、値、単位。値と単位に `line-strong` の下線（`ResultValue`）。
+/// 結果の1行: 名前、値、単位。行の端から端まで `line-strong` の下線（`ResultValue`）。
 #[component]
 fn ResultLine(name: &'static str, value: String, unit: &'static str) -> Element {
     rsx! {
-        tr {
+        tr { class: "border-b border-line-strong",
             td { class: "py-2 pr-3 text-body", {name} }
-            td { class: "py-2 pl-3 font-mono text-num text-right border-b border-line-strong", {value} }
-            td { class: "py-2 pl-2 text-label text-muted border-b border-line-strong", {unit} }
+            td { class: "py-2 pl-3 font-mono text-num text-right", {value} }
+            td { class: "py-2 pl-2 text-label text-muted", {unit} }
         }
     }
 }
 
-/// 結果の表の値のセル。`num` の等幅で右揃え、`line-strong` の下線（`ResultValue`）。
+/// 結果の表の値のセル。`num` の等幅で右揃え。下線は行（`tr`）に引く。
 #[component]
 fn ResultCell(children: Element) -> Element {
     rsx! {
-        td { class: "py-2 pl-3 font-mono text-num text-right border-b border-line-strong",
+        td { class: "py-2 pl-3 font-mono text-num text-right",
             {children}
         }
     }
