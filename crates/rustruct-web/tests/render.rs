@@ -1,7 +1,7 @@
 //! 継ぎ目 A（Issue #8 / #11）: 「パス → HTML 文字列」の関数 `render_path` を外から見る。
 //! クラス名の並びは見ない。本文の文字と順序、どこで要素が分かれているか、`<title>` だけを見る。
 
-use rustruct_web::render_path;
+use rustruct_web::{NOT_FOUND_PATH, render_path, static_paths};
 
 /// タグを外した本文。
 fn text_of(html: &str) -> String {
@@ -169,15 +169,16 @@ fn root_is_an_empty_page_reserved_for_root() {
 fn unknown_path_is_not_found_inside_the_same_frame() {
     let html = render_path("/no/such/page");
     let text = text_of(&html);
-    // wordmark（枠）があり、求められた住所と、「ない」ことの一文がある
+    // wordmark（枠）があり、見出しと、「ない」ことの一文がある
     assert_in_order(
         &text,
         &[
             "rustruct.matsumok.com",
-            "/no/such/page",
+            "Not found",
             "この住所には何もない。",
         ],
     );
+    assert_eq!(h1_text(&html), "Not found");
     assert!(
         html.contains("href=\"/\""),
         "wordmark からトップへ戻れない: {html}"
@@ -185,6 +186,32 @@ fn unknown_path_is_not_found_inside_the_same_frame() {
     assert!(
         !text.contains("まだ何もない"),
         "not-found が空ページの文言になっている: {text}"
+    );
+}
+
+/// not-found は静的な 1 ファイル（`/404`）として書き出され、どの住所で開かれても同じ中身が届く。
+/// 求められた住所はブラウザでしか決まらないので、初回描画には入れない（ADR-0001 の規則）。
+#[test]
+fn not_found_html_is_the_same_whatever_path_was_asked_for() {
+    let at_404 = render_path(NOT_FOUND_PATH);
+    for path in ["/no/such/page", "/tools/nothing"] {
+        assert_eq!(
+            render_path(path),
+            at_404,
+            "{path} の not-found が /404 と違う"
+        );
+    }
+    assert!(
+        !text_of(&at_404).contains("404"),
+        "not-found の本文に置き場の住所 /404 が出ている: {at_404}"
+    );
+}
+
+#[test]
+fn ssg_paths_are_the_static_routes_and_the_not_found_page() {
+    assert_eq!(
+        static_paths(),
+        ["/", "/tools", "/studies", "/notes", "/root", "/404"]
     );
 }
 

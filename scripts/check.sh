@@ -17,6 +17,9 @@ step() {
     test)    cargo test --workspace --locked ;;
     # build.rs が tokens.json から theme.css を作り直す。差分が出たら生成物の commit 忘れ
     theme)   git diff --exit-code -- crates/rustruct-web/theme.css ;;
+    # SSG（ADR-0001）。client → server の順に建てる。並行だと server の SSG が client の index.html（殻）
+    # を待たずに走り、WASM を読まない HTML になる。出力の検査は check-ssg.sh
+    ssg)     dx build --ssg --release --force-sequential && sh scripts/check-ssg.sh ;;
     *) echo "unknown step: $1" >&2; exit 2 ;;
   esac
 }
@@ -24,7 +27,7 @@ step() {
 if [ "$#" -gt 0 ]; then
   for s in "$@"; do step "$s"; done
 else
-  for s in fmt deps markup classes clippy server wasm test theme; do
+  for s in fmt deps markup classes clippy server wasm test theme ssg; do
     echo "== $s"; step "$s"
   done
 fi

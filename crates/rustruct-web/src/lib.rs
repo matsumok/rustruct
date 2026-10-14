@@ -16,6 +16,12 @@ mod prerender;
 #[cfg(not(target_arch = "wasm32"))]
 pub use prerender::render_path;
 
+/// SSG: 書き出す住所の列挙と、書く場所の設定。
+mod ssg;
+#[cfg(feature = "server")]
+pub use ssg::serve_config;
+pub use ssg::{NOT_FOUND_PATH, static_paths};
+
 include!(concat!(env!("OUT_DIR"), "/fonts.rs"));
 
 /// 上のバーに置く wordmark の文字。サイトの住所そのもの。
@@ -172,11 +178,14 @@ fn SectionPage() -> Element {
 
 /// 住所で組む下層ページ。伸びた住所、`title` の見出し（ページ名）、本文の順。サイドバーもパンくずも無い。
 /// 住所は長い一語でも折り返す（not-found はどんな住所でも受ける）。
+/// `with_path` を倒すと住所の行を空にする（not-found が起動前に使う）。
 #[component]
-fn Page(route: Route, children: Element) -> Element {
+fn Page(route: Route, #[props(default = true)] with_path: bool, children: Element) -> Element {
     rsx! {
         main { class: "px-5 py-7",
-            p { class: "font-mono text-path text-muted break-all", "{route}" }
+            p { class: "font-mono text-path text-muted break-all",
+                {with_path.then(|| route.to_string())}
+            }
             h1 { class: "text-title mt-2", {route.text().heading} }
             div { class: "text-body mt-3", {children} }
         }
@@ -193,10 +202,15 @@ fn RootPage() -> Element {
 }
 
 /// 存在しない住所。同じ枠の中で「ない」ことを一文で示す。
+///
+/// 静的な 1 ファイル（`NOT_FOUND_PATH`）がどの住所でも届くので、求められた住所はブラウザでしか
+/// 決まらない。初回描画には入れず、起動後に `use_effect` で出す（ADR-0001 の規則）。
 #[component]
 fn NotFound(segments: Vec<String>) -> Element {
     let route = Route::NotFound { segments };
+    let mut started = use_signal(|| false);
+    use_effect(move || started.set(true));
     rsx! {
-        Page { route: route.clone(), {route.text().description} }
+        Page { route: route.clone(), with_path: started(), {route.text().description} }
     }
 }

@@ -31,7 +31,11 @@
   - `#[route("/tools", SectionPage)]` の第2引数でコンポーネントを指定できる。共有するコンポーネントは `use_route::<Route>()` で自分のルートを知る
   - ネイティブ描画は `VirtualDom` に `Rc<dyn History>`（`dioxus::history::MemoryHistory`）と `Rc<dyn Document>` を root context で渡せば動く。`document::Title` / `Meta` は `Document` の `set_title` / `create_head_element` に来る（`crates/rustruct-web/src/prerender.rs`）
   - `document::Meta` は初回描画後の props 変更を head に反映しない（SPA 遷移で description は変わらない。SSG の HTML には各ページの値が入る）
-  - `dx build --ssg` はサーバーを起動し、`POST /api/static_routes` が返す `Vec<String>` のパスを順に取得して保存する。`Route::static_routes()` がその列挙元
+  - `dx build --ssg` はサーバーを起動し、`POST /api/static_routes` が返す `Vec<String>` のパスを順に取得する。`Route::static_routes()` がその列挙元（引数のあるルート、つまり not-found の catch-all は入らない）。保存はサーバー側の仕事で、`ServeConfig::new().incremental(IncrementalRendererConfig::new().static_dir(public))` が無いと何も書かれない（`crates/rustruct-web/src/ssg.rs`）。書き先は `public/<住所>/index.html` で、`/` は client が書いた殻の `index.html` を上書きする
+  - client と server のビルドは既定で並行に走り、server の SSG は client の殻（`public/index.html`、WASM の読込を含む）を待たない。`--force-sequential`（`CI` 環境変数があれば自動）で client → server の順にする。`dx serve`（開発サーバーの下）では SSG の書込をしない。再ビルドのたびに古い HTML が残り、`/` の分が殻として読まれてしまうため
+  - dx はツール（wasm-bindgen、wasm-opt、Tailwind）を `DX_HOME`（既定 `~/.local/share/.dx`）の `tools/` に落とす。release ビルドは wasm-opt が無いと止まる
+- not-found は `/404` に 1 ファイルだけ書き出す（`NOT_FOUND_PATH`）。配信側が未知の住所すべてにこれを返す。どの住所で開かれても同じ中身が届くので、求められた住所は初回描画に入れず、起動後に `use_effect` で出す（上の規則の適用例）
+- CI は `dx build --ssg --release --force-sequential` の出力を `scripts/check-ssg.sh` で検査する（住所ごとの HTML、本文と `<title>`・description、1 つの WASM、HTML → 読込スクリプト → WASM の参照）。hydration の成否はブラウザが要るので CI では見ない
 - ライトとダークを最初から両方作る。色は役割名トークンで指定し、`@custom-variant dark` の1行で切り替える
 - コントラスト検査は Rust のテストとして tokens.json を読んで行い、CI で回す。WCAG 比（usage に書かれた 3:1 / 4.5:1）を必須、APCA を警告として出す。最初の一本には含めない
 - フォントは IBM Plex Sans JP と Plex Mono。まず Google Fonts CDN
