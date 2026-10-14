@@ -9,18 +9,29 @@ fn normal(fc: f64) -> Result<Concrete, ConcreteError> {
     Concrete::new(Stress::n_per_mm2(fc), ConcreteKind::Normal)
 }
 
-/// Fc (N/mm²), γ (kN/m³), γ₁ (kN/m³)。各区分の境界と、そのすぐ上の浮動小数点数
+/// 境界のすぐ上。f64 で表せる、`x` より大きい最小の数（36 なら 36.00000000000001）。
+/// 「≦」と「<」の取り違えを、境界を挟む2点で確かめるのに使う
+fn just_above(x: f64) -> f64 {
+    x.next_up()
+}
+
+/// 境界のすぐ下。f64 で表せる、`x` より小さい最大の数
+fn just_below(x: f64) -> f64 {
+    x.next_down()
+}
+
+/// Fc (N/mm²), γ (kN/m³), γ₁ (kN/m³)。各区分の境界と、そのすぐ上
 fn table() -> [(f64, f64, f64); 10] {
     [
         (18.0, 23.0, 24.0),
         (36.0, 23.0, 24.0),
-        (36.0_f64.next_up(), 23.5, 24.5),
+        (just_above(36.0), 23.5, 24.5),
         (48.0, 23.5, 24.5),
-        (48.0_f64.next_up(), 24.0, 25.0),
+        (just_above(48.0), 24.0, 25.0),
         (60.0, 24.0, 25.0),
-        (60.0_f64.next_up(), 24.5, 25.5),
+        (just_above(60.0), 24.5, 25.5),
         (80.0, 24.5, 25.5),
-        (80.0_f64.next_up(), 25.0, 26.0),
+        (just_above(80.0), 25.0, 26.0),
         (100.0, 25.0, 26.0),
     ]
 }
@@ -85,7 +96,7 @@ fn fc_within_18_to_100_has_no_warning() {
 
 #[test]
 fn fc_below_18_is_computed_with_a_warning() {
-    for fc in [18.0_f64.next_down(), 12.0] {
+    for fc in [just_below(18.0), 12.0] {
         let c = normal(fc).unwrap();
         assert_eq!(c.warning(), Some(ConcreteWarning::BelowMinimum), "Fc {fc}");
         assert_close(
@@ -98,7 +109,7 @@ fn fc_below_18_is_computed_with_a_warning() {
 
 #[test]
 fn fc_above_100_is_computed_with_the_last_range_and_a_warning() {
-    for fc in [100.0_f64.next_up(), 120.0] {
+    for fc in [just_above(100.0), 120.0] {
         let c = normal(fc).unwrap();
         assert_eq!(c.warning(), Some(ConcreteWarning::AboveTable), "Fc {fc}");
         assert_close(
