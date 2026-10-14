@@ -218,15 +218,17 @@ pub(crate) fn ConcretePage() -> Element {
                 }
             }
             Part { title: "結果",
-                dl { class: "grid grid-cols-2 gap-x-4 gap-y-2 max-w-sm",
-                    ResultRow { name: "γ", value: unit_weight, unit: "kN/m³" }
-                    ResultRow { name: "γ₁", value: rc_unit_weight, unit: "kN/m³" }
-                    ResultRow { name: "E", value: young_modulus, unit: "N/mm²" }
+                table { class: "w-full max-w-sm",
+                    tbody {
+                        ResultLine { name: "γ", value: unit_weight, unit: "kN/m³" }
+                        ResultLine { name: "γ₁", value: rc_unit_weight, unit: "kN/m³" }
+                        ResultLine { name: "E", value: young_modulus, unit: "N/mm²" }
+                    }
                 }
                 Caption { "許容応力度（N/mm²）" }
-                table { class: "mt-2",
+                table { class: "mt-2 w-full max-w-sm",
                     thead {
-                        tr { class: "border-b border-line",
+                        tr {
                             HeadCell { first: true, "" }
                             HeadCell { "長期" }
                             HeadCell { "短期" }
@@ -234,18 +236,18 @@ pub(crate) fn ConcretePage() -> Element {
                     }
                     tbody {
                         for row in allowable_rows {
-                            tr { class: "border-b border-line",
+                            tr {
                                 td { class: "py-2 pr-3 text-body", {row.name} }
-                                NumCell { {row.long_term} }
-                                NumCell { {row.short_term} }
+                                ResultCell { {row.long_term} }
+                                ResultCell { {row.short_term} }
                             }
                         }
                     }
                 }
             }
-            Part { title: "根拠",
-                Caption { first: true, "気乾単位体積重量 γ と鉄筋コンクリートの単位体積重量 γ₁" }
-                table { class: "mt-2",
+            Part { title: "根拠", id: "basis",
+                Caption { first: true, "単位体積重量" }
+                table { class: "mt-2 w-full max-w-sm",
                     thead {
                         tr { class: "border-b border-line",
                             HeadCell { first: true, "Fc（N/mm²）" }
@@ -256,69 +258,71 @@ pub(crate) fn ConcretePage() -> Element {
                     tbody {
                         for (range, gamma, gamma1) in unit_weight_rows() {
                             tr { class: "border-b border-line",
-                                NumCell { first: true, {range} }
+                                td { class: "py-2 pr-3 text-body", {range} }
                                 NumCell { {gamma} }
                                 NumCell { {gamma1} }
                             }
                         }
                     }
                 }
-                Note { "γ は慣例の値。γ₁ = γ + 1。Fc {fc_max} を超えると最後の区分を使う。" }
-                Caption { "ヤング係数 E" }
-                p { class: "mt-2 font-mono text-num", "E = 3.35×10⁴ × (γ/24)² × (Fc/60)^(1/3)" }
-                Note { "RC 規準（2024 年版）。E と Fc は N/mm²、γ は kN/m³。" }
-                Caption { "許容応力度" }
-                table { class: "mt-2",
-                    thead {
-                        tr { class: "border-b border-line",
-                            HeadCell { first: true, "" }
-                            HeadCell { first: true, "長期" }
-                            HeadCell { first: true, "短期" }
-                        }
-                    }
+                Notes {
+                    li { "γ は気乾単位体積重量、γ₁ = γ + 1 は鉄筋コンクリートの単位体積重量" }
+                    li { "Fc {fc_max} を超えると最後の区分を使う" }
+                }
+                Source { "実務の慣例の値" }
+
+                Caption { "ヤング係数" }
+                p { class: "mt-2 font-mono text-num",
+                    "E = 3.35×10⁴ × (γ/24)² × (Fc/60)"
+                    sup { "1/3" }
+                }
+                Notes {
+                    li { "E と Fc は N/mm²、γ は kN/m³" }
+                }
+                Source { "RC 規準（2024 年版）" }
+
+                Caption { "許容応力度（長期）" }
+                table { class: "mt-2 w-full max-w-sm",
                     tbody {
-                        for (name, long, short) in ALLOWABLE_FORMULAS {
-                            tr { class: "border-b border-line align-top",
-                                td { class: "py-2 pr-3 text-body", {name} }
-                                td { class: "py-2 pr-3 text-body", {long} }
-                                td { class: "py-2 text-body", {short} }
+                        for (name, long) in ALLOWABLE_FORMULAS {
+                            tr { class: "border-b border-line",
+                                td { class: "py-2 pr-3 text-body whitespace-nowrap", {name} }
+                                td { class: "py-2 font-mono text-num whitespace-nowrap", {long} }
                             }
                         }
                     }
                 }
-                Note {
-                    "RC 規準（2024 年版）表 6.1・6.3。付着は異形鉄筋。上端筋は曲げ材でその鉄筋の下に 300 mm 以上のコンクリートが打ち込まれる水平鉄筋。かぶりが鉄筋径の 1.5 倍未満なら付着に「かぶり厚さ/(鉄筋径の 1.5 倍)」を掛ける。"
+                Notes {
+                    li { "短期は長期の 1.5 倍。圧縮だけ 2 倍" }
+                    li { "付着は異形鉄筋。上端筋は、曲げ材でその鉄筋の下に 300 mm 以上のコンクリートが打ち込まれる水平鉄筋" }
+                    li { "かぶりが鉄筋径の 1.5 倍未満なら、付着に かぶり厚さ /（鉄筋径 × 1.5）を掛ける" }
                 }
+                Source { "RC 規準（2024 年版）表 6.1・6.3" }
             }
         }
     }
 }
 
-/// 許容応力度の根拠の式: (名前, 長期, 短期)。名前は `ALLOWABLE_NAMES` と同じ順
-const ALLOWABLE_FORMULAS: [(&str, &str, &str); 4] = [
-    (ALLOWABLE_NAMES[0], "Fc/3", "長期の 2 倍"),
-    (
-        ALLOWABLE_NAMES[1],
-        "Fc/30 かつ 0.49 + Fc/100 以下",
-        "長期の 1.5 倍",
-    ),
-    (
-        ALLOWABLE_NAMES[2],
-        "Fc/15 かつ 0.9 + 2Fc/75 以下",
-        "長期の 1.5 倍",
-    ),
-    (
-        ALLOWABLE_NAMES[3],
-        "Fc/10 かつ 1.35 + Fc/25 以下",
-        "長期の 1.5 倍",
-    ),
+/// 許容応力度の長期の根拠の式: (名前, 式)。名前は `ALLOWABLE_NAMES` と同じ順。
+/// 規準の「A かつ B 以下」は min(A, B) と書く
+const ALLOWABLE_FORMULAS: [(&str, &str); 4] = [
+    (ALLOWABLE_NAMES[0], "Fc/3"),
+    (ALLOWABLE_NAMES[1], "min(Fc/30, 0.49+Fc/100)"),
+    (ALLOWABLE_NAMES[2], "min(Fc/15, 0.9+2Fc/75)"),
+    (ALLOWABLE_NAMES[3], "min(Fc/10, 1.35+Fc/25)"),
 ];
 
 /// ページの部（入力・結果・根拠）。見出しの下に区切り線を引き、部と部の間は `space-7`。
+/// `id` を付けると住所の `#id` でその部へ飛べる。
 #[component]
-fn Part(title: &'static str, #[props(default)] first: bool, children: Element) -> Element {
+fn Part(
+    title: &'static str,
+    #[props(default)] first: bool,
+    #[props(default)] id: &'static str,
+    children: Element,
+) -> Element {
     rsx! {
-        section { class: if first { "" } else { "mt-7" },
+        section { class: if first { "" } else { "mt-7" }, id: (!id.is_empty()).then_some(id),
             h2 { class: "text-heading pb-2 border-b border-line", {title} }
             div { class: "mt-3", {children} }
         }
@@ -335,27 +339,45 @@ fn Caption(#[props(default)] first: bool, children: Element) -> Element {
     }
 }
 
-/// 表や式に添える注記。
+/// 表や式に添える注記の箇条。
 #[component]
-fn Note(children: Element) -> Element {
+fn Notes(children: Element) -> Element {
     rsx! {
-        p { class: "mt-2 text-label text-muted", {children} }
+        ul { class: "mt-2 list-disc pl-4 text-label text-muted", {children} }
     }
 }
 
-/// 結果の1行。名前と、`num` の値に `line-strong` の下線（`ResultValue`）と単位。
+/// 表や式の出典。注記の後に1行で。
 #[component]
-fn ResultRow(name: &'static str, value: String, unit: &'static str) -> Element {
+fn Source(children: Element) -> Element {
     rsx! {
-        dt { class: "text-body", {name} }
-        dd { class: "font-mono text-num text-right border-b border-line-strong",
-            {value}
-            span { class: "text-muted", " {unit}" }
+        p { class: "mt-1 text-label text-muted", "出典: " {children} }
+    }
+}
+
+/// 結果の1行: 名前、値、単位。値と単位に `line-strong` の下線（`ResultValue`）。
+#[component]
+fn ResultLine(name: &'static str, value: String, unit: &'static str) -> Element {
+    rsx! {
+        tr {
+            td { class: "py-2 pr-3 text-body", {name} }
+            td { class: "py-2 pl-3 font-mono text-num text-right border-b border-line-strong", {value} }
+            td { class: "py-2 pl-2 text-label text-muted border-b border-line-strong", {unit} }
         }
     }
 }
 
-/// 表示用の表の列見出し。先頭の列は左、ほかは数値の列なので右に揃える。
+/// 結果の表の値のセル。`num` の等幅で右揃え、`line-strong` の下線（`ResultValue`）。
+#[component]
+fn ResultCell(children: Element) -> Element {
+    rsx! {
+        td { class: "py-2 pl-3 font-mono text-num text-right border-b border-line-strong",
+            {children}
+        }
+    }
+}
+
+/// 表示用の表の列見出し。`first` の列は左、ほかは数値の列なので右に揃える。
 #[component]
 fn HeadCell(#[props(default)] first: bool, children: Element) -> Element {
     rsx! {
@@ -366,7 +388,7 @@ fn HeadCell(#[props(default)] first: bool, children: Element) -> Element {
     }
 }
 
-/// 表示用の表のセル。`num` の等幅で、先頭の列は左、ほかは右に揃える。
+/// 表示用の表のセル。`num` の等幅で、`first` の列は左、ほかは右に揃える。
 #[component]
 fn NumCell(#[props(default)] first: bool, children: Element) -> Element {
     rsx! {
