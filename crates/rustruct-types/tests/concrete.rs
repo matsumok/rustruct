@@ -2,7 +2,7 @@
 
 mod common;
 use common::assert_close;
-use rustruct_types::concrete::{Concrete, ConcreteError, ConcreteKind};
+use rustruct_types::concrete::{Concrete, ConcreteError, ConcreteKind, ConcreteWarning};
 use rustruct_types::quantity::Stress;
 
 fn normal(fc: f64) -> Result<Concrete, ConcreteError> {
@@ -66,29 +66,52 @@ fn young_modulus_follows_the_rc_standard_formula() {
 }
 
 #[test]
-fn fc_must_be_finite() {
-    for fc in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        assert_eq!(normal(fc).unwrap_err(), ConcreteError::NotFinite, "Fc {fc}");
-    }
-}
-
-#[test]
-fn fc_below_18_cannot_be_made() {
-    for fc in [18.0_f64.next_down(), 0.0, -1.0] {
+fn fc_must_be_positive_and_finite() {
+    for fc in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert_eq!(
             normal(fc).unwrap_err(),
-            ConcreteError::BelowMinimum,
+            ConcreteError::NotPositive,
             "Fc {fc}"
         );
     }
 }
 
 #[test]
-fn fc_above_the_table_cannot_be_made() {
-    assert_eq!(
-        normal(100.0_f64.next_up()).unwrap_err(),
-        ConcreteError::AboveTable
-    );
+fn fc_within_18_to_100_has_no_warning() {
+    for fc in [18.0, 24.0, 100.0] {
+        assert_eq!(normal(fc).unwrap().warning(), None, "Fc {fc}");
+    }
+}
+
+#[test]
+fn fc_below_18_is_computed_with_a_warning() {
+    for fc in [18.0_f64.next_down(), 12.0] {
+        let c = normal(fc).unwrap();
+        assert_eq!(c.warning(), Some(ConcreteWarning::BelowMinimum), "Fc {fc}");
+        assert_close(
+            c.unit_weight().as_kn_per_m3(),
+            23.0,
+            &format!("Fc {fc} の γ"),
+        );
+    }
+}
+
+#[test]
+fn fc_above_100_is_computed_with_the_last_range_and_a_warning() {
+    for fc in [100.0_f64.next_up(), 120.0] {
+        let c = normal(fc).unwrap();
+        assert_eq!(c.warning(), Some(ConcreteWarning::AboveTable), "Fc {fc}");
+        assert_close(
+            c.unit_weight().as_kn_per_m3(),
+            25.0,
+            &format!("Fc {fc} の γ"),
+        );
+        assert_close(
+            c.rc_unit_weight().as_kn_per_m3(),
+            26.0,
+            &format!("Fc {fc} の γ₁"),
+        );
+    }
 }
 
 #[test]

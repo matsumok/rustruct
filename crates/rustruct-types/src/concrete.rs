@@ -12,7 +12,8 @@ pub enum ConcreteKind {
     Normal,
 }
 
-/// 設計基準強度と種類で特定されるコンクリート。Fc は 18 以上 100 以下（N/mm²）に限る。
+/// 設計基準強度と種類で特定されるコンクリート。Fc は正の有限値に限る。
+/// 18 以上 100 以下（N/mm²）を外れても作れて、計算もできる。外れていることは [`Concrete::warning`] が言う。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Concrete {
     fc: Stress,
@@ -22,45 +23,66 @@ pub struct Concrete {
 /// コンクリートを作れない理由。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConcreteError {
-    /// Fc が有限値でない
-    NotFinite,
-    /// Fc が下限（18 N/mm²）に満たない
-    BelowMinimum,
-    /// Fc が単位体積重量の表の区分（100 N/mm² 以下）を超える
-    AboveTable,
+    /// Fc が正の有限値でない
+    NotPositive,
 }
 
 impl fmt::Display for ConcreteError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NotFinite => f.write_str("Fc が有限値でない"),
-            Self::BelowMinimum => write!(f, "Fc が下限 {FC_MIN} N/mm² に満たない"),
-            Self::AboveTable => write!(f, "Fc が単位体積重量の表の上限 {FC_MAX} N/mm² を超える"),
+            Self::NotPositive => f.write_str("Fc が正の有限値でない"),
         }
     }
 }
 
 impl std::error::Error for ConcreteError {}
 
-/// Fc の下限 [N/mm²]。これに満たない Fc のコンクリートは作れない
+/// 作れて計算もできるが、Fc が想定の範囲を外れていること。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConcreteWarning {
+    /// Fc が下限（18 N/mm²）に満たない
+    BelowMinimum,
+    /// Fc が単位体積重量の表の上限（100 N/mm²）を超える。γ は最後の区分の値を使う
+    AboveTable,
+}
+
+impl fmt::Display for ConcreteWarning {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::BelowMinimum => write!(f, "Fc が下限 {FC_MIN} N/mm² に満たない"),
+            Self::AboveTable => write!(
+                f,
+                "Fc が単位体積重量の表の上限 {FC_MAX} N/mm² を超える。γ は最後の区分の値を使う"
+            ),
+        }
+    }
+}
+
+/// Fc の下限 [N/mm²]。これに満たないとワーニング
 const FC_MIN: f64 = 18.0;
 
-/// 単位体積重量の表の上限 [N/mm²]。これを超える Fc のコンクリートは作れない
+/// 単位体積重量の表の上限 [N/mm²]。これを超えるとワーニング
 const FC_MAX: f64 = 100.0;
 
 impl Concrete {
     pub fn new(fc: Stress, kind: ConcreteKind) -> Result<Self, ConcreteError> {
         let value = fc.as_n_per_mm2();
-        if !value.is_finite() {
-            return Err(ConcreteError::NotFinite);
-        }
-        if value < FC_MIN {
-            return Err(ConcreteError::BelowMinimum);
-        }
-        if value > FC_MAX {
-            return Err(ConcreteError::AboveTable);
+        if !value.is_finite() || value <= 0.0 {
+            return Err(ConcreteError::NotPositive);
         }
         Ok(Self { fc, kind })
+    }
+
+    /// Fc が想定の範囲（18 以上 100 以下）を外れていれば、そのワーニング
+    pub fn warning(self) -> Option<ConcreteWarning> {
+        let fc = self.fc.as_n_per_mm2();
+        if fc < FC_MIN {
+            Some(ConcreteWarning::BelowMinimum)
+        } else if fc > FC_MAX {
+            Some(ConcreteWarning::AboveTable)
+        } else {
+            None
+        }
     }
 
     /// 設計基準強度 Fc
@@ -82,8 +104,8 @@ impl Concrete {
                 ..=48.0 => 23.5,
                 ..=60.0 => 24.0,
                 ..=80.0 => 24.5,
-                ..=FC_MAX => 25.0,
-                _ => unreachable!("Fc は生成のときに表の範囲に限っている"),
+                // 表は 100 まで。超えても最後の区分の値を使う（ワーニングは warning が言う）
+                _ => 25.0,
             },
         };
         UnitWeight::kn_per_m3(kn_per_m3)
