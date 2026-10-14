@@ -226,118 +226,152 @@ pub(crate) fn ConcretePage() -> Element {
         .as_n_per_mm2();
     rsx! {
         Page { route: Route::DataConcrete {},
-            Part { title: "入力", first: true,
-                label { class: "block",
-                    span { class: if error.is_some() { "block text-label text-ng" } else { "block text-label text-muted" },
-                        "Fc（N/mm²）"
-                    }
-                    input {
-                        class: if error.is_some() {
-                            "mt-1 w-32 rounded-8 border-2 border-ng bg-paper px-3 py-2 font-mono text-num text-right"
-                        } else {
-                            "mt-1 w-32 rounded-8 border border-line-strong bg-paper px-3 py-2 font-mono text-num text-right"
-                        },
-                        r#type: "text",
-                        inputmode: "decimal",
-                        value: "{fc}",
-                        oninput: move |e| fc.set(e.value()),
-                    }
-                }
-                if let Some(message) = &error {
-                    p { class: "mt-1 text-label text-ng", {message.clone()} }
-                }
-                if let Some(message) = warning {
-                    p { class: "mt-1 text-label", "! {message}" }
-                }
-            }
-            Part { title: "結果",
-                table { class: "w-full max-w-sm",
-                    tbody {
-                        ResultLine { name: "気乾単位体積重量 γ", value: unit_weight, unit: "kN/m³" }
-                        ResultLine { name: "鉄筋コンクリートの単位体積重量 γ₁", value: rc_unit_weight, unit: "kN/m³" }
-                        ResultLine { name: "ヤング係数 E", value: young_modulus, unit: "N/mm²" }
-                    }
-                }
-                Caption { "許容応力度（N/mm²）" }
-                table { class: "mt-2 w-full max-w-sm",
-                    thead {
-                        tr {
-                            HeadCell { first: true, "" }
-                            HeadCell { "長期" }
-                            HeadCell { "短期" }
+            Columns {
+                Column { first: true,
+                    Part { title: "入力", first: true,
+                        label { class: "block",
+                            span { class: if error.is_some() { "block text-label text-ng" } else { "block text-label text-muted" },
+                                "Fc（N/mm²）"
+                            }
+                            input {
+                                class: if error.is_some() {
+                                    "mt-1 w-32 rounded-8 border-2 border-ng bg-paper px-3 py-2 font-mono text-num text-right"
+                                } else {
+                                    "mt-1 w-32 rounded-8 border border-line-strong bg-paper px-3 py-2 font-mono text-num text-right"
+                                },
+                                r#type: "text",
+                                inputmode: "decimal",
+                                value: "{fc}",
+                                oninput: move |e| fc.set(e.value()),
+                            }
+                        }
+                        if let Some(message) = &error {
+                            p { class: "mt-1 text-label text-ng", {message.clone()} }
+                        }
+                        if let Some(message) = warning {
+                            p { class: "mt-1 text-label", "! {message}" }
                         }
                     }
-                    tbody {
-                        for row in allowable_rows {
-                            tr { class: "border-b border-line-strong",
-                                td { class: "py-2 pr-3 text-body", {row.name} }
-                                ResultCell { {row.long_term} }
-                                ResultCell { {row.short_term} }
+                    Part { title: "結果",
+                        Table {
+                            tbody {
+                                Row {
+                                    TextCell { first: true, "気乾単位体積重量 γ（kN/m³）" }
+                                    NumCell { {unit_weight} }
+                                }
+                                Row {
+                                    TextCell { first: true, "鉄筋コンクリートの単位体積重量 γ₁（kN/m³）" }
+                                    NumCell { {rc_unit_weight} }
+                                }
+                                Row {
+                                    TextCell { first: true, "ヤング係数 E（N/mm²）" }
+                                    NumCell { {young_modulus} }
+                                }
+                            }
+                        }
+                        Caption { "許容応力度（N/mm²）" }
+                        Table {
+                            thead {
+                                HeadRow {
+                                    HeadCell { first: true, "" }
+                                    HeadCell { "長期" }
+                                    HeadCell { "短期" }
+                                }
+                            }
+                            tbody {
+                                for row in allowable_rows {
+                                    Row {
+                                        TextCell { first: true, {row.name} }
+                                        NumCell { {row.long_term} }
+                                        NumCell { {row.short_term} }
+                                    }
+                                }
                             }
                         }
                     }
                 }
-            }
-            Part { title: "根拠", id: "basis",
-                Caption { first: true, "単位体積重量" }
-                table { class: "mt-2 w-full max-w-sm",
-                    thead {
-                        tr { class: "border-b border-line",
-                            HeadCell { first: true, "Fc（N/mm²）" }
-                            HeadCell { "γ（kN/m³）" }
-                            HeadCell { "γ₁（kN/m³）" }
-                        }
-                    }
-                    tbody {
-                        for (range, gamma, gamma1) in unit_weight_rows() {
-                            tr { class: "border-b border-line",
-                                td { class: "py-2 pr-3 text-body", {range} }
-                                NumCell { {gamma} }
-                                NumCell { {gamma1} }
+                Column {
+                    Part { title: "根拠", id: "basis", first: true,
+                        Caption { first: true, "単位体積重量" }
+                        Table {
+                            thead {
+                                HeadRow {
+                                    HeadCell { first: true, "Fc（N/mm²）" }
+                                    HeadCell { "γ（kN/m³）" }
+                                    HeadCell { "γ₁（kN/m³）" }
+                                }
+                            }
+                            tbody {
+                                for (range, gamma, gamma1) in unit_weight_rows() {
+                                    Row {
+                                        TextCell { first: true, {range} }
+                                        NumCell { {gamma} }
+                                        NumCell { {gamma1} }
+                                    }
+                                }
                             }
                         }
-                    }
-                }
-                Notes {
-                    li { "γ は気乾単位体積重量、γ₁ = γ + 1 は鉄筋コンクリートの単位体積重量" }
-                    li { "Fc {fc_max} を超えると最後の区分を使う" }
-                }
-                Source { "実務の慣例の値" }
+                        Notes {
+                            li { "γ は気乾単位体積重量、γ₁ = γ + 1 は鉄筋コンクリートの単位体積重量" }
+                            li { "Fc {fc_max} を超えると最後の区分を使う" }
+                        }
+                        Source { "実務の慣例の値" }
 
-                Caption { "ヤング係数" }
-                p { class: "mt-2 font-mono text-num",
-                    "E = 3.35×10⁴ × (γ/24)² × (Fc/60)"
-                    sup { "1/3" }
-                }
-                Notes {
-                    li { "E と Fc は N/mm²、γ は kN/m³" }
-                }
-                Source { "RC 規準（2024 年版）" }
+                        Caption { "ヤング係数（N/mm²）" }
+                        p { class: "font-mono text-num",
+                            "E = 3.35×10⁴ × (γ/24)² × (Fc/60)"
+                            sup { "1/3" }
+                        }
+                        Notes {
+                            li { "Fc は N/mm²、γ は kN/m³" }
+                        }
+                        Source { "RC 規準（2024 年版）" }
 
-                Caption { "許容応力度（長期）" }
-                table { class: "mt-2 w-full max-w-sm",
-                    tbody {
-                        for (name, long) in Allowable::ALL.map(|a| (a.name(), a.long_term_formula())) {
-                            tr { class: "border-b border-line",
-                                td { class: "py-2 pr-3 text-body whitespace-nowrap", {name} }
-                                td { class: "py-2 font-mono text-num whitespace-nowrap", {long} }
+                        Caption { "許容応力度（長期、N/mm²）" }
+                        Table {
+                            tbody {
+                                for a in Allowable::ALL {
+                                    Row {
+                                        TextCell { first: true, {a.name()} }
+                                        FormulaCell { {a.long_term_formula()} }
+                                    }
+                                }
                             }
                         }
+                        Notes {
+                            li { "短期は長期の 1.5 倍。圧縮だけ 2 倍" }
+                            li { "付着は異形鉄筋。上端筋は、曲げ材でその鉄筋の下に 300 mm 以上のコンクリートが打ち込まれる水平鉄筋" }
+                            li { "かぶりが鉄筋径の 1.5 倍未満なら、付着に かぶり厚さ /（鉄筋径 × 1.5）を掛ける" }
+                        }
+                        Source { "RC 規準（2024 年版）表 6.1・6.3" }
                     }
                 }
-                Notes {
-                    li { "短期は長期の 1.5 倍。圧縮だけ 2 倍" }
-                    li { "付着は異形鉄筋。上端筋は、曲げ材でその鉄筋の下に 300 mm 以上のコンクリートが打ち込まれる水平鉄筋" }
-                    li { "かぶりが鉄筋径の 1.5 倍未満なら、付着に かぶり厚さ /（鉄筋径 × 1.5）を掛ける" }
-                }
-                Source { "RC 規準（2024 年版）表 6.1・6.3" }
             }
         }
     }
 }
 
-/// ページの部（入力・結果・根拠）。見出しの下に区切り線を引き、部と部の間は `space-7`。
-/// `id` を付けると住所の `#id` でその部へ飛べる。
+/// 本文の列を並べる（ui-decisions「列の単位」）。PC では1単位（`width-column`）の列を `space-4` の溝で横に、
+/// スマホでは縦に積む。
+#[component]
+fn Columns(children: Element) -> Element {
+    rsx! {
+        div { class: "md:flex md:items-start md:gap-x-4", {children} }
+    }
+}
+
+/// 本文の1列。幅は1単位まで。スマホで縦に積むとき、2列目からは部と部の間（`space-7`）を空ける。
+#[component]
+fn Column(#[props(default)] first: bool, children: Element) -> Element {
+    rsx! {
+        div { class: if first { "w-full min-w-0 max-w-column" } else { "mt-7 md:mt-0 w-full min-w-0 max-w-column" },
+            {children}
+        }
+    }
+}
+
+/// ページの部（入力・結果・根拠）。デザインシステムの SectionHead: 見出しの上に `ink` の1本線、
+/// 中身との間は `space-3`、前の部との間は `space-7`。`id` を付けると住所の `#id` でその部へ飛べる。
 #[component]
 fn Part(
     title: &'static str,
@@ -347,17 +381,17 @@ fn Part(
 ) -> Element {
     rsx! {
         section { class: if first { "" } else { "mt-7" }, id: (!id.is_empty()).then_some(id),
-            h2 { class: "text-heading pb-2 border-b border-line", {title} }
+            h2 { class: "border-t border-ink pt-2 text-heading", {title} }
             div { class: "mt-3", {children} }
         }
     }
 }
 
-/// 部の中の小見出し（表や式の名前）。前の中身との間は `space-6`。
+/// 表や式の名前。上に置き、中身との間は `space-2`。前の中身との間は `space-6`。
 #[component]
 fn Caption(#[props(default)] first: bool, children: Element) -> Element {
     rsx! {
-        h3 { class: if first { "text-label text-muted" } else { "mt-6 text-label text-muted" },
+        h3 { class: if first { "mb-2 text-label text-muted" } else { "mt-6 mb-2 text-label text-muted" },
             {children}
         }
     }
@@ -379,111 +413,140 @@ fn Source(children: Element) -> Element {
     }
 }
 
-/// 結果の1行: 名前、値、単位。行の端から端まで `line-strong` の下線（`ResultValue`）。
+/// 表示用の表（ui-decisions「表」）。横罫だけで、表の頭と尻に `ink`、見出しの下と行の間に `line`。
+/// 縦罫と塗りは使わない。幅は列いっぱい（1単位）。入りきらない表は外側を `overflow-x-auto` で包む。
 #[component]
-fn ResultLine(name: &'static str, value: String, unit: &'static str) -> Element {
+fn Table(children: Element) -> Element {
     rsx! {
-        tr { class: "border-b border-line-strong",
-            td { class: "py-2 pr-3 text-body", {name} }
-            td { class: "py-2 pl-3 font-mono text-num text-right", {value} }
-            td { class: "py-2 pl-2 text-label text-muted", {unit} }
-        }
+        table { class: "w-full border-y border-ink", {children} }
     }
 }
 
-/// 結果の表の値のセル。`num` の等幅で右揃え。下線は行（`tr`）に引く。
+/// 表の見出しの行。下に `line`。
 #[component]
-fn ResultCell(children: Element) -> Element {
+fn HeadRow(children: Element) -> Element {
     rsx! {
-        td { class: "py-2 pl-3 font-mono text-num text-right",
-            {children}
-        }
+        tr { class: "border-b border-line", {children} }
     }
 }
 
-/// 表示用の表の列見出し。`first` の列は左、ほかは数値の列なので右に揃える。
+/// 表の本体の行。行の間に `line`。最後の行は表の尻の `ink` に任せる。
+#[component]
+fn Row(children: Element) -> Element {
+    rsx! {
+        tr { class: "border-b border-line last:border-b-0", {children} }
+    }
+}
+
+/// 列見出し。`label` の muted。`first` の列は左、ほかは数値の列なので右に揃える。
+/// セルの左右は `space-3`、表の端の列は端に寄せる。
 #[component]
 fn HeadCell(#[props(default)] first: bool, children: Element) -> Element {
     rsx! {
         th {
-            class: if first { "py-2 pr-3 text-left text-label text-muted font-normal" } else { "py-2 pl-3 text-right text-label text-muted font-normal" },
+            class: if first { "py-2 pr-3 text-left text-label text-muted font-normal" } else { "py-2 pl-3 last:pr-0 text-right text-label text-muted font-normal" },
             {children}
         }
     }
 }
 
-/// 表示用の表のセル。`num` の等幅で、`first` の列は左、ほかは右に揃える。
+/// 名前や区分のセル。`body` で左揃え。
+#[component]
+fn TextCell(#[props(default)] first: bool, children: Element) -> Element {
+    rsx! {
+        td { class: if first { "py-2 pr-3 text-body" } else { "py-2 px-3 text-body" }, {children} }
+    }
+}
+
+/// 数値のセル。`num` の等幅で右揃え。
 #[component]
 fn NumCell(#[props(default)] first: bool, children: Element) -> Element {
     rsx! {
         td {
-            class: if first { "py-2 pr-3 font-mono text-num" } else { "py-2 pl-3 font-mono text-num text-right" },
+            class: if first { "py-2 pr-3 font-mono text-num whitespace-nowrap" } else { "py-2 pl-3 font-mono text-num text-right whitespace-nowrap" },
             {children}
         }
     }
 }
 
-/// `/data/rebar`。呼び名の表と種類の一覧。値は JIS の表と同じ桁で出す。
+/// 式のセル。`num` の等幅で左揃え、折り返さない。
+#[component]
+fn FormulaCell(children: Element) -> Element {
+    rsx! {
+        td { class: "py-2 pl-3 font-mono text-num whitespace-nowrap", {children} }
+    }
+}
+
+/// `/data/rebar`。呼び名の表と、種類ごとの許容応力度の表。値は JIS と RC 規準の表と同じ桁で出す。
 #[component]
 pub(crate) fn RebarPage() -> Element {
     rsx! {
         Page { route: Route::DataRebar {},
-            section { class: "overflow-x-auto",
-                h2 { class: "text-heading", "呼び名" }
-                table { class: "mt-3",
-                    thead {
-                        tr { class: "border-b border-line",
-                            HeadCell { first: true, "呼び名" }
-                            HeadCell { "d（mm）" }
-                            HeadCell { "l（mm）" }
-                            HeadCell { "S（mm²）" }
-                            HeadCell { "w（kg/m）" }
-                        }
-                    }
-                    tbody {
-                        for designation in BarDesignation::ALL.iter().copied() {
-                            tr { class: "border-b border-line",
-                                NumCell { first: true, {designation.name()} }
-                                NumCell { {significant(designation.nominal_diameter().as_mm(), 3)} }
-                                NumCell { {format!("{:.1}", designation.nominal_perimeter().as_mm())} }
-                                NumCell { {significant(designation.nominal_area().as_mm2(), 4)} }
-                                NumCell { {significant(designation.unit_mass().as_kg_per_m(), 3)} }
+            Columns {
+                Column { first: true,
+                    Part { title: "呼び名", first: true,
+                        Table {
+                            thead {
+                                HeadRow {
+                                    HeadCell { first: true, "呼び名" }
+                                    HeadCell { "d（mm）" }
+                                    HeadCell { "l（mm）" }
+                                    HeadCell { "S（mm²）" }
+                                    HeadCell { "w（kg/m）" }
+                                }
+                            }
+                            tbody {
+                                for designation in BarDesignation::ALL.iter().copied() {
+                                    Row {
+                                        TextCell { first: true, {designation.name()} }
+                                        NumCell { {significant(designation.nominal_diameter().as_mm(), 3)} }
+                                        NumCell { {format!("{:.1}", designation.nominal_perimeter().as_mm())} }
+                                        NumCell { {significant(designation.nominal_area().as_mm2(), 4)} }
+                                        NumCell { {significant(designation.unit_mass().as_kg_per_m(), 3)} }
+                                    }
+                                }
                             }
                         }
-                    }
-                }
-                p { class: "mt-2 text-label text-muted",
-                    "JIS G 3112:2025 表6。l = 3.142d、S = 0.7854d²、w = 0.00785S を JIS Z 8401 の規則A で丸める。"
-                }
-            }
-            section { class: "mt-7 overflow-x-auto",
-                h2 { class: "text-heading", "許容応力度（N/mm²）" }
-                table { class: "mt-3",
-                    thead {
-                        tr { class: "border-b border-line",
-                            HeadCell { first: true, "種類" }
-                            HeadCell { "長期 引張・圧縮" }
-                            HeadCell { "長期 D29 以上" }
-                            HeadCell { "長期 せん断補強" }
-                            HeadCell { "短期 引張・圧縮" }
-                            HeadCell { "短期 せん断補強" }
+                        Notes {
+                            li { "l = 3.142d、S = 0.7854d²、w = 0.00785S を JIS Z 8401 の規則A で丸める" }
                         }
+                        Source { "JIS G 3112:2025 表6" }
                     }
-                    tbody {
-                        for kind in RebarKind::ALL.iter().copied() {
-                            tr { class: "border-b border-line",
-                                NumCell { first: true, {kind.symbol()} }
-                                NumCell { {integer(kind.allowable_tension_compression(BarDesignation::D25).long_term)} }
-                                NumCell { {integer(kind.allowable_tension_compression(BarDesignation::D29).long_term)} }
-                                NumCell { {integer(kind.allowable_shear_reinforcement().long_term)} }
-                                NumCell { {integer(kind.allowable_tension_compression(BarDesignation::D25).short_term)} }
-                                NumCell { {integer(kind.allowable_shear_reinforcement().short_term)} }
+                }
+                Column {
+                    Part { title: "許容応力度（N/mm²）", first: true,
+                        div { class: "overflow-x-auto",
+                            Table {
+                                thead {
+                                    HeadRow {
+                                        HeadCell { first: true, "種類" }
+                                        HeadCell { "長期 引張・圧縮" }
+                                        HeadCell { "長期 D29 以上" }
+                                        HeadCell { "長期 せん断補強" }
+                                        HeadCell { "短期 引張・圧縮" }
+                                        HeadCell { "短期 せん断補強" }
+                                    }
+                                }
+                                tbody {
+                                    for kind in RebarKind::ALL.iter().copied() {
+                                        Row {
+                                            TextCell { first: true, {kind.symbol()} }
+                                            NumCell { {integer(kind.allowable_tension_compression(BarDesignation::D25).long_term)} }
+                                            NumCell { {integer(kind.allowable_tension_compression(BarDesignation::D29).long_term)} }
+                                            NumCell { {integer(kind.allowable_shear_reinforcement().long_term)} }
+                                            NumCell { {integer(kind.allowable_tension_compression(BarDesignation::D25).short_term)} }
+                                            NumCell { {integer(kind.allowable_shear_reinforcement().short_term)} }
+                                        }
+                                    }
+                                }
                             }
                         }
+                        Notes {
+                            li { "長期の引張・圧縮は D29 以上の太さで小さくなる" }
+                            li { "SD590A 以上は表に値が無いので載せない" }
+                        }
+                        Source { "RC 規準（2024 年版）表 6.2" }
                     }
-                }
-                p { class: "mt-2 text-label text-muted",
-                    "RC 規準 表 6.2。長期の引張・圧縮は D29 以上の太さで小さくなる。SD590A 以上は表に値が無いので載せない。"
                 }
             }
         }
