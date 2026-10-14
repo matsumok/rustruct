@@ -21,6 +21,15 @@ fetch() {
   sed -n 's/^[Ll]ocation: *//p' "$dir/headers" | tr -d '\r' >"$dir/location"
 }
 
+# 配置の直後は DNS と証明書がまだ届かず、接続できない（status 000）ことがある。初回の本番配置で実際に起きた。
+# 応答が返るまで最大 3 分待ってから見る（何かが返れば中身の検査に進む。中身の NG は待っても変わらない）
+waited=0
+while [ "$(fetch / "$dir/probe.html" 2>/dev/null)" = 000 ] && [ "$waited" -lt 180 ]; do
+  [ "$waited" -eq 0 ] && echo "$url に接続できない。DNS・証明書の反映を待つ（最大 3 分）"
+  sleep 10; waited=$((waited + 10))
+done
+[ "$waited" -gt 0 ] && echo "   $waited 秒待った"
+
 # 住所ごとの HTML。一覧は crates/rustruct-web/src/ssg.rs の static_paths と同じ（check-ssg.sh と同様、not-found は別に見る）。
 # /root/ に Cloudflare Access を掛けたら（docs/stack.md）ここは 200 でなくなるので、そのときこの一覧から外す
 for p in / /tools/ /studies/ /notes/ /root/; do
