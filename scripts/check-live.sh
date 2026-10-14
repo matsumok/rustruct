@@ -20,6 +20,14 @@ fetch() {
   curl -sS -o "$2" -D "$dir/headers" -w '%{http_code}' "$url$1"
   sed -n 's/^[Ll]ocation: *//p' "$dir/headers" | tr -d '\r' >"$dir/location"
 }
+# 直前の fetch が弾かれた理由の手がかり。Cloudflare の防御（Bot Fight Mode、WAF）は cf-mitigated を付ける。
+# GitHub の runner からの curl が 403 になったとき（2026-10-14）、これが無いと何に弾かれたか分からなかった
+why() {
+  m=$(sed -n 's/^[Cc][Ff]-[Mm]itigated: *//p' "$dir/headers" | tr -d '\r')
+  [ -n "$m" ] && printf ' (cf-mitigated: %s)' "$m"
+  [ -s "$dir/page.html" ] && printf ' 本文: %s' "$(tr -d '\n' <"$dir/page.html" | head -c 120)"
+  return 0
+}
 
 # 配置の直後は DNS と証明書がまだ届かず、接続できない（status 000）ことがある。初回の本番配置で実際に起きた。
 # 応答が返るまで最大 3 分待ってから見る（何かが返れば中身の検査に進む。中身の NG は待っても変わらない）
@@ -34,7 +42,7 @@ done
 # /root/ に Cloudflare Access を掛けたら（docs/stack.md）ここは 200 でなくなるので、そのときこの一覧から外す
 for p in / /tools/ /studies/ /notes/ /root/; do
   status=$(fetch "$p" "$dir/page.html")
-  [ "$status" = 200 ] || ng "$p が 200 でない: $status"
+  [ "$status" = 200 ] || ng "$p が 200 でない: $status$(why)"
   grep -qF '>rustruct<' "$dir/page.html" || ng "$p に wordmark が無い"
   [ "$p" = / ] || grep -qF '<h1' "$dir/page.html" || ng "$p に見出し（h1）が無い"
 done

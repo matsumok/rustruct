@@ -88,5 +88,6 @@ wrangler は手元に入れていない。配置は CI からだけ行う。ど�
 - **`deploy` が custom domain で落ちる**: トークンの Zone Resources に `matsumok.com` が無い、または `rustruct.matsumok.com` に既存の CNAME がある
 - **`preview` が URL を返さない**: workers.dev のサブドメインが未設定か、Worker の workers.dev 側のプレビュー URL が無効。ダッシュボードの Worker → Settings → Domains & Routes で workers.dev の Preview URLs を有効にする。`wrangler.toml` の `preview_urls = true` はこの設定を配置のたびに書き込む（省略すると既存の設定のまま）
 - **本番の未知の住所が 200 で `/` の中身になる**: `not_found_handling` が `single-page-application` になっているか、`404.html` が無い（`stage-deploy.sh` が走っていない）
+- **「live」が全住所 403**: ゾーン `matsumok.com` の WAF カスタムルールが GitHub の runner（米国の IP）を弾いている。2026-10-14 にルール「Japan」（国が JP でなければマネージドチャレンジ）がこれを起こし、`http.host ne "rustruct.matsumok.com"` を足して除外した。`check-live.sh` は 200 以外のとき `cf-mitigated` ヘッダと本文の先頭を出すので、そこに `challenge` や Cloudflare の文面があれば防御側。セキュリティ → WAF → カスタムルール と セキュリティ → イベント で突き止める。同じゾーンのルール「AI Audit - Block」は UA で多くのクローラー（bingbot を含む）をブロックしている。rustruct を検索エンジンに載せるときは、このホストを除外する
 - **WASM が読めない**: `check-live.sh` の Content-Type の行を見る。`application/wasm` でなければ拡張子か配信側の設定
 - **wrangler の版を上げる**: `.github/workflows/ci.yml` の `WRANGLER_VERSION` 1 箇所。`preview` コマンドと `preview-url` 出力は 4.136.3 以上、wrangler-action は v4.1.3 以上（wrangler-action の action.yml に書かれている）
