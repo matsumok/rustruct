@@ -9,36 +9,37 @@ fn normal(fc: f64) -> Result<Concrete, ConcreteError> {
     Concrete::new(Stress::n_per_mm2(fc), ConcreteKind::Normal)
 }
 
-/// Fc (N/mm²), γ (kN/m³)。下限と各区分の上限
-const TABLE: [(f64, f64); 6] = [
-    (18.0, 23.0),
-    (36.0, 23.0),
-    (48.0, 23.5),
-    (60.0, 24.0),
-    (80.0, 24.5),
-    (100.0, 25.0),
-];
+/// Fc (N/mm²), γ (kN/m³), γ₁ (kN/m³)。各区分の境界と、そのすぐ上の浮動小数点数
+fn table() -> [(f64, f64, f64); 10] {
+    [
+        (18.0, 23.0, 24.0),
+        (36.0, 23.0, 24.0),
+        (36.0_f64.next_up(), 23.5, 24.5),
+        (48.0, 23.5, 24.5),
+        (48.0_f64.next_up(), 24.0, 25.0),
+        (60.0, 24.0, 25.0),
+        (60.0_f64.next_up(), 24.5, 25.5),
+        (80.0, 24.5, 25.5),
+        (80.0_f64.next_up(), 25.0, 26.0),
+        (100.0, 25.0, 26.0),
+    ]
+}
 
 #[test]
 fn unit_weights_follow_the_fc_table() {
-    for (fc, gamma) in TABLE {
+    for (fc, gamma, gamma1) in table() {
         let c = normal(fc).unwrap();
         assert_close(
             c.unit_weight().as_kn_per_m3(),
             gamma,
             &format!("Fc {fc} の γ"),
         );
+        assert_close(
+            c.rc_unit_weight().as_kn_per_m3(),
+            gamma1,
+            &format!("Fc {fc} の γ₁"),
+        );
     }
-}
-
-#[test]
-fn rc_unit_weight_is_one_more_than_unit_weight() {
-    // Fc 24: γ 23 + 1
-    assert_close(
-        normal(24.0).unwrap().rc_unit_weight().as_kn_per_m3(),
-        24.0,
-        "Fc 24 の γ₁",
-    );
 }
 
 #[test]
@@ -84,16 +85,33 @@ fn fc_within_18_to_100_has_no_warning() {
 
 #[test]
 fn fc_below_18_is_computed_with_a_warning() {
-    let c = normal(12.0).unwrap();
-    assert_eq!(c.warning(), Some(ConcreteWarning::BelowMinimum));
-    assert_close(c.unit_weight().as_kn_per_m3(), 23.0, "Fc 12 の γ");
+    for fc in [18.0_f64.next_down(), 12.0] {
+        let c = normal(fc).unwrap();
+        assert_eq!(c.warning(), Some(ConcreteWarning::BelowMinimum), "Fc {fc}");
+        assert_close(
+            c.unit_weight().as_kn_per_m3(),
+            23.0,
+            &format!("Fc {fc} の γ"),
+        );
+    }
 }
 
 #[test]
 fn fc_above_100_is_computed_with_the_last_range_and_a_warning() {
-    let c = normal(120.0).unwrap();
-    assert_eq!(c.warning(), Some(ConcreteWarning::AboveTable));
-    assert_close(c.unit_weight().as_kn_per_m3(), 25.0, "Fc 120 の γ");
+    for fc in [100.0_f64.next_up(), 120.0] {
+        let c = normal(fc).unwrap();
+        assert_eq!(c.warning(), Some(ConcreteWarning::AboveTable), "Fc {fc}");
+        assert_close(
+            c.unit_weight().as_kn_per_m3(),
+            25.0,
+            &format!("Fc {fc} の γ"),
+        );
+        assert_close(
+            c.rc_unit_weight().as_kn_per_m3(),
+            26.0,
+            &format!("Fc {fc} の γ₁"),
+        );
+    }
 }
 
 #[test]
