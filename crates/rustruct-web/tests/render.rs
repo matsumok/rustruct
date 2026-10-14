@@ -1,22 +1,9 @@
 //! 継ぎ目 A（Issue #8 / #11）: 「パス → HTML 文字列」の関数 `render_path` を外から見る。
 //! クラス名の並びは見ない。本文の文字と順序、どこで要素が分かれているか、`<title>` だけを見る。
 
+mod common;
+use common::{assert_in_order, text_of};
 use rustruct_web::{NOT_FOUND_PATH, render_path, static_paths};
-
-/// タグを外した本文。
-fn text_of(html: &str) -> String {
-    let mut out = String::new();
-    let mut in_tag = false;
-    for c in html.chars() {
-        match c {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            c if !in_tag => out.push(c),
-            _ => {}
-        }
-    }
-    out
-}
 
 #[test]
 fn wordmark_is_split_so_the_dot_and_domain_can_be_muted() {
@@ -29,28 +16,20 @@ fn wordmark_is_split_so_the_dot_and_domain_can_be_muted() {
     assert!(rustruct < domain, "順序が違う: {html}");
 }
 
-/// `needles` が `haystack` にこの順で現れることを確かめる。無ければどれが無いかを言う。
-fn assert_in_order(haystack: &str, needles: &[&str]) {
-    let mut from = 0;
-    for n in needles {
-        let at = haystack[from..]
-            .find(n)
-            .unwrap_or_else(|| panic!("「{n}」が無い（またはこの順でない）: {haystack}"));
-        from += at + n.len();
-    }
-}
-
 #[test]
-fn home_lists_the_three_sections_in_order_with_name_blurb_and_path() {
+fn home_lists_the_four_sections_in_order_with_name_blurb_and_path() {
     let html = render_path("/");
     let text = text_of(&html);
-    // 三部がこの順。各項目はパス、名前、一行の順に並ぶ
+    // 四部がこの順。各項目はパス、名前、一行の順に並ぶ
     assert_in_order(
         &text,
         &[
             "/tools",
             "Tools",
             "構造計算の入力・計算・判定。",
+            "/data",
+            "Data",
+            "構造設計で参照する材料や規格の値。",
             "/studies",
             "Studies",
             "数学やかたちを眺めて考えるための可視化。",
@@ -64,7 +43,7 @@ fn home_lists_the_three_sections_in_order_with_name_blurb_and_path() {
 #[test]
 fn home_items_link_to_their_section() {
     let html = render_path("/");
-    for path in ["/tools", "/studies", "/notes"] {
+    for path in ["/tools", "/data", "/studies", "/notes"] {
         assert!(
             html.contains(&format!("href=\"{path}\"")),
             "{path} へのリンクが無い: {html}"
@@ -94,7 +73,7 @@ fn section_page_has_path_title_and_the_empty_sentence_only() {
         );
         assert_eq!(h1_text(&html), title, "{path} の見出し: {html}");
         // 一覧（他の部の名前）は出ない
-        for other in ["Tools", "Studies", "Notes"] {
+        for other in ["Tools", "Data", "Studies", "Notes"] {
             if other != title {
                 assert!(
                     !text.contains(other),
@@ -134,7 +113,7 @@ fn every_item_on_home_leads_to_a_page_headed_with_the_items_name() {
         .into_iter()
         .filter(|(href, _)| href != "/")
         .collect();
-    assert_eq!(items.len(), 3, "一覧の項目数");
+    assert_eq!(items.len(), 4, "一覧の項目数");
     for (href, item_text) in items {
         // 項目の文字は「パス 名前 一行」の順なので、パスを除いた先頭が名前
         let after_path = item_text
@@ -211,7 +190,17 @@ fn not_found_html_is_the_same_whatever_path_was_asked_for() {
 fn ssg_paths_are_the_static_routes_and_the_not_found_page() {
     assert_eq!(
         static_paths(),
-        ["/", "/tools", "/studies", "/notes", "/root", "/404"]
+        [
+            "/",
+            "/tools",
+            "/data",
+            "/data/concrete",
+            "/data/rebar",
+            "/studies",
+            "/notes",
+            "/root",
+            "/404"
+        ]
     );
 }
 
@@ -233,6 +222,9 @@ fn title_is_page_name_then_site_name() {
     for (path, title) in [
         ("/", "Home · rustruct.matsumok.com"),
         ("/tools", "Tools · rustruct.matsumok.com"),
+        ("/data", "Data · rustruct.matsumok.com"),
+        ("/data/concrete", "コンクリート · rustruct.matsumok.com"),
+        ("/data/rebar", "鉄筋 · rustruct.matsumok.com"),
         ("/studies", "Studies · rustruct.matsumok.com"),
         ("/notes", "Notes · rustruct.matsumok.com"),
         ("/root", "root · rustruct.matsumok.com"),

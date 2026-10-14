@@ -5,13 +5,16 @@
   :root, :host {
     --font-sans: "IBM Plex Sans JP", "Hiragino Sans", "BIZ UDPGothic", sans-serif;
     --font-mono: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;
+    --container-sm: 24rem;
     --font-weight-normal: 400;
     --default-font-family: var(--font-sans);
     --default-mono-font-family: var(--font-mono);
     --color-paper: #ffffff;
     --color-line: #e0e1e6;
+    --color-line-strong: #8b8d98;
     --color-ink: #1c2024;
     --color-muted: #60646c;
+    --color-ng: #ce2c31;
     --color-accent: #3e63dd;
     --color-chart-3: #1c2024;
     --text-display: 30px;
@@ -27,9 +30,15 @@
     --text-body: 13px;
     --text-body--line-height: 22px;
     --text-body--font-weight: 400;
+    --text-label: 11px;
+    --text-label--line-height: 16px;
+    --text-label--font-weight: 400;
     --text-path: 11px;
     --text-path--line-height: 16px;
     --text-path--font-weight: 400;
+    --text-num: 13px;
+    --text-num--line-height: 20px;
+    --text-num--font-weight: 400;
     --text-wordmark: 12px;
     --text-wordmark--line-height: 16px;
     --text-wordmark--font-weight: 500;
@@ -196,11 +205,17 @@
   .static {
     position: static;
   }
+  .mt-1 {
+    margin-top: var(--spacing-1);
+  }
   .mt-2 {
     margin-top: var(--spacing-2);
   }
   .mt-3 {
     margin-top: var(--spacing-3);
+  }
+  .mt-7 {
+    margin-top: var(--spacing-7);
   }
   .block {
     display: block;
@@ -208,11 +223,26 @@
   .contents {
     display: contents;
   }
+  .flex {
+    display: flex;
+  }
   .grid {
     display: grid;
   }
+  .table {
+    display: table;
+  }
+  .max-w-sm {
+    max-width: var(--container-sm);
+  }
   .grid-cols-1 {
     grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+  .grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .flex-wrap {
+    flex-wrap: wrap;
   }
   .gap-4 {
     gap: var(--spacing-4);
@@ -220,8 +250,14 @@
   .gap-x-4 {
     column-gap: var(--spacing-4);
   }
+  .gap-y-2 {
+    row-gap: var(--spacing-2);
+  }
   .gap-y-6 {
     row-gap: var(--spacing-6);
+  }
+  .overflow-x-auto {
+    overflow-x: auto;
   }
   .rounded-0 {
     border-radius: var(--radius-0);
@@ -235,8 +271,26 @@
   .rounded-full {
     border-radius: var(--radius-full);
   }
+  .border {
+    border-style: var(--tw-border-style);
+    border-width: 1px;
+  }
+  .border-2 {
+    border-style: var(--tw-border-style);
+    border-width: 2px;
+  }
+  .border-b {
+    border-bottom-style: var(--tw-border-style);
+    border-bottom-width: 1px;
+  }
   .border-line {
     border-color: var(--color-line);
+  }
+  .border-line-strong {
+    border-color: var(--color-line-strong);
+  }
+  .border-ng {
+    border-color: var(--color-ng);
   }
   .bg-paper {
     background-color: var(--color-paper);
@@ -244,8 +298,14 @@
   .p-5 {
     padding: var(--spacing-5);
   }
+  .px-3 {
+    padding-inline: var(--spacing-3);
+  }
   .px-5 {
     padding-inline: var(--spacing-5);
+  }
+  .py-2 {
+    padding-block: var(--spacing-2);
   }
   .py-4 {
     padding-block: var(--spacing-4);
@@ -255,6 +315,18 @@
   }
   .py-8 {
     padding-block: var(--spacing-8);
+  }
+  .pr-3 {
+    padding-right: var(--spacing-3);
+  }
+  .pl-3 {
+    padding-left: var(--spacing-3);
+  }
+  .text-left {
+    text-align: left;
+  }
+  .text-right {
+    text-align: right;
   }
   .font-mono {
     font-family: var(--font-mono);
@@ -277,6 +349,16 @@
     font-size: var(--text-heading);
     line-height: var(--tw-leading, var(--text-heading--line-height));
     font-weight: var(--tw-font-weight, var(--text-heading--font-weight));
+  }
+  .text-label {
+    font-size: var(--text-label);
+    line-height: var(--tw-leading, var(--text-label--line-height));
+    font-weight: var(--tw-font-weight, var(--text-label--font-weight));
+  }
+  .text-num {
+    font-size: var(--text-num);
+    line-height: var(--tw-leading, var(--text-num--line-height));
+    font-weight: var(--tw-font-weight, var(--text-num--font-weight));
   }
   .text-path {
     font-size: var(--text-path);
@@ -308,6 +390,9 @@
   }
   .text-muted {
     color: var(--color-muted);
+  }
+  .text-ng {
+    color: var(--color-ng);
   }
   .sm\:grid-cols-2 {
     @media (width >= 40rem) {
@@ -365,6 +450,11 @@
     font-family: var(--font-sans);
   }
 }
+@property --tw-border-style {
+  syntax: "*";
+  inherits: false;
+  initial-value: solid;
+}
 @property --tw-font-weight {
   syntax: "*";
   inherits: false;
@@ -372,6 +462,7 @@
 @layer properties {
   @supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))) {
     *, ::before, ::after, ::backdrop {
+      --tw-border-style: solid;
       --tw-font-weight: initial;
     }
   }
