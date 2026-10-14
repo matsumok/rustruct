@@ -28,7 +28,7 @@ PR を閉じる ──→ wrangler preview delete
 1. **アカウント ID を控える**。ダッシュボードの Workers & Pages の右側（または任意のドメインの概要ページ右下）に「Account ID」がある。後で GitHub の Secret `CLOUDFLARE_ACCOUNT_ID` に入れる
 2. **ゾーン `matsumok.com` が Cloudflare にあることを確かめる**（ネームサーバーが Cloudflare を向いている）。カスタムドメインは自分のゾーンにしか作れない
 3. **`rustruct.matsumok.com` の既存の DNS レコードを消す**（あれば）。カスタムドメインは既存の CNAME の上には作れない。レコードは配置のときに Cloudflare が作る
-4. **workers.dev のサブドメインを決める**。Workers & Pages → 概要 → 右側の「サブドメイン」。`<サブドメイン>.workers.dev` の `<サブドメイン>` がプレビュー URL の一部になる（本番は workers.dev に出さない）
+4. **workers.dev のサブドメインを決める**。Workers & Pages → 概要 → 右側の「サブドメイン」。`<サブドメイン>.workers.dev` の `<サブドメイン>` がプレビュー URL の一部になる（本番は workers.dev に出さない）。2026-10-14 に `matsumok-digital` と決めた
 5. **API トークンを作る**。プロフィール → API トークン → トークンを作成 → テンプレート「Cloudflare Workers を編集する（Edit Cloudflare Workers）」。中身は Workers Scripts（Account）、Workers Routes（Zone）など。範囲は「Account Resources = 自分のアカウント」「Zone Resources = Specific zone = matsumok.com」に絞る。値は一度しか表示されないので、次の節の `gh secret set` にその場で渡す
 
 ## GitHub に Secrets を入れる
@@ -50,17 +50,18 @@ Secrets が無いと、`check` job は通り、`deploy` / `preview` job が wran
 - Worker `rustruct` が無ければ作る
 - `wrangler.toml` の `routes`（`custom_domain = true`）で `rustruct.matsumok.com` を Worker に結び、DNS レコードを Cloudflare が作る。証明書も自動
 - 続く step「live」が `scripts/check-live.sh https://rustruct.matsumok.com` で、住所ごとの HTML、`/tools` → `/tools/` の転送、未知の住所の 404、CSS・WASM、WASM の Content-Type を見る
-- 初回は DNS レコードと証明書の発行が「live」に間に合わず、配置は済んでいるのに「live」だけ落ちることがある。数分待って Actions の「Re-run failed jobs」で `deploy` job をやり直す
+- 初回は DNS レコードと証明書の発行に数十秒かかる（2026-10-14 の初回配置で、直後の curl が全部接続できず「live」だけ落ちた）。`check-live.sh` は応答が返るまで最大 3 分待つ。それでも落ちたら、Actions の「Re-run failed jobs」で `deploy` job をやり直す
 
 GitHub の Environments（`production`、`preview`）は最初の run が自動で作る。手で作る必要は無い。
 
 ## PR のプレビュー
 
 - PR を開く（同じリポジトリのブランチから。fork には Secrets が渡らない）と、`preview` job が `wrangler preview --name pr-<番号>` でプレビューを作り、URL を PR のコメントに書く。push のたびに同じ URL の中身が新しくなり、コメントは 1 つを書き換える
-- URL は `https://pr-<番号>-rustruct.<サブドメイン>.workers.dev`。PR の「deployments」からも辿れる
+- URL は `https://pr-<番号>-rustruct.matsumok-digital.workers.dev`。PR の「deployments」からも辿れる
 - 本番は `workers_dev = false` で workers.dev に出さず、プレビューは `preview_urls = true` で workers.dev に出す。この組み合わせで本当にプレビュー URL が出るかは Cloudflare の文書に明記が無いので、最初の PR で確かめる（出なければ下の「困ったとき」）
 - workers.dev のプレビューは `X-Robots-Tag: noindex` 付きで配られ、検索エンジンには載らない
 - PR を閉じる（merge を含む）と `cleanup` job がプレビューを消す。無料枠は Worker ごと 100 プレビューまで
+- **既知の制限**: プレビューでは未知の住所が本文の無い 404 になる（`wrangler preview` が `not_found_handling` を落とす。cloudflare/workers-sdk#16047、2026-10-14 時点で open）。`check-live.sh` は workers.dev に限りこれを注意に留める。not-found の見た目はプレビューでは確かめられないので本番で見る。直ったら `check-live.sh` のその分岐を消す
 
 ## 人の目で見ること
 

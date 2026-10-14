@@ -21,6 +21,15 @@ fetch() {
   sed -n 's/^[Ll]ocation: *//p' "$dir/headers" | tr -d '\r' >"$dir/location"
 }
 
+# 配置の直後は DNS と証明書がまだ届かず、接続できない（status 000）ことがある。初回の本番配置で実際に起きた。
+# 応答が返るまで最大 3 分待ってから見る（何かが返れば中身の検査に進む。中身の NG は待っても変わらない）
+waited=0
+while [ "$(fetch / "$dir/probe.html" 2>/dev/null)" = 000 ] && [ "$waited" -lt 180 ]; do
+  [ "$waited" -eq 0 ] && echo "$url に接続できない。DNS・証明書の反映を待つ（最大 3 分）"
+  sleep 10; waited=$((waited + 10))
+done
+[ "$waited" -gt 0 ] && echo "   $waited 秒待った"
+
 # 住所ごとの HTML。一覧は crates/rustruct-web/src/ssg.rs の static_paths と同じ（check-ssg.sh と同様、not-found は別に見る）。
 # /root/ に Cloudflare Access を掛けたら（docs/stack.md）ここは 200 でなくなるので、そのときこの一覧から外す
 for p in / /tools/ /studies/ /notes/ /root/; do
@@ -37,10 +46,17 @@ case "$status" in
   *) ng "/tools が転送されない: $status" ;;
 esac
 
-# 未知の住所は 404 で not-found の本文（not_found_handling = "404-page"）。文言は tests/render.rs・check-ssg.sh と同じ
+# 未知の住所は 404 で not-found の本文（not_found_handling = "404-page"）。文言は tests/render.rs・check-ssg.sh と同じ。
+# workers.dev のプレビューでは wrangler preview が not_found_handling を落とし、本文の無い 404 が返る
+# （cloudflare/workers-sdk#16047、2026-10-14 時点で open）。そこだけ NG にせず注意に留める。本番は厳しいまま
 status=$(fetch "/no-such-address-$$/" "$dir/notfound.html")
 [ "$status" = 404 ] || ng "未知の住所が 404 でない: $status"
-grep -qF 'この住所には何もない。' "$dir/notfound.html" || ng "未知の住所に not-found の本文が無い"
+if ! grep -qF 'この住所には何もない。' "$dir/notfound.html"; then
+  case "$url" in
+    *.workers.dev) echo "注意: プレビューでは not-found の本文が届かない（workers-sdk#16047 が直るまで）" ;;
+    *) ng "未知の住所に not-found の本文が無い" ;;
+  esac
+fi
 
 # HTML → CSS、読込スクリプト → WASM
 fetch / "$dir/index.html" >/dev/null
