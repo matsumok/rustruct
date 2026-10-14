@@ -22,29 +22,41 @@ pub struct UnitWeightRange {
 }
 
 impl ConcreteKind {
-    /// 気乾単位体積重量の表（慣例の値、`docs/materials/adr/0001`）。区分を下から並べ、最後の上限が表の上限。
-    /// 表は「無筋コンクリートの単位容積重量」の列。[`Concrete::unit_weight`] もページの表もここから引く
+    /// 気乾単位体積重量の表。区分を下から並べ、最後の上限が表の上限。ページに表を見せるために置く
     pub fn unit_weight_table(self) -> &'static [UnitWeightRange] {
-        const fn row(fc_upper: f64, unit_weight: f64) -> UnitWeightRange {
-            UnitWeightRange {
-                fc_upper: Stress::n_per_mm2(fc_upper),
-                unit_weight: UnitWeight::kn_per_m3(unit_weight),
-            }
-        }
         match self {
-            Self::Normal => {
-                &const {
-                    [
-                        row(36.0, 23.0),
-                        row(48.0, 23.5),
-                        row(60.0, 24.0),
-                        row(80.0, 24.5),
-                        row(FC_MAX, 25.0),
-                    ]
-                }
-            }
+            Self::Normal => NORMAL_UNIT_WEIGHT_TABLE,
         }
     }
+}
+
+/// 「Fc の上限 => γ」の1つの表から、γ を引く match と、ページに見せる表の両方を作る。
+/// 表の上限を超えた Fc は最後の区分の値を使う（ワーニングは `Concrete::warning` が言う）
+macro_rules! unit_weight_table {
+    ($table:ident, $lookup:ident, $(..= $fc_upper:tt => $kn_per_m3:literal,)+) => {
+        const $table: &[UnitWeightRange] = &[$(UnitWeightRange {
+            fc_upper: Stress::n_per_mm2($fc_upper),
+            unit_weight: UnitWeight::kn_per_m3($kn_per_m3),
+        },)+];
+
+        fn $lookup(fc: Stress) -> UnitWeight {
+            match fc.as_n_per_mm2() {
+                $(..= $fc_upper => UnitWeight::kn_per_m3($kn_per_m3),)+
+                _ => $table[$table.len() - 1].unit_weight,
+            }
+        }
+    };
+}
+
+// 普通コンクリートの気乾単位体積重量（慣例の値、`docs/materials/adr/0001`）。
+// Fc の区分の上限 [N/mm²] => γ [kN/m³]。表は「無筋コンクリートの単位容積重量」の列
+unit_weight_table! {
+    NORMAL_UNIT_WEIGHT_TABLE, normal_unit_weight,
+    ..=36.0 => 23.0,
+    ..=48.0 => 23.5,
+    ..=60.0 => 24.0,
+    ..=80.0 => 24.5,
+    ..=FC_MAX => 25.0,
 }
 
 /// 設計基準強度と種類で特定されるコンクリート。Fc は正の有限値に限る。
@@ -129,16 +141,11 @@ impl Concrete {
         self.kind
     }
 
-    /// 気乾単位体積重量 γ。Fc が上限以下になる最初の区分の値。表の上限を超えても最後の区分の値を使う
-    /// （ワーニングは warning が言う）
+    /// 気乾単位体積重量 γ。Fc の区分の表で引く
     pub fn unit_weight(self) -> UnitWeight {
-        let table = self.kind.unit_weight_table();
-        let row = table
-            .iter()
-            .find(|row| self.fc <= row.fc_upper)
-            .or(table.last())
-            .expect("表の区分は1つ以上");
-        row.unit_weight
+        match self.kind {
+            ConcreteKind::Normal => normal_unit_weight(self.fc),
+        }
     }
 
     /// 鉄筋コンクリートの単位体積重量 γ₁ = γ + 1 kN/m³
