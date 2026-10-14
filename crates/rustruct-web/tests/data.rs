@@ -89,19 +89,14 @@ fn concrete_page_shows_the_unit_weight_table_by_fc_range() {
         &[
             "Fc ≦ 36",
             "23.0",
-            "24.0",
             "36 < Fc ≦ 48",
             "23.5",
-            "24.5",
             "48 < Fc ≦ 60",
             "24.0",
-            "25.0",
             "60 < Fc ≦ 80",
             "24.5",
-            "25.5",
             "80 < Fc ≦ 100",
             "25.0",
-            "26.0",
         ],
     );
 }
@@ -115,25 +110,19 @@ fn concrete_page_opens_at_fc_24_with_its_results() {
     );
     assert_in_order(
         &text_of(&html),
-        &[
-            "23.0",
-            "24.0",
-            "2.27×10⁴",
-            "E = 3.35×10⁴ × (γ/24)² × (Fc/60)1/3",
-        ],
+        &["23.0", "2.27×10⁴", "E = 3.35×10⁴ × (γ/24)² × (Fc/60)1/3"],
     );
 }
 
-/// 計算できたときの表示。(γ, γ₁, E, ワーニング)
-fn computed(input: &str) -> (String, String, String, Option<String>) {
+/// 計算できたときの表示。(γ, E, ワーニング)
+fn computed(input: &str) -> (String, String, Option<String>) {
     match ConcreteReadout::from_fc_input(input) {
         ConcreteReadout::Computed {
             unit_weight,
-            rc_unit_weight,
             young_modulus,
             warning,
             ..
-        } => (unit_weight, rc_unit_weight, young_modulus, warning),
+        } => (unit_weight, young_modulus, warning),
         unusable => panic!("入力「{input}」が計算できない: {unusable:?}"),
     }
 }
@@ -164,25 +153,21 @@ fn readout_shows_allowable_stresses_to_three_figures() {
 
 #[test]
 fn readout_rounds_unit_weights_to_one_decimal_and_e_to_three_figures() {
-    for (fc, gamma, gamma1, e) in [
-        ("24", "23.0", "24.0", "2.27×10⁴"),
-        ("60", "24.0", "25.0", "3.35×10⁴"),
-        ("100", "25.0", "26.0", "4.31×10⁴"),
+    for (fc, gamma, e) in [
+        ("24", "23.0", "2.27×10⁴"),
+        ("60", "24.0", "3.35×10⁴"),
+        ("100", "25.0", "4.31×10⁴"),
     ] {
-        assert_eq!(
-            computed(fc),
-            (gamma.into(), gamma1.into(), e.into(), None),
-            "Fc {fc}"
-        );
+        assert_eq!(computed(fc), (gamma.into(), e.into(), None), "Fc {fc}");
     }
 }
 
 #[test]
 fn readout_warns_outside_18_to_100_but_still_computes() {
-    let (gamma, _, _, warning) = computed("12");
+    let (gamma, _, warning) = computed("12");
     assert_eq!(gamma, "23.0");
     assert_eq!(warning.as_deref(), Some("Fc が下限 18 N/mm² に満たない"));
-    let (gamma, _, _, warning) = computed("120");
+    let (gamma, _, warning) = computed("120");
     assert_eq!(gamma, "25.0");
     assert_eq!(
         warning.as_deref(),
@@ -211,15 +196,15 @@ fn readout_is_unusable_with_an_error_when_fc_cannot_be_used() {
 #[test]
 fn concrete_page_reads_input_then_results_then_their_basis() {
     let text = text_of(&render_path("/data/concrete"));
+    for label in ["入力", "結果", "根拠", "出典", "γ₁"] {
+        assert!(!text.contains(label), "「{label}」が出ている: {text}");
+    }
     assert_in_order(
         &text,
         &[
-            "入力",
             "Fc（N/mm²）",
-            "結果",
             "2.27×10⁴",
             "0.730",
-            "根拠",
             "Fc ≦ 36",
             "E = 3.35×10⁴ × (γ/24)² × (Fc/60)1/3",
             "min(Fc/30, 0.49+Fc/100)",
@@ -230,5 +215,5 @@ fn concrete_page_reads_input_then_results_then_their_basis() {
 #[test]
 fn results_carry_their_unit_after_the_number() {
     let text = text_of(&render_path("/data/concrete"));
-    assert_in_order(&text, &["23.0 kN/m³", "24.0 kN/m³", "2.27×10⁴ N/mm²"]);
+    assert_in_order(&text, &["23.0 kN/m³", "2.27×10⁴ N/mm²"]);
 }
