@@ -253,9 +253,9 @@ pub(crate) fn ConcretePage() -> Element {
             Part { title: "結果",
                 table { class: "w-full max-w-sm",
                     tbody {
-                        ResultLine { name: "γ", value: unit_weight, unit: "kN/m³" }
-                        ResultLine { name: "γ₁", value: rc_unit_weight, unit: "kN/m³" }
-                        ResultLine { name: "E", value: young_modulus, unit: "N/mm²" }
+                        ResultLine { name: "気乾単位体積重量 γ", value: unit_weight, unit: "kN/m³" }
+                        ResultLine { name: "鉄筋コンクリートの単位体積重量 γ₁", value: rc_unit_weight, unit: "kN/m³" }
+                        ResultLine { name: "ヤング係数 E", value: young_modulus, unit: "N/mm²" }
                     }
                 }
                 Caption { "許容応力度（N/mm²）" }
