@@ -12,6 +12,26 @@ pub enum ConcreteKind {
     Normal,
 }
 
+impl ConcreteKind {
+    /// 気乾単位体積重量の表の区分の上限を下から。[`Concrete::unit_weight`] の match と同じ値で、
+    /// 表を見せるために置く（一致はテストで確かめる）。最後は表の上限
+    pub fn unit_weight_range_uppers(self) -> &'static [Stress] {
+        match self {
+            Self::Normal => {
+                &const {
+                    [
+                        Stress::n_per_mm2(36.0),
+                        Stress::n_per_mm2(48.0),
+                        Stress::n_per_mm2(60.0),
+                        Stress::n_per_mm2(80.0),
+                        Stress::n_per_mm2(FC_MAX),
+                    ]
+                }
+            }
+        }
+    }
+}
+
 /// 設計基準強度と種類で特定されるコンクリート。Fc は正の有限値に限る。
 /// 18 以上 100 以下（N/mm²）を外れても作れて、計算もできる。外れていることは [`Concrete::warning`] が言う。
 #[derive(Debug, Clone, Copy, PartialEq)]
