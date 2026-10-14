@@ -9,44 +9,11 @@
     --default-font-family: var(--font-sans);
     --default-mono-font-family: var(--font-mono);
     --color-paper: #ffffff;
-    --color-fill: #f0f0f3;
     --color-line: #e0e1e6;
-    --color-line-strong: #8b8d98;
     --color-ink: #1c2024;
     --color-muted: #60646c;
-    --color-ng: #ce2c31;
-    --color-on-ink: #ffffff;
     --color-accent: #3e63dd;
-    --color-accent-soft: #c1d0ff;
-    --color-chart-1: #ab6400;
-    --color-chart-2: #00a2c7;
     --color-chart-3: #1c2024;
-    --color-chart-4: #e54666;
-    --color-chart-5: #6e56cf;
-    --color-seq-1: #f7f9ff;
-    --color-seq-2: #dbe4ff;
-    --color-seq-3: #becffc;
-    --color-seq-4: #a3baf7;
-    --color-seq-5: #88a5f1;
-    --color-seq-6: #6e90eb;
-    --color-seq-7: #5d81e6;
-    --color-seq-8: #456adf;
-    --color-seq-9: #3959c2;
-    --color-seq-10: #304a9e;
-    --color-seq-11: #273b7c;
-    --color-seq-12: #1f2d5c;
-    --color-div-1: #1f2d5c;
-    --color-div-2: #2f499e;
-    --color-div-3: #4369df;
-    --color-div-4: #7495ed;
-    --color-div-5: #a9bff8;
-    --color-div-6: #e1e8fb;
-    --color-div-7: #f6f0d1;
-    --color-div-8: #fed45b;
-    --color-div-9: #e1a12a;
-    --color-div-10: #b8730c;
-    --color-div-11: #85501b;
-    --color-div-12: #4f3422;
     --text-display: 30px;
     --text-display--line-height: 40px;
     --text-display--font-weight: 300;
@@ -229,9 +196,6 @@
   .static {
     position: static;
   }
-  .mt-1 {
-    margin-top: var(--spacing-1);
-  }
   .mt-2 {
     margin-top: var(--spacing-2);
   }
@@ -246,15 +210,6 @@
   }
   .grid {
     display: grid;
-  }
-  .table {
-    display: table;
-  }
-  .border-collapse {
-    border-collapse: collapse;
-  }
-  .resize {
-    resize: both;
   }
   .grid-cols-1 {
     grid-template-columns: repeat(1, minmax(0, 1fr));
@@ -279,10 +234,6 @@
   }
   .rounded-full {
     border-radius: var(--radius-full);
-  }
-  .border {
-    border-style: var(--tw-border-style);
-    border-width: 1px;
   }
   .border-line {
     border-color: var(--color-line);
@@ -358,13 +309,6 @@
   .text-muted {
     color: var(--color-muted);
   }
-  .underline {
-    text-decoration-line: underline;
-  }
-  .outline {
-    outline-style: var(--tw-outline-style);
-    outline-width: 1px;
-  }
   .sm\:grid-cols-2 {
     @media (width >= 40rem) {
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -421,26 +365,14 @@
     font-family: var(--font-sans);
   }
 }
-@property --tw-border-style {
-  syntax: "*";
-  inherits: false;
-  initial-value: solid;
-}
 @property --tw-font-weight {
   syntax: "*";
   inherits: false;
 }
-@property --tw-outline-style {
-  syntax: "*";
-  inherits: false;
-  initial-value: solid;
-}
 @layer properties {
   @supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))) {
     *, ::before, ::after, ::backdrop {
-      --tw-border-style: solid;
       --tw-font-weight: initial;
-      --tw-outline-style: solid;
     }
   }
 }
