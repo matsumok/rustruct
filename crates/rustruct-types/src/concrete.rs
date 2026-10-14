@@ -42,16 +42,6 @@ impl fmt::Display for ConcreteError {
 
 impl std::error::Error for ConcreteError {}
 
-/// 普通コンクリートの気乾単位体積重量の表（慣例の値、`docs/materials/adr/0001`）。
-/// （Fc の区分の上限 [N/mm²], γ [kN/m³]）を下から。表は「無筋コンクリートの単位容積重量」の列
-const NORMAL_UNIT_WEIGHTS: [(f64, f64); 5] = [
-    (36.0, 23.0),
-    (48.0, 23.5),
-    (60.0, 24.0),
-    (80.0, 24.5),
-    (FC_MAX, 25.0),
-];
-
 /// Fc の下限 [N/mm²]。これに満たない Fc のコンクリートは作れない
 const FC_MIN: f64 = 18.0;
 
@@ -82,17 +72,21 @@ impl Concrete {
         self.kind
     }
 
-    /// 気乾単位体積重量 γ。Fc の区分の表で引く
+    /// 気乾単位体積重量 γ。Fc の区分の表で引く（慣例の値、`docs/materials/adr/0001`）。
+    /// 表は「無筋コンクリートの単位容積重量」の列
     pub fn unit_weight(self) -> UnitWeight {
         let fc = self.fc.as_n_per_mm2();
-        let table = match self.kind {
-            ConcreteKind::Normal => &NORMAL_UNIT_WEIGHTS,
+        let kn_per_m3 = match self.kind {
+            ConcreteKind::Normal => match fc {
+                ..=36.0 => 23.0,
+                ..=48.0 => 23.5,
+                ..=60.0 => 24.0,
+                ..=80.0 => 24.5,
+                ..=FC_MAX => 25.0,
+                _ => unreachable!("Fc は生成のときに表の範囲に限っている"),
+            },
         };
-        let (_, kn_per_m3) = table
-            .iter()
-            .find(|(upper, _)| fc <= *upper)
-            .expect("Fc は生成のときに表の範囲に限っている");
-        UnitWeight::kn_per_m3(*kn_per_m3)
+        UnitWeight::kn_per_m3(kn_per_m3)
     }
 
     /// 鉄筋コンクリートの単位体積重量 γ₁ = γ + 1 kN/m³
