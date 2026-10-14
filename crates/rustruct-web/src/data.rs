@@ -271,7 +271,7 @@ pub(crate) fn ConcretePage() -> Element {
                 h2 { class: "text-heading", "ヤング係数 E" }
                 p { class: "mt-3 font-mono text-num", "E = 3.35×10⁴ × (γ/24)² × (Fc/60)^(1/3)" }
                 p { class: "mt-2 text-label text-muted",
-                    "RC 規準（2018 年版）。E と Fc は N/mm²、γ は kN/m³。"
+                    "RC 規準（2024 年版）。E と Fc は N/mm²、γ は kN/m³。"
                 }
             }
         }

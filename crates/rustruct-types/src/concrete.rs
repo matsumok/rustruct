@@ -196,7 +196,7 @@ impl Concrete {
     }
 
     /// ヤング係数 E = 3.35×10⁴ × (γ/24)² × (Fc/60)^(1/3) [N/mm²]。γ は kN/m³、Fc は N/mm²。
-    /// RC 規準（2018 年版）の式
+    /// RC 規準（2024 年版）の式
     pub fn young_modulus(self) -> Stress {
         let gamma = self.unit_weight().as_kn_per_m3();
         let fc = self.fc.as_n_per_mm2();
