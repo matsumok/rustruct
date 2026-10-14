@@ -1,7 +1,7 @@
 # rustruct
 
 構造設計者向けの計算ツールと、数学的な可視化・書きものを置く個人サイト（rustruct.matsumok.com）。
-思想と経緯は `docs/philosophy.md`、UI の決め事は `docs/ui-decisions.md`、骨格と技術スタックは `docs/stack.md`、Dioxus 0.7 でコードから読めない挙動は `docs/dioxus-0.7.md`（無いことは vendored ソースを grep する）を参照。
+思想と経緯は `docs/philosophy.md`、UI の決め事は `docs/ui-decisions.md`（デザインシステムの写しは `docs/design/README.md`。見た目を提案する前に両方を読む）、骨格と技術スタックは `docs/stack.md`、Dioxus 0.7 でコードから読めない挙動は `docs/dioxus-0.7.md`（無いことは vendored ソースを grep する）を参照。
 
 ## Commands
 

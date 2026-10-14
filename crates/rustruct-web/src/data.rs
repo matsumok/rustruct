@@ -256,16 +256,16 @@ pub(crate) fn ConcretePage() -> Element {
                         Table {
                             tbody {
                                 Row {
-                                    TextCell { first: true, "気乾単位体積重量 γ（kN/m³）" }
-                                    NumCell { {unit_weight} }
+                                    TextCell { first: true, "気乾単位体積重量 γ" }
+                                    NumCell { {with_unit(&unit_weight, "kN/m³")} }
                                 }
                                 Row {
-                                    TextCell { first: true, "鉄筋コンクリートの単位体積重量 γ₁（kN/m³）" }
-                                    NumCell { {rc_unit_weight} }
+                                    TextCell { first: true, "鉄筋コンクリートの単位体積重量 γ₁" }
+                                    NumCell { {with_unit(&rc_unit_weight, "kN/m³")} }
                                 }
                                 Row {
-                                    TextCell { first: true, "ヤング係数 E（N/mm²）" }
-                                    NumCell { {young_modulus} }
+                                    TextCell { first: true, "ヤング係数 E" }
+                                    NumCell { {with_unit(&young_modulus, "N/mm²")} }
                                 }
                             }
                         }
@@ -413,12 +413,12 @@ fn Source(children: Element) -> Element {
     }
 }
 
-/// 表示用の表（ui-decisions「表」）。横罫だけで、表の頭と尻に `ink`、見出しの下と行の間に `line`。
+/// 表示用の表（ui-decisions「列の単位と表」）。横罫だけで、線はすべて `line`（`ink` は部の見出しの上だけ）。
 /// 縦罫と塗りは使わない。幅は列いっぱい（1単位）。入りきらない表は外側を `overflow-x-auto` で包む。
 #[component]
 fn Table(children: Element) -> Element {
     rsx! {
-        table { class: "w-full border-y border-ink", {children} }
+        table { class: "w-full", {children} }
     }
 }
 
@@ -430,11 +430,11 @@ fn HeadRow(children: Element) -> Element {
     }
 }
 
-/// 表の本体の行。行の間に `line`。最後の行は表の尻の `ink` に任せる。
+/// 表の本体の行。下に `line`（最後の行も）。
 #[component]
 fn Row(children: Element) -> Element {
     rsx! {
-        tr { class: "border-b border-line last:border-b-0", {children} }
+        tr { class: "border-b border-line", {children} }
     }
 }
 
@@ -550,6 +550,15 @@ pub(crate) fn RebarPage() -> Element {
                 }
             }
         }
+    }
+}
+
+/// 数字の後に付ける単位は括弧なし（「23.0 kN/m³」）。計算できない「—」には付けない
+fn with_unit(value: &str, unit: &str) -> String {
+    if value == NOT_COMPUTED {
+        value.to_string()
+    } else {
+        format!("{value} {unit}")
     }
 }
 

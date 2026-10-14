@@ -226,3 +226,9 @@ fn concrete_page_reads_input_then_results_then_their_basis() {
         ],
     );
 }
+
+#[test]
+fn results_carry_their_unit_after_the_number() {
+    let text = text_of(&render_path("/data/concrete"));
+    assert_in_order(&text, &["23.0 kN/m³", "24.0 kN/m³", "2.27×10⁴ N/mm²"]);
+}
