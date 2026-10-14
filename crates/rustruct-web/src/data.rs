@@ -98,11 +98,13 @@ fn significant(x: f64, figures: i32) -> String {
 fn unit_weight_rows() -> Vec<(String, String, String)> {
     let mut lower: Option<f64> = None;
     ConcreteKind::Normal
-        .unit_weight_range_uppers()
+        .unit_weight_table()
         .iter()
-        .map(|&upper| {
-            let c = Concrete::new(upper, ConcreteKind::Normal).expect("区分の上限は正の有限値");
-            let upper = upper.as_n_per_mm2();
+        .map(|row| {
+            // γ₁ は区分の上限の Fc のコンクリートに求めさせる（γ + 1 をここで書かない）
+            let c =
+                Concrete::new(row.fc_upper, ConcreteKind::Normal).expect("区分の上限は正の有限値");
+            let upper = row.fc_upper.as_n_per_mm2();
             let range = match lower {
                 None => format!("Fc ≦ {upper}"),
                 Some(lower) => format!("{lower} < Fc ≦ {upper}"),
@@ -110,7 +112,7 @@ fn unit_weight_rows() -> Vec<(String, String, String)> {
             lower = Some(upper);
             (
                 range,
-                format!("{:.1}", c.unit_weight().as_kn_per_m3()),
+                format!("{:.1}", row.unit_weight.as_kn_per_m3()),
                 format!("{:.1}", c.rc_unit_weight().as_kn_per_m3()),
             )
         })
@@ -128,9 +130,10 @@ pub(crate) fn ConcretePage() -> Element {
         ConcreteReadout::Unusable { error } => (Some(error.clone()), None),
     };
     let fc_max = ConcreteKind::Normal
-        .unit_weight_range_uppers()
+        .unit_weight_table()
         .last()
         .expect("表の区分は1つ以上")
+        .fc_upper
         .as_n_per_mm2();
     rsx! {
         Page { route: Route::DataConcrete {},
