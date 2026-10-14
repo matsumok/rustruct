@@ -26,6 +26,12 @@
   - 生成器は `crates/rustruct-web/src/theme.rs` の純粋関数で、`build.rs` が `crates/rustruct-web/theme.css` に書く。`tailwind.css` がそれを `@import` し、dx が `assets/tailwind.css` に出力する。`theme.css` と `assets/tailwind.css` はどちらも生成物だが、`asset!` がコンパイル時にファイルを要求するのでリポジトリに入れる（手で編集しない）
   - 生成した `@theme` は色・文字・余白・角丸の名前空間で Tailwind の既定値（`bg-red-500`、`text-sm`、`p-3.5` など）を消す。役割名のクラスだけが存在し、tokens.json にない値はマークアップに書けない。`--spacing` の既定の目盛りも消えるので、`w-*` / `max-w-*` / `gap-*` の数値も `space-1`〜`space-8` の範囲だけになる
   - `dx serve` は `docs/` を監視しないので、tokens.json を変えたら `.rs` を保存し直すか `dx serve` を再起動する
+- Dioxus 0.7 の勘所（2026-10-14 に #11 で vendored ソースを読んで確かめた。コードから読めないことだけ）
+  - `router` は `dioxus` の既定 feature に無い。`Cargo.toml` で足して初めて `Router` / `Link` / `Routable` が prelude に出る
+  - `#[route("/tools", SectionPage)]` の第2引数でコンポーネントを指定できる。共有するコンポーネントは `use_route::<Route>()` で自分のルートを知る
+  - ネイティブ描画は `VirtualDom` に `Rc<dyn History>`（`dioxus::history::MemoryHistory`）と `Rc<dyn Document>` を root context で渡せば動く。`document::Title` / `Meta` は `Document` の `set_title` / `create_head_element` に来る（`crates/rustruct-web/src/prerender.rs`）
+  - `document::Meta` は初回描画後の props 変更を head に反映しない（SPA 遷移で description は変わらない。SSG の HTML には各ページの値が入る）
+  - `dx build --ssg` はサーバーを起動し、`POST /api/static_routes` が返す `Vec<String>` のパスを順に取得して保存する。`Route::static_routes()` がその列挙元
 - ライトとダークを最初から両方作る。色は役割名トークンで指定し、`@custom-variant dark` の1行で切り替える
 - コントラスト検査は Rust のテストとして tokens.json を読んで行い、CI で回す。WCAG 比（usage に書かれた 3:1 / 4.5:1）を必須、APCA を警告として出す。最初の一本には含めない
 - フォントは IBM Plex Sans JP と Plex Mono。まず Google Fonts CDN

@@ -10,6 +10,7 @@ step() {
     fmt)     cargo fmt --all --check ;;
     deps)    sh scripts/check-deps.sh ;;
     markup)  sh scripts/check-markup.sh ;;
+    classes) sh scripts/check-classes.sh ;;
     clippy)  cargo clippy --workspace --all-targets --locked -- -D warnings ;;
     server)  cargo clippy -p rustruct-web --features server --locked -- -D warnings ;;
     wasm)    cargo check -p rustruct-web --features web --target wasm32-unknown-unknown --locked ;;
@@ -23,7 +24,7 @@ step() {
 if [ "$#" -gt 0 ]; then
   for s in "$@"; do step "$s"; done
 else
-  for s in fmt deps markup clippy server wasm test theme; do
+  for s in fmt deps markup classes clippy server wasm test theme; do
     echo "== $s"; step "$s"
   done
 fi

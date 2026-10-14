@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   check:
-    name: fmt / deps / markup / clippy / wasm / test / theme
+    name: fmt / deps / markup / classes / clippy / wasm / test / theme
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -30,6 +30,9 @@ jobs:
 
       - name: markup (マークアップに値を書かない)
         run: sh scripts/check.sh markup
+
+      - name: classes (生成物 assets/tailwind.css がマークアップと合っている)
+        run: sh scripts/check.sh classes
 
       - name: clippy (feature なし)
         run: sh scripts/check.sh clippy
