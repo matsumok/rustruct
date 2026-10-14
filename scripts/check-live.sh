@@ -5,6 +5,7 @@
 # 見るもの: 住所ごとの HTML が 200 で届き、末尾スラッシュ無しは 307 で揃えられ、未知の住所は 404 で not-found の
 # 本文が返り、HTML が参照する CSS・読込スクリプト・WASM が届き、WASM の Content-Type が application/wasm
 # （ストリーミング compile の条件）。フォントの link とダーク追従の CSS も、配信物に入っていることだけ見る。
+# 配置直後の接続できない間（最大 3 分）と、アセットの 404 の間（最大 2 分）は待ってから見る。
 # hydration の成否はブラウザが要るので見ない（scripts/hydrate-check.sh に URL を渡す）。
 # 公開前はサイト全体に Cloudflare Access が掛かっている（docs/deploy.md の「公開前の非公開」）。環境変数
 # CF_ACCESS_CLIENT_ID と CF_ACCESS_CLIENT_SECRET（Access のサービストークン）があれば、そのヘッダを付けて通る。
@@ -59,6 +60,22 @@ why() {
   return 0
 }
 
+# 配置で上書きした直後は、新しい HTML が届いても、そこから参照する新しい CSS・読込スクリプト・WASM がしばらく 404 に
+# なることがある（Issue #21。PR #20 のプレビューで 2 回続けて起き、再実行すると通った）。アセットは 404 の間だけ
+# 10 秒おきに取り直す。待つのは 3 つ合わせて最大 2 分（持ち時間を共有し、1 つ目で使い切ったら 2 つ目は待たない）。
+# 持ち時間を残すため $(…) のサブシェルで呼ばず、結果は $status に置く。404 以外（200 も 5xx も）はそのまま返し、
+# 待っても 404 なら NG
+asset_wait_left=120
+fetch_asset() {
+  asset_waited=0
+  while status=$(fetch "$1" "$2") && [ "$status" = 404 ] && [ "$asset_wait_left" -gt 0 ]; do
+    [ "$asset_waited" -eq 0 ] && echo "$1 が 404。配置の反映を待つ（残り最大 $asset_wait_left 秒）"
+    sleep 10; asset_waited=$((asset_waited + 10)); asset_wait_left=$((asset_wait_left - 10))
+  done
+  [ "$asset_waited" -gt 0 ] && echo "   $1 は $asset_waited 秒待った"
+  return 0
+}
+
 # 配置の直後は DNS と証明書がまだ届かず、接続できない（status 000）ことがある。初回の本番配置で実際に起きた。
 # 応答が返るまで最大 3 分待ってから見る（何かが返れば中身の検査に進む。中身の NG は待っても変わらない）
 waited=0
@@ -103,20 +120,20 @@ js=$(sed -n 's/.*<script type="module" async src="\([^"]*\)".*/\1/p' "$dir/index
 [ -n "$css" ] || ng "/ が CSS を参照していない"
 [ -n "$js" ] || ng "/ に WASM の読込スクリプトが無い"
 if [ -n "$css" ]; then
-  status=$(fetch "$css" "$dir/site.css")
+  fetch_asset "$css" "$dir/site.css"
   [ "$status" = 200 ] || ng "CSS $css が 200 でない: $status"
   grep -qF 'prefers-color-scheme' "$dir/site.css" || ng "CSS にダーク追従（prefers-color-scheme）が無い"
 fi
 if [ -n "$js" ]; then
   js=/${js#/}
-  status=$(fetch "$js" "$dir/loader.js")
+  fetch_asset "$js" "$dir/loader.js"
   [ "$status" = 200 ] || ng "読込スクリプト $js が 200 でない: $status"
   # 読込スクリプトは WASM を "/./assets/<名前>-<ハッシュ>.wasm" の形で指す（住所でない素の名前も別に 1 つ現れる）
   wasm=$(grep -o '"/[A-Za-z0-9_./-]*\.wasm"' "$dir/loader.js" | tr -d '"' | head -n 1)
   if [ -z "$wasm" ]; then
     ng "読込スクリプト $js が WASM を住所で参照していない"
   else
-    status=$(fetch "/assets/$(basename "$wasm")" "$dir/app.wasm")
+    fetch_asset "/assets/$(basename "$wasm")" "$dir/app.wasm"
     [ "$status" = 200 ] || ng "WASM $wasm が 200 でない: $status"
     grep -qi '^content-type: *application/wasm' "$dir/headers" || ng "WASM の Content-Type が application/wasm でない: $(grep -i '^content-type' "$dir/headers")"
   fi
