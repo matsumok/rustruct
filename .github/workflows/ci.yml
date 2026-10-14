@@ -15,9 +15,12 @@ permissions:
   contents: read
   pull-requests: write
 
-# PR では古い run を取り消す。main では取り消さない（配置の途中で止めない。順に待つ）
+# PR では古い run を取り消す。main では取り消さない（配置の途中で止めない。順に待つ）。
+# 鍵に github.ref だけを使うと、PR を閉じたイベントは github.ref がベースの refs/heads/main になり、
+# merge で走る本番の run と同じ鍵になって取り消してしまう（2026-10-14 の #14 で実際に起きた）。
+# PR は番号で、push は ref で分ける
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
