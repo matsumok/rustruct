@@ -125,6 +125,10 @@ jobs:
           wranglerVersion: ${{ env.WRANGLER_VERSION }}
           command: deploy
       - name: live (本番 URL のスモークテスト)
+        # 公開前はサイト全体に Cloudflare Access が掛かっている。サービストークンで通る（docs/deploy.md）
+        env:
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
         run: sh scripts/check-live.sh https://rustruct.matsumok.com
 
   preview:
@@ -160,6 +164,9 @@ jobs:
           test -n "$URL" || { echo "wrangler preview が URL を返さなかった"; exit 1; }
           gh pr comment "$PR" --edit-last --create-if-none --body "プレビュー: $URL （$SHA）"
       - name: live (プレビュー URL のスモークテスト)
+        env:
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
         run: sh scripts/check-live.sh "${{ steps.preview.outputs.preview-url }}"
 
   cleanup:
