@@ -30,16 +30,26 @@ pub enum ConcreteError {
 
 impl fmt::Display for ConcreteError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::NotPositive => "Fc は正の数値で入力してください",
-            Self::AboveTable => "Fc は 100 N/mm² 以下で入力してください",
-        })
+        match self {
+            Self::NotPositive => f.write_str("Fc が正の有限値でない"),
+            Self::AboveTable => write!(f, "Fc が単位体積重量の表の上限 {FC_MAX} N/mm² を超える"),
+        }
     }
 }
 
 impl std::error::Error for ConcreteError {}
 
-/// 単位体積重量の表の上限 [N/mm²]
+/// 普通コンクリートの気乾単位体積重量の表（慣例の値、`docs/materials/adr/0001`）。
+/// （Fc の区分の上限 [N/mm²], γ [kN/m³]）を下から。表は「無筋コンクリートの単位容積重量」の列
+const NORMAL_UNIT_WEIGHTS: [(f64, f64); 5] = [
+    (36.0, 23.0),
+    (48.0, 23.5),
+    (60.0, 24.0),
+    (80.0, 24.5),
+    (FC_MAX, 25.0),
+];
+
+/// 単位体積重量の表の上限 [N/mm²]。これを超える Fc のコンクリートは作れない
 const FC_MAX: f64 = 100.0;
 
 impl Concrete {
@@ -63,26 +73,17 @@ impl Concrete {
         self.kind
     }
 
-    /// 気乾単位体積重量 γ。Fc の区分の表（慣例の値、`docs/materials/adr/0001`）で引く。
-    /// 表は「無筋コンクリートの単位容積重量」の列
+    /// 気乾単位体積重量 γ。Fc の区分の表で引く
     pub fn unit_weight(self) -> UnitWeight {
         let fc = self.fc.as_n_per_mm2();
-        let kn_per_m3 = match self.kind {
-            ConcreteKind::Normal => {
-                if fc <= 36.0 {
-                    23.0
-                } else if fc <= 48.0 {
-                    23.5
-                } else if fc <= 60.0 {
-                    24.0
-                } else if fc <= 80.0 {
-                    24.5
-                } else {
-                    25.0
-                }
-            }
+        let table = match self.kind {
+            ConcreteKind::Normal => &NORMAL_UNIT_WEIGHTS,
         };
-        UnitWeight::kn_per_m3(kn_per_m3)
+        let (_, kn_per_m3) = table
+            .iter()
+            .find(|(upper, _)| fc <= *upper)
+            .expect("Fc は生成のときに表の範囲に限っている");
+        UnitWeight::kn_per_m3(*kn_per_m3)
     }
 
     /// 鉄筋コンクリートの単位体積重量 γ₁ = γ + 1 kN/m³

@@ -19,14 +19,8 @@ impl Length {
     pub fn mm(value: f64) -> Self {
         Self(value)
     }
-    pub fn m(value: f64) -> Self {
-        Self(value * 1e3)
-    }
     pub fn as_mm(self) -> f64 {
         self.0
-    }
-    pub fn as_m(self) -> f64 {
-        self.0 / 1e3
     }
 }
 

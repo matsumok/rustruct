@@ -1,5 +1,7 @@
 //! コンクリートの単位体積重量とヤング係数。期待値は `docs/materials/adr/0001` の表と、式の手計算。
 
+mod common;
+use common::assert_close;
 use rustruct_types::concrete::{Concrete, ConcreteError, ConcreteKind};
 use rustruct_types::quantity::Stress;
 
@@ -7,30 +9,25 @@ fn normal(fc: f64) -> Result<Concrete, ConcreteError> {
     Concrete::new(Stress::n_per_mm2(fc), ConcreteKind::Normal)
 }
 
-fn assert_close(actual: f64, expected: f64, what: &str) {
-    assert!(
-        (actual - expected).abs() <= expected.abs() * 1e-12,
-        "{what}: {actual} != {expected}"
-    );
+/// Fc (N/mm²), γ (kN/m³), γ₁ (kN/m³)。各区分の境界と、そのすぐ上の浮動小数点数
+fn table() -> [(f64, f64, f64); 10] {
+    [
+        (18.0, 23.0, 24.0),
+        (36.0, 23.0, 24.0),
+        (36.0_f64.next_up(), 23.5, 24.5),
+        (48.0, 23.5, 24.5),
+        (48.0_f64.next_up(), 24.0, 25.0),
+        (60.0, 24.0, 25.0),
+        (60.0_f64.next_up(), 24.5, 25.5),
+        (80.0, 24.5, 25.5),
+        (80.0_f64.next_up(), 25.0, 26.0),
+        (100.0, 25.0, 26.0),
+    ]
 }
-
-/// Fc (N/mm²), γ (kN/m³), γ₁ (kN/m³)。各区分の境界とそのすぐ上
-const TABLE: [(f64, f64, f64); 10] = [
-    (18.0, 23.0, 24.0),
-    (36.0, 23.0, 24.0),
-    (36.5, 23.5, 24.5),
-    (48.0, 23.5, 24.5),
-    (48.5, 24.0, 25.0),
-    (60.0, 24.0, 25.0),
-    (60.5, 24.5, 25.5),
-    (80.0, 24.5, 25.5),
-    (80.5, 25.0, 26.0),
-    (100.0, 25.0, 26.0),
-];
 
 #[test]
 fn unit_weights_follow_the_fc_table() {
-    for (fc, gamma, gamma1) in TABLE {
+    for (fc, gamma, gamma1) in table() {
         let c = normal(fc).unwrap();
         assert_close(
             c.unit_weight().as_kn_per_m3(),
@@ -81,7 +78,10 @@ fn fc_must_be_positive_and_finite() {
 
 #[test]
 fn fc_above_the_table_cannot_be_made() {
-    assert_eq!(normal(100.5).unwrap_err(), ConcreteError::AboveTable);
+    assert_eq!(
+        normal(100.0_f64.next_up()).unwrap_err(),
+        ConcreteError::AboveTable
+    );
 }
 
 #[test]
