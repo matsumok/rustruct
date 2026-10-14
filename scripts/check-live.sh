@@ -46,10 +46,17 @@ case "$status" in
   *) ng "/tools が転送されない: $status" ;;
 esac
 
-# 未知の住所は 404 で not-found の本文（not_found_handling = "404-page"）。文言は tests/render.rs・check-ssg.sh と同じ
+# 未知の住所は 404 で not-found の本文（not_found_handling = "404-page"）。文言は tests/render.rs・check-ssg.sh と同じ。
+# workers.dev のプレビューでは wrangler preview が not_found_handling を落とし、本文の無い 404 が返る
+# （cloudflare/workers-sdk#16047、2026-10-14 時点で open）。そこだけ NG にせず注意に留める。本番は厳しいまま
 status=$(fetch "/no-such-address-$$/" "$dir/notfound.html")
 [ "$status" = 404 ] || ng "未知の住所が 404 でない: $status"
-grep -qF 'この住所には何もない。' "$dir/notfound.html" || ng "未知の住所に not-found の本文が無い"
+if ! grep -qF 'この住所には何もない。' "$dir/notfound.html"; then
+  case "$url" in
+    *.workers.dev) echo "注意: プレビューでは not-found の本文が届かない（workers-sdk#16047 が直るまで）" ;;
+    *) ng "未知の住所に not-found の本文が無い" ;;
+  esac
+fi
 
 # HTML → CSS、読込スクリプト → WASM
 fetch / "$dir/index.html" >/dev/null

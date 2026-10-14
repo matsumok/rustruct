@@ -61,6 +61,7 @@ GitHub の Environments（`production`、`preview`）は最初の run が自動�
 - 本番は `workers_dev = false` で workers.dev に出さず、プレビューは `preview_urls = true` で workers.dev に出す。この組み合わせで本当にプレビュー URL が出るかは Cloudflare の文書に明記が無いので、最初の PR で確かめる（出なければ下の「困ったとき」）
 - workers.dev のプレビューは `X-Robots-Tag: noindex` 付きで配られ、検索エンジンには載らない
 - PR を閉じる（merge を含む）と `cleanup` job がプレビューを消す。無料枠は Worker ごと 100 プレビューまで
+- **既知の制限**: プレビューでは未知の住所が本文の無い 404 になる（`wrangler preview` が `not_found_handling` を落とす。cloudflare/workers-sdk#16047、2026-10-14 時点で open）。`check-live.sh` は workers.dev に限りこれを注意に留める。not-found の見た目はプレビューでは確かめられないので本番で見る。直ったら `check-live.sh` のその分岐を消す
 
 ## 人の目で見ること
 
