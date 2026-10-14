@@ -62,15 +62,18 @@ why() {
 
 # 配置で上書きした直後は、新しい HTML が届いても、そこから参照する新しい CSS・読込スクリプト・WASM がしばらく 404 に
 # なることがある（Issue #21。PR #20 のプレビューで 2 回続けて起き、再実行すると通った）。アセットは 404 の間だけ
-# 10 秒おきに取り直す。待つのは 3 つ合わせて最大 2 分（持ち時間を共有し、1 つ目で使い切ったら 2 つ目は待たない）。
+# 10 秒おきに取り直す。取り直しは 3 つ合わせて 12 回、最大 2 分（1 つ目で使い切ったら 2 つ目は待たない）。
+# 間隔は CHECK_LIVE_ASSET_RETRY_SECONDS で変えられる（tests/live_check.rs が縮めて回す）。
 # 持ち時間を残すため $(…) のサブシェルで呼ばず、結果は $status に置く。404 以外（200 も 5xx も）はそのまま返し、
 # 待っても 404 なら NG
-asset_wait_left=120
+asset_retry_seconds=${CHECK_LIVE_ASSET_RETRY_SECONDS:-10}
+asset_retries_left=12
 fetch_asset() {
   asset_waited=0
-  while status=$(fetch "$1" "$2") && [ "$status" = 404 ] && [ "$asset_wait_left" -gt 0 ]; do
-    [ "$asset_waited" -eq 0 ] && echo "$1 が 404。配置の反映を待つ（残り最大 $asset_wait_left 秒）"
-    sleep 10; asset_waited=$((asset_waited + 10)); asset_wait_left=$((asset_wait_left - 10))
+  while status=$(fetch "$1" "$2") && [ "$status" = 404 ] && [ "$asset_retries_left" -gt 0 ]; do
+    [ "$asset_waited" -eq 0 ] && echo "$1 が 404。配置の反映を待つ（残り最大 $((asset_retries_left * asset_retry_seconds)) 秒）"
+    sleep "$asset_retry_seconds"
+    asset_waited=$((asset_waited + asset_retry_seconds)); asset_retries_left=$((asset_retries_left - 1))
   done
   [ "$asset_waited" -gt 0 ] && echo "   $1 は $asset_waited 秒待った"
   return 0
