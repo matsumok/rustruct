@@ -32,7 +32,7 @@ pub enum ConcreteReadout {
         rc_unit_weight: String,
         /// ヤング係数 E [N/mm²]。×10⁴ で有効数字 3 桁
         young_modulus: String,
-        /// 許容応力度。圧縮、せん断、付着（上端筋）、付着（その他の鉄筋）の順
+        /// 許容応力度。`Allowable::ALL` の順
         allowable_stresses: Vec<AllowableRow>,
         /// 計算はできるが、Fc が想定の範囲を外れている
         warning: Option<String>,
@@ -51,19 +51,9 @@ impl ConcreteReadout {
                     "{}×10⁴",
                     significant(c.young_modulus().as_n_per_mm2() / 1e4, 3)
                 ),
-                allowable_stresses: {
-                    let stresses = [
-                        c.allowable_compression(),
-                        c.allowable_shear(),
-                        c.allowable_bond(BarPosition::Top),
-                        c.allowable_bond(BarPosition::Other),
-                    ];
-                    ALLOWABLE_NAMES
-                        .into_iter()
-                        .zip(stresses)
-                        .map(|(name, stress)| AllowableRow::new(name, stress))
-                        .collect()
-                },
+                allowable_stresses: Allowable::ALL
+                    .map(|a| AllowableRow::new(a.name(), a.of(&c)))
+                    .to_vec(),
                 warning: c.warning().map(|w| w.to_string()),
             },
             Err(error) => Self::Unusable { error },
@@ -76,9 +66,9 @@ impl ConcreteReadout {
             Self::Computed {
                 allowable_stresses, ..
             } => allowable_stresses.clone(),
-            Self::Unusable { .. } => ALLOWABLE_NAMES
-                .map(|name| AllowableRow {
-                    name,
+            Self::Unusable { .. } => Allowable::ALL
+                .map(|a| AllowableRow {
+                    name: a.name(),
                     long_term: NOT_COMPUTED.into(),
                     short_term: NOT_COMPUTED.into(),
                 })
@@ -109,8 +99,51 @@ impl ConcreteReadout {
     }
 }
 
-/// 許容応力度の表の行の名前。`ConcreteReadout::Computed` の `allowable_stresses` の順
-const ALLOWABLE_NAMES: [&str; 4] = ["圧縮", "せん断", "付着（上端筋）", "付着（その他の鉄筋）"];
+/// コンクリートの許容応力度の表の行。名前・長期の式・値の引き方を行ごとに持ち、結果と根拠の表は `ALL` の順に並ぶ
+#[derive(Debug, Clone, Copy)]
+enum Allowable {
+    Compression,
+    Shear,
+    BondTop,
+    BondOther,
+}
+
+impl Allowable {
+    const ALL: [Self; 4] = [
+        Self::Compression,
+        Self::Shear,
+        Self::BondTop,
+        Self::BondOther,
+    ];
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Compression => "圧縮",
+            Self::Shear => "せん断",
+            Self::BondTop => "付着（上端筋）",
+            Self::BondOther => "付着（その他の鉄筋）",
+        }
+    }
+
+    /// 長期の根拠の式。規準の「A かつ B 以下」は min(A, B) と書く
+    fn long_term_formula(self) -> &'static str {
+        match self {
+            Self::Compression => "Fc/3",
+            Self::Shear => "min(Fc/30, 0.49+Fc/100)",
+            Self::BondTop => "min(Fc/15, 0.9+2Fc/75)",
+            Self::BondOther => "min(Fc/10, 1.35+Fc/25)",
+        }
+    }
+
+    fn of(self, c: &Concrete) -> AllowableStress {
+        match self {
+            Self::Compression => c.allowable_compression(),
+            Self::Shear => c.allowable_shear(),
+            Self::BondTop => c.allowable_bond(BarPosition::Top),
+            Self::BondOther => c.allowable_bond(BarPosition::Other),
+        }
+    }
+}
 
 /// 許容応力度の表の1行。値は有効数字 3 桁の文字（`docs/materials/adr/0003`）。
 #[derive(Debug, Clone, PartialEq)]
@@ -284,7 +317,7 @@ pub(crate) fn ConcretePage() -> Element {
                 Caption { "許容応力度（長期）" }
                 table { class: "mt-2 w-full max-w-sm",
                     tbody {
-                        for (name, long) in ALLOWABLE_FORMULAS {
+                        for (name, long) in Allowable::ALL.map(|a| (a.name(), a.long_term_formula())) {
                             tr { class: "border-b border-line",
                                 td { class: "py-2 pr-3 text-body whitespace-nowrap", {name} }
                                 td { class: "py-2 font-mono text-num whitespace-nowrap", {long} }
@@ -302,15 +335,6 @@ pub(crate) fn ConcretePage() -> Element {
         }
     }
 }
-
-/// 許容応力度の長期の根拠の式: (名前, 式)。名前は `ALLOWABLE_NAMES` と同じ順。
-/// 規準の「A かつ B 以下」は min(A, B) と書く
-const ALLOWABLE_FORMULAS: [(&str, &str); 4] = [
-    (ALLOWABLE_NAMES[0], "Fc/3"),
-    (ALLOWABLE_NAMES[1], "min(Fc/30, 0.49+Fc/100)"),
-    (ALLOWABLE_NAMES[2], "min(Fc/15, 0.9+2Fc/75)"),
-    (ALLOWABLE_NAMES[3], "min(Fc/10, 1.35+Fc/25)"),
-];
 
 /// ページの部（入力・結果・根拠）。見出しの下に区切り線を引き、部と部の間は `space-7`。
 /// `id` を付けると住所の `#id` でその部へ飛べる。
