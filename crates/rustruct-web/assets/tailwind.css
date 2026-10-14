@@ -214,6 +214,9 @@
   .mt-3 {
     margin-top: var(--spacing-3);
   }
+  .mt-6 {
+    margin-top: var(--spacing-6);
+  }
   .mt-7 {
     margin-top: var(--spacing-7);
   }
@@ -222,9 +225,6 @@
   }
   .contents {
     display: contents;
-  }
-  .flex {
-    display: flex;
   }
   .grid {
     display: grid;
@@ -240,9 +240,6 @@
   }
   .grid-cols-2 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .flex-wrap {
-    flex-wrap: wrap;
   }
   .gap-4 {
     gap: var(--spacing-4);

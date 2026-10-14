@@ -2,7 +2,8 @@
 //! 数値はすべて `rustruct-types` から引き、ここでは表示の桁だけを決める（Issue #19）。
 
 use dioxus::prelude::*;
-use rustruct_types::concrete::{Concrete, ConcreteKind};
+use rustruct_types::allowable_stress::AllowableStress;
+use rustruct_types::concrete::{BarPosition, Concrete, ConcreteKind};
 use rustruct_types::quantity::Stress;
 use rustruct_types::rebar::{BarDesignation, RebarKind};
 
@@ -31,6 +32,8 @@ pub enum ConcreteReadout {
         rc_unit_weight: String,
         /// ヤング係数 E [N/mm²]。×10⁴ で有効数字 3 桁
         young_modulus: String,
+        /// 許容応力度。圧縮、せん断、付着（上端筋）、付着（その他の鉄筋）の順
+        allowable_stresses: Vec<AllowableRow>,
         /// 計算はできるが、Fc が想定の範囲を外れている
         warning: Option<String>,
     },
@@ -48,9 +51,38 @@ impl ConcreteReadout {
                     "{}×10⁴",
                     significant(c.young_modulus().as_n_per_mm2() / 1e4, 3)
                 ),
+                allowable_stresses: {
+                    let stresses = [
+                        c.allowable_compression(),
+                        c.allowable_shear(),
+                        c.allowable_bond(BarPosition::Top),
+                        c.allowable_bond(BarPosition::Other),
+                    ];
+                    ALLOWABLE_NAMES
+                        .into_iter()
+                        .zip(stresses)
+                        .map(|(name, stress)| AllowableRow::new(name, stress))
+                        .collect()
+                },
                 warning: c.warning().map(|w| w.to_string()),
             },
             Err(error) => Self::Unusable { error },
+        }
+    }
+
+    /// 許容応力度の表の行。使えないときは値がすべて「—」
+    fn allowable_rows(&self) -> Vec<AllowableRow> {
+        match self {
+            Self::Computed {
+                allowable_stresses, ..
+            } => allowable_stresses.clone(),
+            Self::Unusable { .. } => ALLOWABLE_NAMES
+                .map(|name| AllowableRow {
+                    name,
+                    long_term: NOT_COMPUTED.into(),
+                    short_term: NOT_COMPUTED.into(),
+                })
+                .to_vec(),
         }
     }
 
@@ -77,6 +109,27 @@ impl ConcreteReadout {
     }
 }
 
+/// 許容応力度の表の行の名前。`ConcreteReadout::Computed` の `allowable_stresses` の順
+const ALLOWABLE_NAMES: [&str; 4] = ["圧縮", "せん断", "付着（上端筋）", "付着（その他の鉄筋）"];
+
+/// 許容応力度の表の1行。値は有効数字 3 桁の文字（`docs/materials/adr/0003`）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct AllowableRow {
+    pub name: &'static str,
+    pub long_term: String,
+    pub short_term: String,
+}
+
+impl AllowableRow {
+    fn new(name: &'static str, stress: AllowableStress) -> Self {
+        Self {
+            name,
+            long_term: significant(stress.long_term.as_n_per_mm2(), 3),
+            short_term: significant(stress.short_term.as_n_per_mm2(), 3),
+        }
+    }
+}
+
 /// 有効数字 `figures` 桁の文字列。末尾の 0 も桁として残す（0.560）。整数部が桁を超えるときは整数で（1140）。
 /// 鉄筋の値は型の側で JIS の丸めを済ませているので、ここは桁をそろえて書くだけで値は変わらない
 fn significant(x: f64, figures: i32) -> String {
@@ -85,7 +138,8 @@ fn significant(x: f64, figures: i32) -> String {
     }
     let mut exponent = x.abs().log10().floor() as i32;
     let scale = 10_f64.powi(figures - 1 - exponent);
-    let rounded = (x * scale).round() / scale;
+    // 2 進の誤差を落としてから四捨五入する（3.465 が 3.4649999… になって 3.46 に落ちないように）
+    let rounded = ((x * scale * 1e6).round() / 1e6).round() / scale;
     if rounded.abs() >= 10_f64.powi(exponent + 1) {
         // 9.996 → 10.0 のように丸めで桁が上がった
         exponent += 1;
@@ -125,6 +179,7 @@ pub(crate) fn ConcretePage() -> Element {
     let mut fc = use_signal(|| "24".to_string());
     let readout = ConcreteReadout::from_fc_input(&fc.read());
     let [unit_weight, rc_unit_weight, young_modulus] = readout.values().map(str::to_string);
+    let allowable_rows = readout.allowable_rows();
     let (error, warning) = match &readout {
         ConcreteReadout::Computed { warning, .. } => (None, warning.clone()),
         ConcreteReadout::Unusable { error } => (Some(error.clone()), None),
@@ -164,6 +219,28 @@ pub(crate) fn ConcretePage() -> Element {
                     ResultRow { name: "γ", value: unit_weight, unit: "kN/m³" }
                     ResultRow { name: "γ₁", value: rc_unit_weight, unit: "kN/m³" }
                     ResultRow { name: "E", value: young_modulus, unit: "N/mm²" }
+                }
+                h2 { class: "mt-6 text-heading", "許容応力度（N/mm²）" }
+                table { class: "mt-3",
+                    thead {
+                        tr { class: "border-b border-line",
+                            HeadCell { first: true, "" }
+                            HeadCell { "長期" }
+                            HeadCell { "短期" }
+                        }
+                    }
+                    tbody {
+                        for row in allowable_rows {
+                            tr { class: "border-b border-line",
+                                td { class: "py-2 pr-3 text-body", {row.name} }
+                                NumCell { {row.long_term} }
+                                NumCell { {row.short_term} }
+                            }
+                        }
+                    }
+                }
+                p { class: "mt-2 text-label text-muted",
+                    "RC 規準 表 6.1・6.3。圧縮 Fc/3、せん断 Fc/30 かつ 0.49 + Fc/100 以下、付着は異形鉄筋で上端筋 Fc/15 かつ 0.9 + 2Fc/75 以下、その他 Fc/10 かつ 1.35 + Fc/25 以下。短期は圧縮が長期の 2 倍、ほかは 1.5 倍。かぶりが鉄筋径の 1.5 倍未満なら付着を低減する。"
                 }
             }
             section { class: "mt-7",
@@ -268,15 +345,41 @@ pub(crate) fn RebarPage() -> Element {
                     "JIS G 3112:2025 表6。l = 3.142d、S = 0.7854d²、w = 0.00785S を JIS Z 8401 の規則A で丸める。"
                 }
             }
-            section { class: "mt-7",
-                h2 { class: "text-heading", "種類" }
-                ul { class: "mt-3 flex flex-wrap gap-x-4 gap-y-2 font-mono text-num",
-                    for kind in RebarKind::ALL.iter().copied() {
-                        li { {kind.symbol()} }
+            section { class: "mt-7 overflow-x-auto",
+                h2 { class: "text-heading", "許容応力度（N/mm²）" }
+                table { class: "mt-3",
+                    thead {
+                        tr { class: "border-b border-line",
+                            HeadCell { first: true, "種類" }
+                            HeadCell { "長期 引張・圧縮" }
+                            HeadCell { "長期 D29 以上" }
+                            HeadCell { "長期 せん断補強" }
+                            HeadCell { "短期 引張・圧縮" }
+                            HeadCell { "短期 せん断補強" }
+                        }
+                    }
+                    tbody {
+                        for kind in RebarKind::ALL.iter().copied() {
+                            tr { class: "border-b border-line",
+                                NumCell { first: true, {kind.symbol()} }
+                                NumCell { {integer(kind.allowable_tension_compression(BarDesignation::D25).long_term)} }
+                                NumCell { {integer(kind.allowable_tension_compression(BarDesignation::D29).long_term)} }
+                                NumCell { {integer(kind.allowable_shear_reinforcement().long_term)} }
+                                NumCell { {integer(kind.allowable_tension_compression(BarDesignation::D25).short_term)} }
+                                NumCell { {integer(kind.allowable_shear_reinforcement().short_term)} }
+                            }
+                        }
                     }
                 }
-                p { class: "mt-2 text-label text-muted", "SD685R と SD785R は主にせん断補強筋に用いる。" }
+                p { class: "mt-2 text-label text-muted",
+                    "RC 規準 表 6.2。長期の引張・圧縮は D29 以上の太さで小さくなる。SD590A 以上は表に値が無いので載せない。"
+                }
             }
         }
     }
+}
+
+/// 表 6.2 の値は整数で書かれているので、そのまま整数で出す
+fn integer(stress: Stress) -> String {
+    format!("{:.0}", stress.as_n_per_mm2())
 }

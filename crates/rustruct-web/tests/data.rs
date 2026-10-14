@@ -58,15 +58,26 @@ fn rebar_table_shows_every_designation_with_the_digits_of_jis() {
     }
 }
 
+/// 種類, 長期 引張・圧縮（D25 以下, D29 以上）, 長期 せん断補強, 短期 引張・圧縮, 短期 せん断補強。
+/// RC 規準 表 6.2（`docs/materials/adr/0003` の写し）
+const ALLOWABLE_ROWS: [[&str; 6]; 4] = [
+    ["SD295", "195", "195", "195", "295", "295"],
+    ["SD345", "215", "195", "195", "345", "345"],
+    ["SD390", "215", "195", "195", "390", "390"],
+    ["SD490", "215", "195", "195", "490", "490"],
+];
+
 #[test]
-fn rebar_page_lists_the_ten_kinds() {
-    let text = text_of(&render_path("/data/rebar"));
-    assert_in_order(
-        &text,
-        &[
-            "SD295", "SD345", "SD390", "SD490", "SD590A", "SD590B", "SD685A", "SD685B", "SD685R",
-            "SD785R",
-        ],
+fn rebar_page_shows_allowable_stresses_of_the_four_kinds() {
+    let html = render_path("/data/rebar");
+    for row in ALLOWABLE_ROWS {
+        let cells: Vec<String> = row.iter().map(|c| format!(">{c}<")).collect();
+        let cells: Vec<&str> = cells.iter().map(String::as_str).collect();
+        assert_in_order(&html, &cells);
+    }
+    assert!(
+        !html.contains(">SD590A<"),
+        "表 6.2 に無い種類が行に出ている"
     );
 }
 
@@ -121,9 +132,34 @@ fn computed(input: &str) -> (String, String, String, Option<String>) {
             rc_unit_weight,
             young_modulus,
             warning,
+            ..
         } => (unit_weight, rc_unit_weight, young_modulus, warning),
         unusable => panic!("入力「{input}」が計算できない: {unusable:?}"),
     }
+}
+
+#[test]
+fn readout_shows_allowable_stresses_to_three_figures() {
+    // Fc 24: 圧縮 8, 16 / せん断 0.73, 1.095 / 上端筋 1.54, 2.31 / その他 2.31, 3.465
+    let ConcreteReadout::Computed {
+        allowable_stresses, ..
+    } = ConcreteReadout::from_fc_input("24")
+    else {
+        panic!("Fc 24 が計算できない");
+    };
+    let rows: Vec<_> = allowable_stresses
+        .iter()
+        .map(|r| (r.name, r.long_term.as_str(), r.short_term.as_str()))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("圧縮", "8.00", "16.0"),
+            ("せん断", "0.730", "1.10"),
+            ("付着（上端筋）", "1.54", "2.31"),
+            ("付着（その他の鉄筋）", "2.31", "3.47"),
+        ]
+    );
 }
 
 #[test]

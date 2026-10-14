@@ -21,7 +21,7 @@ mod ssg;
 
 /// Data: 材料や規格の値のページ。
 mod data;
-pub use data::ConcreteReadout;
+pub use data::{AllowableRow, ConcreteReadout};
 use data::{ConcretePage, DataIndex, RebarPage};
 #[cfg(feature = "server")]
 pub use ssg::serve_config;
@@ -91,11 +91,11 @@ impl Route {
             Route::Data {} => ("Data", "構造設計で参照する材料や規格の値。"),
             Route::DataConcrete {} => (
                 "コンクリート",
-                "気乾単位体積重量の表とヤング係数の式。Fc から γ と E を求める。",
+                "Fc から単位体積重量・ヤング係数・許容応力度を求める。",
             ),
             Route::DataRebar {} => (
                 "鉄筋",
-                "異形棒鋼の呼び名ごとの公称直径・周長・断面積・単位質量と、種類。",
+                "異形棒鋼の呼び名ごとの公称直径・周長・断面積・単位質量と、種類ごとの許容応力度。",
             ),
             Route::Studies {} => ("Studies", "数学やかたちを眺めて考えるための可視化。"),
             Route::Notes {} => ("Notes", "構造や数学についての書きもの。"),
