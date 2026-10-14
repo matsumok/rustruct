@@ -15,6 +15,7 @@
     --color-ink: #1c2024;
     --color-muted: #60646c;
     --color-ng: #ce2c31;
+    --color-accent: #3e63dd;
     --color-chart-3: #1c2024;
     --text-display: 30px;
     --text-display--line-height: 40px;
@@ -389,6 +390,9 @@
   }
   .whitespace-nowrap {
     white-space: nowrap;
+  }
+  .text-accent {
+    color: var(--color-accent);
   }
   .text-ink {
     color: var(--color-ink);

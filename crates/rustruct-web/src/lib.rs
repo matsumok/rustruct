@@ -185,10 +185,18 @@ fn Wordmark() -> Element {
 /// トップ。`display` の一文と、四部の一覧（名前＋一行＋パス）。
 #[component]
 fn Home() -> Element {
-    // 一文は全部 ink。句点にも差し色は置かない（docs/design/README.md「差し色」）
+    // 見出しの一文の句点だけ accent（docs/design/README.md「差し色」）
+    let sentence = "構造を計算し、かたちを眺める。";
+    let words = sentence
+        .strip_suffix('。')
+        .expect("トップの一文は句点で終わる");
+    let period = &sentence[words.len()..];
     rsx! {
         main { class: "px-5",
-            p { class: "text-display py-8", "構造を計算し、かたちを眺める。" }
+            p { class: "text-display py-8",
+                {words}
+                span { class: "text-accent", {period} }
+            }
             RouteList { routes: Route::sections().collect::<Vec<_>>() }
         }
     }
