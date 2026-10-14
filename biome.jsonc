@@ -1,0 +1,16 @@
+// エディタ（Zed の Biome 拡張）向け。CI では Biome を走らせていない。
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  // .gitignore（target/ など）を Biome にも適用する。
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    // theme.css と assets/tailwind.css は生成物（docs/stack.md）。手で直せないので lint の対象外にする。
+    // assets/tailwind.css では Tailwind の Preflight の `display: none !important` が
+    // noImportantStyles に、theme.css では `@theme` が Tailwind 構文として引っかかる。
+    "includes": ["**", "!crates/rustruct-web/assets/tailwind.css", "!crates/rustruct-web/theme.css"]
+  },
+  "css": {
+    // 入力の crates/rustruct-web/tailwind.css は Tailwind v4 の構文を使う。
+    "parser": { "tailwindDirectives": true }
+  }
+}

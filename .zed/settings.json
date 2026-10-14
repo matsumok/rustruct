@@ -1,0 +1,16 @@
+{
+  "lsp": {
+    "vscode-css-language-server": {
+      "settings": {
+        "css": {
+          "lint": {
+            // assets/tailwind.css は生成物。Tailwind の Preflight は置換要素に
+            // `display: block; vertical-align: middle;` を意図して併記していて（上流のコメントで
+            // 「lint が誤検知するが設計どおり」と明記）、この警告はそこから出る。
+            "propertyIgnoredDueToDisplay": "ignore"
+          }
+        }
+      }
+    }
+  }
+}
