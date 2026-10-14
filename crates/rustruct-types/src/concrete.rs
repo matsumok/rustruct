@@ -12,19 +12,34 @@ pub enum ConcreteKind {
     Normal,
 }
 
+/// 気乾単位体積重量の表の1行。Fc がこの区分の上限以下なら γ はこの値
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UnitWeightRange {
+    /// 区分の上限 Fc
+    pub fc_upper: Stress,
+    /// 気乾単位体積重量 γ
+    pub unit_weight: UnitWeight,
+}
+
 impl ConcreteKind {
-    /// 気乾単位体積重量の表の区分の上限を下から。[`Concrete::unit_weight`] の match と同じ値で、
-    /// 表を見せるために置く（一致はテストで確かめる）。最後は表の上限
-    pub fn unit_weight_range_uppers(self) -> &'static [Stress] {
+    /// 気乾単位体積重量の表（慣例の値、`docs/materials/adr/0001`）。区分を下から並べ、最後の上限が表の上限。
+    /// 表は「無筋コンクリートの単位容積重量」の列。[`Concrete::unit_weight`] もページの表もここから引く
+    pub fn unit_weight_table(self) -> &'static [UnitWeightRange] {
+        const fn row(fc_upper: f64, unit_weight: f64) -> UnitWeightRange {
+            UnitWeightRange {
+                fc_upper: Stress::n_per_mm2(fc_upper),
+                unit_weight: UnitWeight::kn_per_m3(unit_weight),
+            }
+        }
         match self {
             Self::Normal => {
                 &const {
                     [
-                        Stress::n_per_mm2(36.0),
-                        Stress::n_per_mm2(48.0),
-                        Stress::n_per_mm2(60.0),
-                        Stress::n_per_mm2(80.0),
-                        Stress::n_per_mm2(FC_MAX),
+                        row(36.0, 23.0),
+                        row(48.0, 23.5),
+                        row(60.0, 24.0),
+                        row(80.0, 24.5),
+                        row(FC_MAX, 25.0),
                     ]
                 }
             }
@@ -114,21 +129,16 @@ impl Concrete {
         self.kind
     }
 
-    /// 気乾単位体積重量 γ。Fc の区分の表で引く（慣例の値、`docs/materials/adr/0001`）。
-    /// 表は「無筋コンクリートの単位容積重量」の列
+    /// 気乾単位体積重量 γ。Fc が上限以下になる最初の区分の値。表の上限を超えても最後の区分の値を使う
+    /// （ワーニングは warning が言う）
     pub fn unit_weight(self) -> UnitWeight {
-        let fc = self.fc.as_n_per_mm2();
-        let kn_per_m3 = match self.kind {
-            ConcreteKind::Normal => match fc {
-                ..=36.0 => 23.0,
-                ..=48.0 => 23.5,
-                ..=60.0 => 24.0,
-                ..=80.0 => 24.5,
-                // 表は 100 まで。超えても最後の区分の値を使う（ワーニングは warning が言う）
-                _ => 25.0,
-            },
-        };
-        UnitWeight::kn_per_m3(kn_per_m3)
+        let table = self.kind.unit_weight_table();
+        let row = table
+            .iter()
+            .find(|row| self.fc <= row.fc_upper)
+            .or(table.last())
+            .expect("表の区分は1つ以上");
+        row.unit_weight
     }
 
     /// 鉄筋コンクリートの単位体積重量 γ₁ = γ + 1 kN/m³

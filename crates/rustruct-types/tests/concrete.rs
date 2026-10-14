@@ -120,26 +120,3 @@ fn concrete_keeps_its_fc_and_kind() {
     assert_eq!(c.fc(), Stress::n_per_mm2(24.0));
     assert_eq!(c.kind(), ConcreteKind::Normal);
 }
-
-/// 表の区分の上限は、γ がそこを越えると変わる Fc と、表の上限 100 に一致する
-#[test]
-fn range_uppers_are_where_the_unit_weight_changes() {
-    let uppers: Vec<f64> = ConcreteKind::Normal
-        .unit_weight_range_uppers()
-        .iter()
-        .map(|u| u.as_n_per_mm2())
-        .collect();
-    assert_eq!(uppers, [36.0, 48.0, 60.0, 80.0, 100.0]);
-    for &u in &uppers[..uppers.len() - 1] {
-        assert_ne!(
-            normal(u).unwrap().unit_weight(),
-            normal(u.next_up()).unwrap().unit_weight(),
-            "Fc {u} を越えても γ が変わらない"
-        );
-    }
-    assert_eq!(normal(100.0).unwrap().warning(), None);
-    assert_eq!(
-        normal(100.0_f64.next_up()).unwrap().warning(),
-        Some(ConcreteWarning::AboveTable)
-    );
-}
