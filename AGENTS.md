@@ -10,7 +10,7 @@ Rust は stable。`rust-toolchain.toml` が channel と wasm ターゲットを�
 - 起動: `dx serve` をリポジトリ直下で。`default-members` が `rustruct-web` を指すので `-p` は不要。`web` / `server` の feature を dx が自動検出して fullstack で起動する
 - テスト: `cargo test --workspace`。feature なしのネイティブで、WASM もブラウザも使わない
 - 検査: `sh scripts/check.sh` が CI（`.github/workflows/ci.yml`）と同じものを同じ順で回す。一つだけなら `sh scripts/check.sh clippy` のように名前で
-- 見た目の確認: `dx serve` 中に `sh scripts/screenshot.sh` でスマホ幅のライト・ダークを撮れる。`dx serve` もこのスクリプトもサンドボックスの外で起動する（中からはブラウザにもホストにも届かず、中の `curl localhost` も失敗する）。前のセッションの `dx serve` が残っていたら `ps -eo pid,etimes,comm | grep -E 'dx$|tailwindcss|server-'` で見て止める
+- 見た目の確認: `dx serve` 中に `sh scripts/screenshot.sh` でスマホ幅のライト・ダークを撮れる。`dx serve` もこのスクリプトもサンドボックスの外で起動する（中からはブラウザにもホストにも届かず、中の `curl localhost` も失敗する）。`.claude/settings.local.json` の `excludedCommands` に挙げたコマンド（`dx serve`、`sh scripts/screenshot.sh`、localhost への `curl`）は外で走るが、パターンは前方一致で `*` は末尾だけ。`cd` や `&&` を付けず、パターンどおりの形で単独のコマンドとして呼ぶ（外れるとサンドボックス内に戻り、黙って失敗する）。前のセッションの `dx serve` が残っていたら `ps -eo pid,etimes,comm | grep -E 'dx$|tailwindcss|server-'` で見て止める
 - dx はツール（Tailwind など）を `~/.local/share/.dx/tools` に落とす。落とせなくても黙って続行するので、`assets/tailwind.css` が更新されないときはそこを見る
 - レビューの規則は `CODING_STANDARDS.md`
 
