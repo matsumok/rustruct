@@ -476,10 +476,10 @@ pub(crate) fn RebarPage() -> Element {
                             thead {
                                 HeadRow {
                                     HeadCell { first: true, "呼び名" }
-                                    HeadCell { "d（mm）" }
-                                    HeadCell { "l（mm）" }
-                                    HeadCell { "S（mm²）" }
-                                    HeadCell { "w（kg/m）" }
+                                    HeadCell { "公称直径" br {} "d（mm）" }
+                                    HeadCell { "公称周長" br {} "l（mm）" }
+                                    HeadCell { "公称断面積" br {} "S（mm²）" }
+                                    HeadCell { "単位質量" br {} "w（kg/m）" }
                                 }
                             }
                             tbody {
@@ -495,7 +495,11 @@ pub(crate) fn RebarPage() -> Element {
                             }
                         }
                         Notes {
-                            li { "l = 3.142d、S = 0.7854d²、w = 0.00785S を JIS Z 8401 の規則A で丸める" }
+                            li {
+                                "l = 3.142d、S = 0.7854d²、w = 0.00785S"
+                                br {}
+                                "JIS Z 8401 の規則A で丸める"
+                            }
                         }
                         // 出典: JIS G 3112:2025 表6（画面には出さない。ADR に書いてある）
                     }
@@ -509,7 +513,6 @@ pub(crate) fn RebarPage() -> Element {
                                     HeadRow {
                                         HeadCell { first: true, "種類" }
                                         HeadCell { "長期 引張・圧縮" }
-                                        HeadCell { "長期 D29 以上" }
                                         HeadCell { "長期 せん断補強" }
                                         HeadCell { "短期 引張・圧縮" }
                                         HeadCell { "短期 せん断補強" }
@@ -519,8 +522,7 @@ pub(crate) fn RebarPage() -> Element {
                                     for kind in RebarKind::ALL.iter().copied() {
                                         Row {
                                             TextCell { first: true, {kind.symbol()} }
-                                            NumCell { {integer(kind.allowable_tension_compression(BarDesignation::D25).long_term)} }
-                                            NumCell { {integer(kind.allowable_tension_compression(BarDesignation::D29).long_term)} }
+                                            NumCell { {long_term_tension_compression(kind)} }
                                             NumCell { {integer(kind.allowable_shear_reinforcement().long_term)} }
                                             NumCell { {integer(kind.allowable_tension_compression(BarDesignation::D25).short_term)} }
                                             NumCell { {integer(kind.allowable_shear_reinforcement().short_term)} }
@@ -530,14 +532,24 @@ pub(crate) fn RebarPage() -> Element {
                             }
                         }
                         Notes {
-                            li { "長期の引張・圧縮は D29 以上の太さで小さくなる" }
-                            li { "SD590A 以上は表に値が無いので載せない" }
+                            li { "* D29 以上の太さの鉄筋に対しては（ ）内の数値とする" }
                         }
                         // 出典: RC 規準（2024 年版）表 6.2（画面には出さない。ADR に書いてある）
                     }
                 }
             }
         }
+    }
+}
+
+/// 長期の引張・圧縮。D29 以上で値が変わる種類は、表 6.2 と同じく「215（*195）」と書き、凡例を注記に置く
+fn long_term_tension_compression(kind: RebarKind) -> String {
+    let below = integer(kind.allowable_tension_compression(BarDesignation::D25).long_term);
+    let d29_and_up = integer(kind.allowable_tension_compression(BarDesignation::D29).long_term);
+    if below == d29_and_up {
+        below
+    } else {
+        format!("{below}（*{d29_and_up}）")
     }
 }
 
