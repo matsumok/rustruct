@@ -42,9 +42,9 @@ const REBAR_ROWS: [[&str; 5]; 16] = [
     ["D29", "28.6", "89.9", "642.4", "5.04"],
     ["D32", "31.8", "99.9", "794.2", "6.23"],
     ["D35", "34.9", "109.7", "956.6", "7.51"],
-    ["D38", "38.1", "119.7", "1140", "8.95"],
-    ["D41", "41.3", "129.8", "1340", "10.5"],
-    ["D51", "50.8", "159.6", "2027", "15.9"],
+    ["D38", "38.1", "119.7", "1,140", "8.95"],
+    ["D41", "41.3", "129.8", "1,340", "10.5"],
+    ["D51", "50.8", "159.6", "2,027", "15.9"],
 ];
 
 #[test]
@@ -58,13 +58,13 @@ fn rebar_table_shows_every_designation_with_the_digits_of_jis() {
     }
 }
 
-/// 種類, 長期 引張・圧縮（D29 以上の値は表と同じく「（*195）」）, 長期 せん断補強, 短期 引張・圧縮, 短期 せん断補強。
-/// RC 規準 表 6.2（`docs/materials/adr/0003` の写し）
-const ALLOWABLE_ROWS: [[&str; 5]; 4] = [
-    ["SD295", "195", "195", "295", "295"],
-    ["SD345", "215（*195）", "195", "345", "345"],
-    ["SD390", "215（*195）", "195", "390", "390"],
-    ["SD490", "215（*195）", "195", "490", "490"],
+/// 種類, 長期 引張・圧縮, その括弧書き（D29 以上の値。表と同じく「（*195）」、同じ値なら空）,
+/// 長期 せん断補強, 短期 引張・圧縮, 短期 せん断補強。RC 規準 表 6.2（`docs/materials/adr/0003` の写し）
+const ALLOWABLE_ROWS: [[&str; 6]; 4] = [
+    ["SD295", "195", "", "195", "295", "295"],
+    ["SD345", "215", "（*195）", "195", "345", "345"],
+    ["SD390", "215", "（*195）", "195", "390", "390"],
+    ["SD490", "215", "（*195）", "195", "490", "490"],
 ];
 
 #[test]
@@ -252,4 +252,30 @@ fn allowable_stress_basis_has_long_and_short_term_columns_and_no_notes() {
     for note in ["短期は長期の", "かぶりが", "Fc は N/mm²"] {
         assert!(!text.contains(note), "注記「{note}」が出ている");
     }
+}
+
+#[test]
+fn rebar_dimensions_pad_short_decimals_to_line_up_the_points() {
+    let html = render_path("/data/rebar");
+    // d は小数 2 桁が最大なので「12.7」の後ろに1つ、S の「1,140」の後ろに小数点と2桁の分の3つ
+    for padded in [
+        "12.7<span aria-hidden=\"true\">\u{2007}</span>",
+        "1,140<span aria-hidden=\"true\">\u{2007}\u{2007}\u{2007}</span>",
+    ] {
+        assert!(html.contains(padded), "{padded} が無い: {html}");
+    }
+    assert!(
+        html.contains(">4.23</td>"),
+        "桁の足りている 4.23 に空白が付いている: {html}"
+    );
+}
+
+#[test]
+fn concrete_allowable_stresses_line_up_the_points() {
+    // Fc 24 の長期: 圧縮 8.00、せん断 0.730 なので、8.00 の後ろに1つ
+    let html = render_path("/data/concrete");
+    assert!(
+        html.contains("8.00<span aria-hidden=\"true\">\u{2007}</span>"),
+        "長期の 8.00 が 0.730 と小数点で揃っていない: {html}"
+    );
 }

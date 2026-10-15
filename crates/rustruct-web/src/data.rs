@@ -185,6 +185,67 @@ fn significant(x: f64, figures: i32) -> String {
     format!("{rounded:.decimals$}")
 }
 
+/// 呼び名の表の行: (呼び名, [d, l, S, w])。JIS G 3112 表6 と同じ桁
+fn designation_rows() -> Vec<(&'static str, [String; 4])> {
+    BarDesignation::ALL
+        .iter()
+        .map(|designation| {
+            (
+                designation.name(),
+                [
+                    significant(designation.nominal_diameter().as_mm(), 3),
+                    format!("{:.1}", designation.nominal_perimeter().as_mm()),
+                    thousands(significant(designation.nominal_area().as_mm2(), 4)),
+                    significant(designation.unit_mass().as_kg_per_m(), 3),
+                ],
+            )
+        })
+        .collect()
+}
+
+/// 列ごとの小数の最大の桁数
+fn column_decimals<const N: usize>(rows: &[(&str, [String; N])]) -> [usize; N] {
+    std::array::from_fn(|column| {
+        max_decimals(rows.iter().map(|(_, values)| values[column].as_str()))
+    })
+}
+
+/// 1つの列の小数の最大の桁数
+fn max_decimals<'a>(values: impl Iterator<Item = &'a str>) -> usize {
+    values.map(decimals_of).max().unwrap_or(0)
+}
+
+/// 小数の桁数（「12.7」は 1、「1,140」は 0）
+fn decimals_of(value: &str) -> usize {
+    value.find('.').map_or(0, |point| value.len() - point - 1)
+}
+
+/// 小数点を列で揃えるのに右に足す数字幅の数。小数点の無い値は小数点の分も足す
+fn decimal_pad(value: &str, decimals: usize) -> usize {
+    match (value.contains('.'), decimals) {
+        (_, 0) => 0,
+        (true, _) => decimals - decimals_of(value),
+        (false, _) => decimals + 1,
+    }
+}
+
+/// 整数部を3桁ごとに「,」で区切る（1140 → 1,140）
+fn thousands(number: String) -> String {
+    let (sign, rest) = match number.strip_prefix('-') {
+        Some(rest) => ("-", rest),
+        None => ("", number.as_str()),
+    };
+    let (whole, fraction) = rest.split_at(rest.find('.').unwrap_or(rest.len()));
+    let mut grouped = String::new();
+    for (i, digit) in whole.chars().enumerate() {
+        if i > 0 && (whole.len() - i) % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(digit);
+    }
+    format!("{sign}{grouped}{fraction}")
+}
+
 /// 気乾単位体積重量の表の行: (Fc の区分, γ)
 fn unit_weight_rows() -> Vec<(String, String)> {
     let mut lower: Option<f64> = None;
@@ -211,6 +272,9 @@ pub(crate) fn ConcretePage() -> Element {
     let readout = ConcreteReadout::from_fc_input(&fc.read());
     let [unit_weight, young_modulus] = readout.values().map(str::to_string);
     let allowable_rows = readout.allowable_rows();
+    let long_term_decimals = max_decimals(allowable_rows.iter().map(|row| row.long_term.as_str()));
+    let short_term_decimals =
+        max_decimals(allowable_rows.iter().map(|row| row.short_term.as_str()));
     let (error, warning) = match &readout {
         ConcreteReadout::Computed { warning, .. } => (None, warning.clone()),
         ConcreteReadout::Unusable { error } => (Some(error.clone()), None),
@@ -280,8 +344,8 @@ pub(crate) fn ConcretePage() -> Element {
                                 for row in allowable_rows {
                                     Row {
                                         TextCell { {row.name} }
-                                        NumCell { {row.long_term} }
-                                        NumCell { {row.short_term} }
+                                        DecimalCell { value: row.long_term, decimals: long_term_decimals }
+                                        DecimalCell { value: row.short_term, decimals: short_term_decimals }
                                     }
                                 }
                             }
@@ -436,14 +500,48 @@ fn Row(children: Element) -> Element {
     }
 }
 
-/// 列見出し。`label` の muted。揃えは列の中身に合わせる: `left` の列（名前・区分の `TextCell`、式の
-/// `FormulaCell`）は左、数値の列（`NumCell`）は右。
+/// 列のまとまりの見出しの行（「長期」「短期」）。罫はまとまりの見出し（`GroupCell`）の下だけに引く。
 #[component]
-fn HeadCell(#[props(default)] left: bool, children: Element) -> Element {
+fn GroupRow(children: Element) -> Element {
+    rsx! {
+        tr { {children} }
+    }
+}
+
+/// 列のまとまりの見出し。`span` 列にまたがり、中央に置いて下に `line`。線はセルの左の空きを除いた
+/// 中身に引き、隣のまとまりの線と `space-3` 離す。
+#[component]
+fn GroupCell(span: u32, children: Element) -> Element {
     rsx! {
         th {
-            class: if left { "py-2 pl-3 first:pl-0 first:pr-3 text-left text-label text-muted font-normal" } else { "py-2 pl-3 first:pl-0 first:pr-3 text-right text-label text-muted font-normal" },
-            {children}
+            colspan: span,
+            class: "pt-2 pl-3 first:pl-0 first:pr-3 text-center text-label text-muted font-normal whitespace-nowrap",
+            div { class: "pb-2 border-b border-line", {children} }
+        }
+    }
+}
+
+/// 列見出し。`label` の muted で、上下は中央（2行の見出しと並ぶ1行の見出しも）、折り返さない（改行は `br` で決める）。数値の列の見出しは、
+/// 改行した行どうしを左で揃え、そのまとまりを列の右に寄せる。揃えは列の中身に合わせる: `left` の列（名前・区分の
+/// `TextCell`、式の `FormulaCell`）は左、数値の列（`NumCell`）は右。`span` は列のまたぎ、`rows` は
+/// 行のまたぎ（まとまりの見出しの行と並ぶ先頭の列）。
+#[component]
+fn HeadCell(
+    #[props(default)] left: bool,
+    span: Option<u32>,
+    rows: Option<u32>,
+    children: Element,
+) -> Element {
+    rsx! {
+        th {
+            colspan: span,
+            rowspan: rows,
+            class: if left { "py-2 pl-3 first:pl-0 first:pr-3 text-left text-label text-muted font-normal whitespace-nowrap" } else { "py-2 pl-3 first:pl-0 first:pr-3 text-right text-label text-muted font-normal whitespace-nowrap" },
+            if left {
+                {children}
+            } else {
+                span { class: "inline-block text-left", {children} }
+            }
         }
     }
 }
@@ -464,6 +562,30 @@ fn NumCell(children: Element) -> Element {
     }
 }
 
+/// 小数点の位置を列で揃える数値のセル。`decimals` はその列の小数の最大の桁数。足りない桁（と小数点）を
+/// 数字幅の空白（U+2007）で右に埋める。等幅なので小数点が縦に揃う。埋めた空白は読み上げから外す。
+#[component]
+fn DecimalCell(value: String, decimals: usize) -> Element {
+    let pad = "\u{2007}".repeat(decimal_pad(&value, decimals));
+    rsx! {
+        td { class: "py-2 pl-3 first:pl-0 first:pr-3 font-mono text-num text-right whitespace-nowrap",
+            {value}
+            if !pad.is_empty() {
+                span { aria_hidden: "true", {pad} }
+            }
+        }
+    }
+}
+
+/// 数値に添える括弧書きのセル（「215（*195）」の「（*195）」）。前の `NumCell` と対で、左を詰めて
+/// 左に揃える。括弧の外の数値が、括弧の無い行の数値と右端で揃う。
+#[component]
+fn ParenCell(children: Element) -> Element {
+    rsx! {
+        td { class: "py-2 font-mono text-num whitespace-nowrap", {children} }
+    }
+}
+
 /// 式のセル。`num` の等幅で左揃え、折り返さない。
 #[component]
 fn FormulaCell(children: Element) -> Element {
@@ -475,12 +597,14 @@ fn FormulaCell(children: Element) -> Element {
 /// `/data/rebar`。呼び名の表と、種類ごとの許容応力度の表。値は JIS と RC 規準の表と同じ桁で出す。
 #[component]
 pub(crate) fn RebarPage() -> Element {
+    let rows = designation_rows();
+    let decimals = column_decimals(&rows);
     rsx! {
         Page { route: Route::DataRebar {},
             Columns {
                 Column {
                     Block {
-                        Caption { "呼び名" }
+                        Caption { "異形棒鋼の寸法、単位質量及び節の許容限度" }
                         Table {
                             thead {
                                 HeadRow {
@@ -492,23 +616,19 @@ pub(crate) fn RebarPage() -> Element {
                                 }
                             }
                             tbody {
-                                for designation in BarDesignation::ALL.iter().copied() {
+                                for (name , values) in rows {
                                     Row {
-                                        TextCell { {designation.name()} }
-                                        NumCell { {significant(designation.nominal_diameter().as_mm(), 3)} }
-                                        NumCell { {format!("{:.1}", designation.nominal_perimeter().as_mm())} }
-                                        NumCell { {significant(designation.nominal_area().as_mm2(), 4)} }
-                                        NumCell { {significant(designation.unit_mass().as_kg_per_m(), 3)} }
+                                        TextCell { {name} }
+                                        for (value , decimals) in values.into_iter().zip(decimals) {
+                                            DecimalCell { value, decimals }
+                                        }
                                     }
                                 }
                             }
                         }
                         Notes {
-                            li {
-                                "l = 3.142d、S = 0.7854d²、w = 0.00785S"
-                                br {}
-                                "JIS Z 8401 の規則A で丸める"
-                            }
+                            li { "l = 3.142d、S = 0.7854d²、w = 0.00785S" }
+                            li { "JIS Z 8401 の規則A で丸める" }
                         }
                         // 出典: JIS G 3112:2025 表6（画面には出さない。ADR に書いてある）
                     }
@@ -519,12 +639,16 @@ pub(crate) fn RebarPage() -> Element {
                         div { class: "overflow-x-auto",
                             Table {
                                 thead {
+                                    GroupRow {
+                                        HeadCell { left: true, rows: 2, "種類" }
+                                        GroupCell { span: 3, "長期" }
+                                        GroupCell { span: 2, "短期" }
+                                    }
                                     HeadRow {
-                                        HeadCell { left: true, "種類" }
-                                        HeadCell { "長期 引張・圧縮" }
-                                        HeadCell { "長期 せん断補強" }
-                                        HeadCell { "短期 引張・圧縮" }
-                                        HeadCell { "短期 せん断補強" }
+                                        HeadCell { span: 2, "引張・圧縮" }
+                                        HeadCell { "せん断" br {} "補強" }
+                                        HeadCell { "引張・" br {} "圧縮" }
+                                        HeadCell { "せん断" br {} "補強" }
                                     }
                                 }
                                 tbody {
@@ -532,6 +656,7 @@ pub(crate) fn RebarPage() -> Element {
                                         Row {
                                             TextCell { {kind.symbol()} }
                                             NumCell { {long_term_tension_compression(kind)} }
+                                            ParenCell { {long_term_tension_compression_d29_and_up(kind)} }
                                             NumCell { {integer(kind.allowable_shear_reinforcement().long_term)} }
                                             NumCell { {integer(kind.allowable_tension_compression(BarDesignation::D25).short_term)} }
                                             NumCell { {integer(kind.allowable_shear_reinforcement().short_term)} }
@@ -551,20 +676,25 @@ pub(crate) fn RebarPage() -> Element {
     }
 }
 
-/// 長期の引張・圧縮。D29 以上で値が変わる種類は、表 6.2 と同じく「215（*195）」と書き、凡例を注記に置く
+/// 長期の引張・圧縮（D29 より細い鉄筋）。D29 以上で値が変わる種類は、表 6.2 と同じく「215（*195）」と
+/// 書く。括弧書きは隣のセル（`long_term_tension_compression_d29_and_up`）、凡例は注記に置く
 fn long_term_tension_compression(kind: RebarKind) -> String {
-    let below = integer(
+    integer(
         kind.allowable_tension_compression(BarDesignation::D25)
             .long_term,
-    );
+    )
+}
+
+/// 長期の引張・圧縮の D29 以上の値の括弧書き「（*195）」。細い鉄筋と同じ値なら空
+fn long_term_tension_compression_d29_and_up(kind: RebarKind) -> String {
     let d29_and_up = integer(
         kind.allowable_tension_compression(BarDesignation::D29)
             .long_term,
     );
-    if below == d29_and_up {
-        below
+    if d29_and_up == long_term_tension_compression(kind) {
+        String::new()
     } else {
-        format!("{below}（*{d29_and_up}）")
+        format!("（*{d29_and_up}）")
     }
 }
 
