@@ -185,6 +185,49 @@ fn significant(x: f64, figures: i32) -> String {
     format!("{rounded:.decimals$}")
 }
 
+/// 呼び名の表の行: (呼び名, [d, l, S, w])。JIS G 3112 表6 と同じ桁
+fn designation_rows() -> Vec<(&'static str, [String; 4])> {
+    BarDesignation::ALL
+        .iter()
+        .map(|designation| {
+            (
+                designation.name(),
+                [
+                    significant(designation.nominal_diameter().as_mm(), 3),
+                    format!("{:.1}", designation.nominal_perimeter().as_mm()),
+                    thousands(significant(designation.nominal_area().as_mm2(), 4)),
+                    significant(designation.unit_mass().as_kg_per_m(), 3),
+                ],
+            )
+        })
+        .collect()
+}
+
+/// 列ごとの小数の最大の桁数
+fn column_decimals<const N: usize>(rows: &[(&str, [String; N])]) -> [usize; N] {
+    let mut decimals = [0; N];
+    for (_, values) in rows {
+        for (max, value) in decimals.iter_mut().zip(values) {
+            *max = (*max).max(decimals_of(value));
+        }
+    }
+    decimals
+}
+
+/// 小数の桁数（「12.7」は 1、「1,140」は 0）
+fn decimals_of(value: &str) -> usize {
+    value.find('.').map_or(0, |point| value.len() - point - 1)
+}
+
+/// 小数点を列で揃えるのに右に足す数字幅の数。小数点の無い値は小数点の分も足す
+fn decimal_pad(value: &str, decimals: usize) -> usize {
+    match (value.contains('.'), decimals) {
+        (_, 0) => 0,
+        (true, _) => decimals - decimals_of(value),
+        (false, _) => decimals + 1,
+    }
+}
+
 /// 整数部を3桁ごとに「,」で区切る（1140 → 1,140）
 fn thousands(number: String) -> String {
     let (sign, rest) = match number.strip_prefix('-') {
@@ -474,7 +517,7 @@ fn GroupCell(span: u32, children: Element) -> Element {
     }
 }
 
-/// 列見出し。`label` の muted で、行の下に寄せ、折り返さない（改行は `br` で決める）。数値の列の見出しは、
+/// 列見出し。`label` の muted で、上下は中央（2行の見出しと並ぶ1行の見出しも）、折り返さない（改行は `br` で決める）。数値の列の見出しは、
 /// 改行した行どうしを左で揃え、そのまとまりを列の右に寄せる。揃えは列の中身に合わせる: `left` の列（名前・区分の
 /// `TextCell`、式の `FormulaCell`）は左、数値の列（`NumCell`）は右。`span` は列のまたぎ、`rows` は
 /// 行のまたぎ（まとまりの見出しの行と並ぶ先頭の列）。
@@ -489,7 +532,7 @@ fn HeadCell(
         th {
             colspan: span,
             rowspan: rows,
-            class: if left { "py-2 pl-3 first:pl-0 first:pr-3 align-bottom text-left text-label text-muted font-normal whitespace-nowrap" } else { "py-2 pl-3 first:pl-0 first:pr-3 align-bottom text-right text-label text-muted font-normal whitespace-nowrap" },
+            class: if left { "py-2 pl-3 first:pl-0 first:pr-3 text-left text-label text-muted font-normal whitespace-nowrap" } else { "py-2 pl-3 first:pl-0 first:pr-3 text-right text-label text-muted font-normal whitespace-nowrap" },
             if left {
                 {children}
             } else {
@@ -515,6 +558,21 @@ fn NumCell(children: Element) -> Element {
     }
 }
 
+/// 小数点の位置を列で揃える数値のセル。`decimals` はその列の小数の最大の桁数。足りない桁（と小数点）を
+/// 数字幅の空白（U+2007）で右に埋める。等幅なので小数点が縦に揃う。埋めた空白は読み上げから外す。
+#[component]
+fn DecimalCell(value: String, decimals: usize) -> Element {
+    let pad = "\u{2007}".repeat(decimal_pad(&value, decimals));
+    rsx! {
+        td { class: "py-2 pl-3 first:pl-0 first:pr-3 font-mono text-num text-right whitespace-nowrap",
+            {value}
+            if !pad.is_empty() {
+                span { aria_hidden: "true", {pad} }
+            }
+        }
+    }
+}
+
 /// 数値に添える括弧書きのセル（「215（*195）」の「（*195）」）。前の `NumCell` と対で、左を詰めて
 /// 左に揃える。括弧の外の数値が、括弧の無い行の数値と右端で揃う。
 #[component]
@@ -535,12 +593,14 @@ fn FormulaCell(children: Element) -> Element {
 /// `/data/rebar`。呼び名の表と、種類ごとの許容応力度の表。値は JIS と RC 規準の表と同じ桁で出す。
 #[component]
 pub(crate) fn RebarPage() -> Element {
+    let rows = designation_rows();
+    let decimals = column_decimals(&rows);
     rsx! {
         Page { route: Route::DataRebar {},
             Columns {
                 Column {
                     Block {
-                        Caption { "呼び名" }
+                        Caption { "異形棒鋼の寸法、単位質量及び節の許容限度" }
                         Table {
                             thead {
                                 HeadRow {
@@ -552,13 +612,12 @@ pub(crate) fn RebarPage() -> Element {
                                 }
                             }
                             tbody {
-                                for designation in BarDesignation::ALL.iter().copied() {
+                                for (name , values) in rows {
                                     Row {
-                                        TextCell { {designation.name()} }
-                                        NumCell { {significant(designation.nominal_diameter().as_mm(), 3)} }
-                                        NumCell { {format!("{:.1}", designation.nominal_perimeter().as_mm())} }
-                                        NumCell { {thousands(significant(designation.nominal_area().as_mm2(), 4))} }
-                                        NumCell { {significant(designation.unit_mass().as_kg_per_m(), 3)} }
+                                        TextCell { {name} }
+                                        for (value , decimals) in values.into_iter().zip(decimals) {
+                                            DecimalCell { value, decimals }
+                                        }
                                     }
                                 }
                             }

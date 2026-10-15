@@ -253,3 +253,19 @@ fn allowable_stress_basis_has_long_and_short_term_columns_and_no_notes() {
         assert!(!text.contains(note), "注記「{note}」が出ている");
     }
 }
+
+#[test]
+fn rebar_dimensions_pad_short_decimals_to_line_up_the_points() {
+    let html = render_path("/data/rebar");
+    // d は小数 2 桁が最大なので「12.7」の後ろに1つ、S の「1,140」の後ろに小数点と2桁の分の3つ
+    for padded in [
+        "12.7<span aria-hidden=\"true\">\u{2007}</span>",
+        "1,140<span aria-hidden=\"true\">\u{2007}\u{2007}\u{2007}</span>",
+    ] {
+        assert!(html.contains(padded), "{padded} が無い: {html}");
+    }
+    assert!(
+        html.contains(">4.23</td>"),
+        "桁の足りている 4.23 に空白が付いている: {html}"
+    );
+}

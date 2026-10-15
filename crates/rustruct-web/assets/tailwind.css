@@ -437,9 +437,6 @@
   .text-right {
     text-align: right;
   }
-  .align-bottom {
-    vertical-align: bottom;
-  }
   .font-mono {
     font-family: var(--font-mono);
   }
