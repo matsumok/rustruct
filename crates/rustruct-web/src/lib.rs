@@ -203,6 +203,12 @@ fn Header(route: Route) -> Element {
     let mut menu_open = use_signal(|| false);
     let mut account_note = use_signal(|| false);
     let page_name = (route != Route::Home {}).then(|| route.text().heading);
+    // 部のページそのものの名前は、iPad・PC では下線の付いた部のボタンと同じなので出さない
+    let page_name_class = if Route::sections().any(|s| s == route) {
+        "truncate text-body text-muted md:hidden"
+    } else {
+        "truncate text-body text-muted"
+    };
     rsx! {
         // sticky は位置を持つので、中央の四部（absolute）はヘッダーを基準に置かれる
         header { class: "sticky top-0 z-20 flex h-8 items-center justify-between border-b border-line bg-paper px-5 md:px-7 lg:px-8",
@@ -228,10 +234,9 @@ fn Header(route: Route) -> Element {
                 }
             }
             div { class: "flex min-w-0 items-center gap-4",
-                // 部のページそのものの名前は、iPad・PC では下線の付いた部のボタンと同じなので出さない
-                span {
-                    class: if Route::sections().any(|s| s == route) { "truncate text-body text-muted md:hidden" } else { "truncate text-body text-muted" },
-                    {page_name}
+                // トップにはページ名が無い
+                if let Some(name) = page_name {
+                    span { class: page_name_class, {name} }
                 }
                 button {
                     class: "p-3 text-ink",
