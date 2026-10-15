@@ -1,7 +1,7 @@
-//! 配置後のスモークテスト（`scripts/check-live.sh`、Issue #13・#21）そのものを確かめる。
+//! 配置後のスモークテスト（`scripts/check-live.sh`、Issue #13・#21・#24）そのものを確かめる。
 //! 手元に配置先の形をした偽サーバーを立て、スクリプトをそこへ向ける。サーバーとスクリプトはどちらもサンドボックスの中で動く。
-//! ページは `static_paths` の住所ごとの `render_path`。`/assets/` は拡張子で中身を返し、最初の何回かを 404 にできる
-//! （配置で上書きした直後に新しいアセットが届かない、#21 の再現）。
+//! ページは `static_paths` の住所ごとの `render_path`。`/assets/` は拡張子で中身を返す。どちらも最初の何回かを 404 にできる
+//! （配置で上書きした直後に古い版が返り、新しいアセットやページが届かない、#21・#24 の再現）。
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
@@ -37,8 +37,9 @@ fn response(status: u16, content_type: &str, body: impl Into<Vec<u8>>) -> Respon
 }
 
 /// 配置先の振る舞い（`wrangler.toml` の `auto-trailing-slash` と `404-page`）。
-/// `/assets/` の住所はそれぞれ最初の `asset_404s` 回だけ 404 を返す。
-fn serve(asset_404s: usize) -> String {
+/// ページの住所はそれぞれ最初の `page_404s` 回だけ not-found の本文で 404 を、`/assets/` の住所はそれぞれ最初の
+/// `asset_404s` 回だけ 404 を返す。
+fn serve(page_404s: usize, asset_404s: usize) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").expect("偽サーバーの port が取れない");
     let addr = listener.local_addr().unwrap();
     let pages: HashMap<String, String> = static_paths()
@@ -67,11 +68,14 @@ fn serve(asset_404s: usize) -> String {
                 .nth(1)
                 .unwrap_or("/")
                 .replacen("/./", "/", 1);
-            let r = if let Some(asset) = path.strip_prefix("/assets/") {
+            let n = {
                 let mut hits = hits.lock().unwrap();
                 let n = hits.entry(path.clone()).or_default();
                 *n += 1;
-                if *n <= asset_404s {
+                *n
+            };
+            let r = if let Some(asset) = path.strip_prefix("/assets/") {
+                if n <= asset_404s {
                     response(404, "text/plain", "")
                 } else if asset.ends_with(".css") {
                     response(200, "text/css", "@media (prefers-color-scheme: dark) {}")
@@ -87,7 +91,11 @@ fn serve(asset_404s: usize) -> String {
                     response(404, "text/plain", "")
                 }
             } else if let Some(html) = pages.get(&path) {
-                response(200, "text/html", html.as_str())
+                if n <= page_404s {
+                    response(404, "text/html", not_found.as_str())
+                } else {
+                    response(200, "text/html", html.as_str())
+                }
             } else if pages.contains_key(&format!("{path}/")) {
                 Response {
                     status: 307,
@@ -120,7 +128,7 @@ fn check_live(url: &str) -> (Output, String) {
     let output = Command::new("sh")
         .arg(workspace_root().join("scripts/check-live.sh"))
         .arg(url)
-        .env("CHECK_LIVE_ASSET_RETRY_SECONDS", "1")
+        .env("CHECK_LIVE_RETRY_SECONDS", "1")
         // 取得物の置き場をテストごとに分ける（並列に走っても混ざらない）
         .env("TMPDIR", &tmp)
         .env_remove("CF_ACCESS_CLIENT_ID")
@@ -133,14 +141,14 @@ fn check_live(url: &str) -> (Output, String) {
 
 #[test]
 fn a_site_serving_every_page_and_asset_passes_without_waiting() {
-    let (output, stdout) = check_live(&serve(0));
+    let (output, stdout) = check_live(&serve(0, 0));
     assert!(output.status.success(), "{stdout}");
     assert!(!stdout.contains("待"), "待たなくてよいのに待った: {stdout}");
 }
 
 #[test]
 fn assets_that_404_just_after_a_deploy_are_fetched_again() {
-    let (output, stdout) = check_live(&serve(1));
+    let (output, stdout) = check_live(&serve(0, 1));
     assert!(output.status.success(), "{stdout}");
     for asset in [
         "/assets/tailwind-dxh1.css は 1 秒待った",
@@ -153,7 +161,7 @@ fn assets_that_404_just_after_a_deploy_are_fetched_again() {
 
 #[test]
 fn assets_that_keep_404ing_fail_once_the_retries_run_out() {
-    let (output, stdout) = check_live(&serve(usize::MAX));
+    let (output, stdout) = check_live(&serve(0, usize::MAX));
     assert!(!output.status.success(), "{stdout}");
     assert!(
         stdout.contains("/assets/tailwind-dxh1.css は 12 秒待った"),
@@ -163,9 +171,36 @@ fn assets_that_keep_404ing_fail_once_the_retries_run_out() {
         stdout.contains("NG: CSS /assets/tailwind-dxh1.css が 200 でない: 404"),
         "{stdout}"
     );
-    // 持ち時間は 3 つで共有する。CSS で使い切ったら、読込スクリプトは待たずに判定する
+    // 持ち時間はページとアセットで共有する。CSS で使い切ったら、読込スクリプトは待たずに判定する
     assert!(
         !stdout.contains("rustruct-web-dxh1.js は"),
+        "持ち時間を使い切ったのにまた待った: {stdout}"
+    );
+}
+
+#[test]
+fn pages_that_404_just_after_a_deploy_are_fetched_again() {
+    let (output, stdout) = check_live(&serve(1, 0));
+    assert!(output.status.success(), "{stdout}");
+    // / は最初の接続の確かめで 1 回目を使うので、待つのはそれ以外のページ
+    for page in [
+        "/data/ は 1 秒待った",
+        "/data/concrete/ は 1 秒待った",
+        "/data/rebar/ は 1 秒待った",
+    ] {
+        assert!(stdout.contains(page), "「{page}」が無い: {stdout}");
+    }
+}
+
+#[test]
+fn pages_that_keep_404ing_fail_once_the_retries_run_out() {
+    let (output, stdout) = check_live(&serve(usize::MAX, 0));
+    assert!(!output.status.success(), "{stdout}");
+    assert!(stdout.contains("/ は 12 秒待った"), "{stdout}");
+    assert!(stdout.contains("NG: / が 200 でない: 404"), "{stdout}");
+    assert!(stdout.contains("NG: /data/ が 200 でない: 404"), "{stdout}");
+    assert!(
+        !stdout.contains("/tools/ は"),
         "持ち時間を使い切ったのにまた待った: {stdout}"
     );
 }
