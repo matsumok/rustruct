@@ -2,7 +2,7 @@
 
 ## Contexts
 
-- [サイト全体](./GLOSSARY.md): 三部構成、利用者、Model と限定データ。どの Tool にも共通する言葉
+- [サイト全体](./GLOSSARY.md): 四部構成と分野、利用者、Model と限定データ。どの Tool にも共通する言葉
 - [材料](./docs/materials/GLOSSARY.md): コンクリートと鉄筋。複数の Tool が共有する
 - [スラブたわみ](./docs/tools/slab/GLOSSARY.md): RC 二方向スラブ（四辺固定）の必要厚さと等厚曲線
 - [地震応答](./docs/tools/seismic-response/GLOSSARY.md): 多質点モデルの地震応答

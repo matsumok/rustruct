@@ -16,8 +16,8 @@ ng() { echo "NG: $1"; fail=1; }
 [ -d "$out" ] || { echo "NG: $out が無い（先に dx build --ssg --release --force-sequential）"; exit 1; }
 
 # 住所の集合。crates/rustruct-web/src/ssg.rs の static_paths と同じ（tests/render.rs も同じ一覧を期待値に持つ）
-expected="/ /tools /studies /notes /root /404"
-sections="/tools /studies /notes"
+expected="/ /tools /data /data/concrete /data/rebar /studies /notes /root /404"
+sections="/tools /data /studies /notes"
 found=$(cd "$out" && find . -name index.html | sed 's#^\./##; s#/\{0,1\}index\.html$##; s#^#/#' | sort)
 if [ "$found" != "$(printf '%s\n' $expected | sort)" ]; then
   ng "住所ごとの HTML が期待と違う。期待: $expected / 実際: $(printf '%s ' $found)"
@@ -52,9 +52,14 @@ for path in $expected; do
   fi
 done
 
-# トップの一覧は三部へのリンク
+# トップの一覧は四部へのリンク
 for s in $sections; do
   grep -qF "href=\"$s\"" "$out/index.html" || ng "/ の一覧に $s へのリンクが無い"
+done
+
+# /data の一覧は各ページへのリンク
+for d in /data/concrete /data/rebar; do
+  grep -qF "href=\"$d\"" "$out/data/index.html" || ng "/data の一覧に $d へのリンクが無い"
 done
 
 # not-found は空ページの文言と混ざらない

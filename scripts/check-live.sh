@@ -90,7 +90,7 @@ done
 
 # 住所ごとの HTML。一覧は crates/rustruct-web/src/ssg.rs の static_paths と同じ（check-ssg.sh と同様、not-found は別に見る）。
 # /root/ に Cloudflare Access を掛けたら（docs/stack.md）、サービストークンを通さない限りここは 200 でなくなる
-for p in / /tools/ /studies/ /notes/ /root/; do
+for p in / /tools/ /data/ /data/concrete/ /data/rebar/ /studies/ /notes/ /root/; do
   status=$(fetch "$p" "$dir/page.html")
   [ "$status" = 200 ] || ng "$p が 200 でない: $status$(why)"
   grep -qF '>rustruct<' "$dir/page.html" || ng "$p に wordmark が無い"

@@ -45,6 +45,7 @@ impl From<serde_json::Error> for Error {
 /// - 書体 `--font-sans` `--font-mono`: `font-sans` `font-mono`
 /// - 余白 `--spacing-<n>`（tokens の `space-<n>`）: `p-5` `gap-4`
 /// - 角丸 `--radius-<n>`（tokens の `radius-<n>`）: `rounded-0` `rounded-8` `rounded-full`
+/// - 幅 `--container-<n>`（tokens の `layout` の `width-<n>`）: `max-w-column` `w-column`
 ///
 /// 各名前空間の Tailwind 既定値は消すので、tokens.json にない色や大きさのクラスは存在しない。
 /// ダークは `@custom-variant dark` を OS 設定に結び、同じ役割名の色を `:root` で上書きする。
@@ -104,6 +105,12 @@ pub fn theme_css(tokens_json: &str) -> Result<String, Error> {
     out.push_str("  --radius-*: initial;\n");
     for (name, value) in &tokens.radius {
         out.push_str(&format!("  --radius-{name}: {value};\n"));
+    }
+
+    out.push_str("\n  /* 幅: width-<n> を max-w-<n> / w-<n> で使う */\n");
+    out.push_str("  --container-*: initial;\n");
+    for (name, value) in &tokens.widths {
+        out.push_str(&format!("  --container-{name}: {value};\n"));
     }
 
     out.push_str("}\n\n");
@@ -170,6 +177,8 @@ struct Tokens {
     spacing: Vec<(String, String)>,
     /// `radius-<n>` の `<n>` と値。
     radius: Vec<(String, String)>,
+    /// `layout` の `width-<n>` の `<n>` と値。
+    widths: Vec<(String, String)>,
 }
 
 /// 色の役割名と、ライト・ダークそれぞれの値。
@@ -204,6 +213,7 @@ impl Tokens {
             text_styles: text_styles(&v)?,
             spacing: scale(&v, "/spacing/tokens", "space-")?,
             radius: scale(&v, "/radius/tokens", "radius-")?,
+            widths: scale(&v, "/layout/tokens", "width-")?,
         })
     }
 }
@@ -294,7 +304,7 @@ fn text_styles(v: &Value) -> Result<Vec<TextStyle>, Error> {
     Ok(styles)
 }
 
-/// `<prefix><n>` という名前と値の並び（余白・角丸）。接頭辞を外した `<n>` を返す。
+/// `<prefix><n>` という名前と値の並び（余白・角丸・幅）。接頭辞を外した `<n>` を返す。
 fn scale(v: &Value, pointer: &str, prefix: &str) -> Result<Vec<(String, String)>, Error> {
     array(v, pointer)?
         .iter()
@@ -473,6 +483,12 @@ mod tests {
         ] {
             assert!(css.contains(line), "{line} が無い:\n{css}");
         }
+    }
+
+    #[test]
+    fn layout_widths_are_usable_as_tailwind_container_sizes() {
+        // 本文の1単位（ui-decisions「列の単位」）。max-w-column / w-column で使う
+        assert!(css().contains("--container-column: 335px;"), "{}", css());
     }
 
     #[test]

@@ -16,7 +16,7 @@ quantity!(
 );
 
 impl Length {
-    pub fn mm(value: f64) -> Self {
+    pub const fn mm(value: f64) -> Self {
         Self(value)
     }
     pub fn as_mm(self) -> f64 {
@@ -30,7 +30,7 @@ quantity!(
 );
 
 impl Area {
-    pub fn mm2(value: f64) -> Self {
+    pub const fn mm2(value: f64) -> Self {
         Self(value)
     }
     pub fn as_mm2(self) -> f64 {
@@ -45,7 +45,7 @@ quantity!(
 
 impl LinearMass {
     /// 1 kg/m = 10⁻³ t / 10³ mm
-    pub fn kg_per_m(value: f64) -> Self {
+    pub const fn kg_per_m(value: f64) -> Self {
         Self(value / 1e6)
     }
     pub fn as_kg_per_m(self) -> f64 {
@@ -59,7 +59,7 @@ quantity!(
 );
 
 impl Stress {
-    pub fn n_per_mm2(value: f64) -> Self {
+    pub const fn n_per_mm2(value: f64) -> Self {
         Self(value)
     }
     pub fn as_n_per_mm2(self) -> f64 {
@@ -74,7 +74,7 @@ quantity!(
 
 impl UnitWeight {
     /// 1 kN/m³ = 10³ N / 10⁹ mm³
-    pub fn kn_per_m3(value: f64) -> Self {
+    pub const fn kn_per_m3(value: f64) -> Self {
         Self(value / 1e6)
     }
     pub fn as_kn_per_m3(self) -> f64 {

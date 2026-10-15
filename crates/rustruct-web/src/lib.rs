@@ -18,6 +18,11 @@ pub use prerender::render_path;
 
 /// SSG: 書き出す住所の列挙と、書く場所の設定。
 mod ssg;
+
+/// Data: 材料や規格の値のページ。
+mod data;
+pub use data::{AllowableRow, ConcreteReadout};
+use data::{ConcretePage, DataIndex, RebarPage};
 #[cfg(feature = "server")]
 pub use ssg::serve_config;
 pub use ssg::{NOT_FOUND_PATH, static_paths};
@@ -39,6 +44,12 @@ pub enum Route {
         Home {},
         #[route("/tools", SectionPage)]
         Tools {},
+        #[route("/data", DataIndex)]
+        Data {},
+        #[route("/data/concrete", ConcretePage)]
+        DataConcrete {},
+        #[route("/data/rebar", RebarPage)]
+        DataRebar {},
         #[route("/studies", SectionPage)]
         Studies {},
         #[route("/notes", SectionPage)]
@@ -49,8 +60,19 @@ pub enum Route {
         NotFound { segments: Vec<String> },
 }
 
+/// ルートが載る一覧。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Listing {
+    /// トップの一覧（四部）
+    Home,
+    /// `/data` の一覧
+    Data,
+    /// どこにも載らない
+    Nowhere,
+}
+
 /// ページの文言。見出し（ページ名）と一行の説明。`<title>` と description の meta、
-/// 三部なら一覧の名前と一行も、ここから導く。
+/// 一覧に載るページ（四部、Data の各ページ）なら、一覧の名前と一行も、ここから導く。
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct PageText {
     pub heading: &'static str,
@@ -58,7 +80,7 @@ pub struct PageText {
 }
 
 impl Route {
-    /// ルートごとの文言。足すときはここに 1 行書けば、見出し・`<title>`・meta（三部なら一覧も）に載る。
+    /// ルートごとの文言。足すときはここに 1 行書けば、見出し・`<title>`・meta（一覧に載るページなら一覧も）に載る。
     pub fn text(&self) -> PageText {
         let (heading, description) = match self {
             Route::Home {} => (
@@ -66,6 +88,15 @@ impl Route {
                 "構造設計者向けの計算ツールと、数学的な可視化・書きもの。",
             ),
             Route::Tools {} => ("Tools", "構造計算の入力・計算・判定。"),
+            Route::Data {} => ("Data", "構造設計で参照する材料や規格の値。"),
+            Route::DataConcrete {} => (
+                "コンクリート",
+                "Fc から単位体積重量・ヤング係数・許容応力度を求める。",
+            ),
+            Route::DataRebar {} => (
+                "鉄筋",
+                "異形棒鋼の呼び名ごとの公称直径・周長・断面積・単位質量と、種類ごとの許容応力度。",
+            ),
             Route::Studies {} => ("Studies", "数学やかたちを眺めて考えるための可視化。"),
             Route::Notes {} => ("Notes", "構造や数学についての書きもの。"),
             Route::Root {} => ("root", "root のための場所。"),
@@ -77,17 +108,30 @@ impl Route {
         }
     }
 
-    /// 三部（Tools / Studies / Notes）の一つか。トップの一覧に載るのはこれだけ。
-    pub fn is_section(&self) -> bool {
+    /// どの一覧に載るか。ルートを足したらここで決める（網羅的な match なので、決め忘れはコンパイルが止める）。
+    fn listing(&self) -> Listing {
         match self {
-            Route::Tools {} | Route::Studies {} | Route::Notes {} => true,
-            Route::Home {} | Route::Root {} | Route::NotFound { .. } => false,
+            Route::Tools {} | Route::Data {} | Route::Studies {} | Route::Notes {} => Listing::Home,
+            Route::DataConcrete {} | Route::DataRebar {} => Listing::Data,
+            Route::Home {} | Route::Root {} | Route::NotFound { .. } => Listing::Nowhere,
         }
     }
 
-    /// トップに並べる三部。ルーターの住所一覧から導くので、一覧とルーターを別々に書かない。
+    /// トップに並べる四部（Tools / Data / Studies / Notes）。ルーターの住所一覧から導くので、
+    /// 一覧とルーターを別々に書かない。
     pub fn sections() -> impl Iterator<Item = Route> {
-        Route::static_routes().into_iter().filter(Route::is_section)
+        Route::listed_on(Listing::Home)
+    }
+
+    /// `/data` に並べるページ。四部と同じく、ルーターの住所一覧から導く。
+    pub fn data_pages() -> impl Iterator<Item = Route> {
+        Route::listed_on(Listing::Data)
+    }
+
+    fn listed_on(listing: Listing) -> impl Iterator<Item = Route> {
+        Route::static_routes()
+            .into_iter()
+            .filter(move |route| route.listing() == listing)
     }
 
     /// `<title>`。「ページ名 · サイト名」。
@@ -138,7 +182,7 @@ fn Wordmark() -> Element {
     }
 }
 
-/// トップ。`display` の一文と、三部の一覧（名前＋一行＋パス）。箱で囲まず、グリッドは2列まで。
+/// トップ。`display` の一文と、四部の一覧（名前＋一行＋パス）。
 #[component]
 fn Home() -> Element {
     // 見出しの一文の句点だけ accent（docs/design/README.md「差し色」）
@@ -153,14 +197,22 @@ fn Home() -> Element {
                 {words}
                 span { class: "text-accent", {period} }
             }
-            ul { class: "grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-6",
-                for route in Route::sections() {
-                    li {
-                        Link { to: route.clone(), class: "block",
-                            span { class: "block font-mono text-path text-muted", "{route}" }
-                            span { class: "block text-heading", {route.text().heading} }
-                            span { class: "block text-body", {route.text().description} }
-                        }
+            RouteList { routes: Route::sections().collect::<Vec<_>>() }
+        }
+    }
+}
+
+/// ページの一覧。各項目は「パス＋名前＋一行」で、押すとそのページ。箱で囲まず、グリッドは2列まで。
+#[component]
+fn RouteList(routes: Vec<Route>) -> Element {
+    rsx! {
+        ul { class: "grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-6",
+            for route in routes {
+                li {
+                    Link { to: route.clone(), class: "block",
+                        span { class: "block font-mono text-path text-muted", "{route}" }
+                        span { class: "block text-heading", {route.text().heading} }
+                        span { class: "block text-body", {route.text().description} }
                     }
                 }
             }
@@ -168,7 +220,7 @@ fn Home() -> Element {
     }
 }
 
-/// 三部それぞれの空ページ。
+/// Tools / Studies / Notes の空ページ。
 #[component]
 fn SectionPage() -> Element {
     rsx! {

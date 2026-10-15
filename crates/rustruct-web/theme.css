@@ -101,6 +101,10 @@
   --radius-0: 0px;
   --radius-8: 8px;
   --radius-full: 9999px;
+
+  /* 幅: width-<n> を max-w-<n> / w-<n> で使う */
+  --container-*: initial;
+  --container-column: 335px;
 }
 
 /* ダーク: 同じ役割名の色を OS 設定で切り替える。切替 UI は無い */
