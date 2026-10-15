@@ -21,21 +21,25 @@ mod ssg;
 
 /// Data: 材料や規格の値のページ。
 mod data;
+
+/// ヘッダーのボタンのアイコン（Carbon）。
+mod icons;
 pub use data::{AllowableRow, ConcreteReadout};
 use data::{ConcretePage, DataIndex, RebarPage};
+use icons::{CloseIcon, DarkIcon, LightIcon, MenuIcon, UserIcon};
 #[cfg(feature = "server")]
 pub use ssg::serve_config;
 pub use ssg::{NOT_FOUND_PATH, static_paths};
 
 include!(concat!(env!("OUT_DIR"), "/fonts.rs"));
 
-/// 上のバーに置く wordmark の文字。サイトの住所そのもの。
+/// ヘッダーに置く wordmark の文字。サイトの住所そのもの。
 pub const WORDMARK: &str = "rustruct.matsumok.com";
 
 /// dx 内蔵の Tailwind CLI が `tailwind.css` から出力した CSS。
 const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 
-/// サイトの住所。全ページが `Frame`（上のバーの wordmark）の中に入る。
+/// サイトの住所。全ページが `Frame`（ヘッダーと本文の枠）の中に入る。
 #[derive(Routable, Clone, PartialEq, Debug)]
 #[rustfmt::skip]
 pub enum Route {
@@ -138,6 +142,30 @@ impl Route {
     pub fn title(&self) -> String {
         format!("{} · {WORDMARK}", self.text().heading)
     }
+
+    /// このページが入る四部の一つ（`/data/concrete` なら Data）。トップ・root・not-found は無し。
+    /// not-found はどの住所でも同じ 1 ファイルなので、`/tools/nothing` でも部に入れない（ADR-0001 の規則）。
+    fn section(&self) -> Option<Route> {
+        if matches!(self, Route::NotFound { .. }) {
+            return None;
+        }
+        let path = self.to_string();
+        Route::sections().find(|section| {
+            let base = section.to_string();
+            path == base || path.starts_with(&format!("{base}/"))
+        })
+    }
+}
+
+/// 覚えた色（ライトかダーク）を、描く前に `<html data-theme>` に当てる。HTML は WASM より先に描かれるので、
+/// ここで当てないと開くたびに一瞬 OS の色が出る（ui-decisions「画面幅」の切り替え）。
+const APPLY_REMEMBERED_THEME: &str = r#"try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}"#;
+
+/// 今の色の反対を選んで覚える。選んでいなければ今の色は OS 設定のもの。
+const TOGGLE_THEME: &str = r#"var r=document.documentElement,c=r.getAttribute("data-theme"),d=c?c==="dark":matchMedia("(prefers-color-scheme: dark)").matches,t=d?"light":"dark";r.setAttribute("data-theme",t);try{localStorage.setItem("theme",t)}catch(e){}"#;
+
+fn toggle_theme() {
+    document::eval(TOGGLE_THEME);
 }
 
 /// サイト全体のルート。フォントと CSS の読込と、ルーター。
@@ -148,67 +176,194 @@ pub fn App() -> Element {
         document::Link { rel: "preconnect", href: "https://fonts.gstatic.com", crossorigin: "anonymous" }
         document::Stylesheet { href: GOOGLE_FONTS_CSS }
         document::Stylesheet { href: TAILWIND_CSS }
+        document::Script { {APPLY_REMEMBERED_THEME} }
         Router::<Route> {}
     }
 }
 
-/// 全ページ共通の枠。上のバーの wordmark（押すとトップ）と、その下にページ本体。
+/// 全ページ共通の枠。上に固定するヘッダーと、その下の本文（`docs/adr/0007`）。
+/// 本文はページの左右の余白（スマホ `space-5`、iPad `space-7`、PC `space-8`）の内側に置く。
 #[component]
 fn Frame() -> Element {
     let route = use_route::<Route>();
     rsx! {
         document::Title { "{route.title()}" }
         document::Meta { name: "description", content: route.text().description }
-        header { class: "px-5 py-4",
-            Link { to: Route::Home {}, Wordmark {} }
+        Header { route: route.clone() }
+        div { class: "px-5 md:px-7 lg:px-8", Outlet::<Route> {} }
+    }
+}
+
+/// ヘッダー。左右の余白の内側いっぱいに、左にサイト名、右にページ名・四部・ライトとダーク・アカウント。
+/// スマホ（`md` 未満）はサイト名を `rustruct` だけにし、四部・切り替え・アカウントをメニューにしまう。
+/// メニューのボタンはサイト名の左、ページ名は右端。アイコンのボタンは押せる幅を広く取り、端の分は外へ出す。
+#[component]
+fn Header(route: Route) -> Element {
+    let mut menu_open = use_signal(|| false);
+    let mut account_note = use_signal(|| false);
+    let section = route.section();
+    let page_name = (route != Route::Home {}).then(|| route.text().heading);
+    rsx! {
+        header { class: "sticky top-0 z-20 flex h-8 items-center gap-4 border-b border-line bg-paper px-5 md:px-7 lg:px-8",
+            button {
+                class: "-ml-3 p-3 text-ink md:hidden",
+                r#type: "button",
+                "aria-label": if menu_open() { "メニューを閉じる" } else { "メニューを開く" },
+                "aria-expanded": if menu_open() { "true" } else { "false" },
+                onclick: move |_| menu_open.toggle(),
+                if menu_open() {
+                    CloseIcon { class: "size-5" }
+                } else {
+                    MenuIcon { class: "size-5" }
+                }
+            }
+            Link { to: Route::Home {}, onclick: move |_| menu_open.set(false), Wordmark {} }
+            span { class: "ml-auto truncate text-body text-muted", {page_name} }
+            nav { class: "hidden md:flex md:items-center md:gap-4",
+                for s in Route::sections() {
+                    SectionLink { section: s.clone(), current: aria_current(&route, &s, section.as_ref()) }
+                }
+            }
+            button {
+                class: "hidden p-3 text-ink md:block",
+                r#type: "button",
+                "aria-label": "ライトとダークを切り替える",
+                onclick: move |_| toggle_theme(),
+                ThemeIcon {}
+            }
+            if account_note() {
+                span { class: "hidden text-label text-muted md:inline", "登録は準備中" }
+            }
+            button {
+                class: "-mr-3 hidden p-3 text-ink md:block",
+                r#type: "button",
+                "aria-label": "アカウント",
+                onclick: move |_| account_note.toggle(),
+                UserIcon { class: "size-5" }
+            }
         }
-        Outlet::<Route> {}
+        if menu_open() {
+            Menu { route: route.clone(), section, on_close: move |_| menu_open.set(false) }
+        }
+    }
+}
+
+/// 今いる部の印（`aria-current`）。部のページそのものには `Link` が自分で `page` を付けるので、
+/// ここではその下のページの `true` だけを付ける（同じ属性を二重にしない）。
+fn aria_current(route: &Route, section: &Route, current: Option<&Route>) -> Option<&'static str> {
+    (route != section && current == Some(section)).then_some("true")
+}
+
+/// ヘッダーの四部のボタン。今いる部には `accent` の下線（差し色の使い場所の一つ）。
+#[component]
+fn SectionLink(section: Route, current: Option<&'static str>) -> Element {
+    rsx! {
+        Link {
+            to: section.clone(),
+            class: if current.is_some() { "text-body text-ink underline decoration-accent underline-offset-4" } else { "text-body text-ink" },
+            "aria-current": current,
+            {section.text().heading}
+        }
+    }
+}
+
+/// ライトとダークのアイコン。今の色のほうを出す。色は描く前に決まるが、どちらかはブラウザでしか分からないので、
+/// 両方を描いて CSS で片方を隠す（初回描画と hydration で中身を変えない。ADR-0001 の規則）。
+#[component]
+fn ThemeIcon() -> Element {
+    rsx! {
+        LightIcon { class: "size-5 dark:hidden" }
+        DarkIcon { class: "hidden size-5 dark:block" }
+    }
+}
+
+/// スマホのメニュー。ヘッダーは残し、その下の画面をまるごと `paper` で覆う（ui-decisions「画面幅」）。
+/// 上から四部（名前とパス）、`line` を挟んでライトとダーク、アカウント（準備中）。項目を選ぶと閉じる。
+#[component]
+fn Menu(route: Route, section: Option<Route>, on_close: EventHandler<()>) -> Element {
+    rsx! {
+        div { class: "fixed inset-x-0 top-8 bottom-0 z-10 overflow-y-auto bg-paper px-5 md:hidden",
+            ul { class: "py-4",
+                for s in Route::sections() {
+                    li {
+                        Link {
+                            to: s.clone(),
+                            class: "flex items-baseline justify-between py-3",
+                            "aria-current": aria_current(&route, &s, section.as_ref()),
+                            onclick: move |_| on_close.call(()),
+                            span { class: if section.as_ref() == Some(&s) { "text-heading underline decoration-accent underline-offset-4" } else { "text-heading" },
+                                {s.text().heading}
+                            }
+                            span { class: "font-mono text-path text-muted", "{s}" }
+                        }
+                    }
+                }
+            }
+            div { class: "border-t border-line py-4",
+                button {
+                    class: "flex w-full items-center gap-3 py-3 text-body text-ink",
+                    r#type: "button",
+                    onclick: move |_| toggle_theme(),
+                    ThemeIcon {}
+                    "ライトとダーク"
+                }
+                p { class: "flex items-center gap-3 py-3 text-body text-muted",
+                    UserIcon { class: "size-5" }
+                    "アカウント"
+                    span { class: "text-label", "登録は準備中" }
+                }
+            }
+        }
     }
 }
 
 /// サイト名。`rustruct` は `ink` の 500、`.matsumok.com` はドットごと `muted` の 400
 /// （tokens.json の `wordmark` の usage。2026-10-14 に dx serve で見て決めた）。
+/// スマホのヘッダーでは `.matsumok.com` を隠し、`rustruct` だけにする。
 #[component]
 fn Wordmark() -> Element {
-    let dot = WORDMARK
-        .find('.')
-        .expect("wordmark はドメインなのでドットを含む");
-    let (name, domain) = WORDMARK.split_at(dot);
+    let (name, domain) = split_wordmark();
     rsx! {
         span { class: "font-mono text-wordmark text-ink",
             {name}
-            span { class: "text-muted font-normal", {domain} }
+            span { class: "hidden font-normal text-muted md:inline", {domain} }
         }
     }
 }
 
-/// トップ。`display` の一文と、四部の一覧（名前＋一行＋パス）。
+/// wordmark を `rustruct` と `.matsumok.com` に分ける。
+fn split_wordmark() -> (&'static str, &'static str) {
+    let dot = WORDMARK
+        .find('.')
+        .expect("wordmark はドメインなのでドットを含む");
+    WORDMARK.split_at(dot)
+}
+
+/// トップ。`display` のサイトの住所と、四部の一覧（名前＋一行＋パス）。
+/// スマホのヘッダーが `rustruct` だけになっても、ここで住所が全部見える。狭い画面ではドットの前で折り返す。
 #[component]
 fn Home() -> Element {
-    // 見出しの一文の句点だけ accent（docs/design/README.md「差し色」）
-    let sentence = "構造を計算し、かたちを眺める。";
-    let words = sentence
-        .strip_suffix('。')
-        .expect("トップの一文は句点で終わる");
-    let period = &sentence[words.len()..];
+    let (name, domain) = split_wordmark();
     rsx! {
-        main { class: "px-5",
+        main { class: "mx-auto max-w-page",
             p { class: "text-display py-8",
-                {words}
-                span { class: "text-accent", {period} }
+                {name}
+                wbr {}
+                span { class: "text-muted", {domain} }
             }
             RouteList { routes: Route::sections().collect::<Vec<_>>() }
         }
     }
 }
 
-/// ページの一覧。各項目は「パス＋名前＋一行」で、押すとそのページ。箱で囲まず、グリッドは2列まで。
+/// ページの一覧。各項目は「パス＋名前＋一行」で、押すとそのページ。箱で囲まず、
+/// スマホは1列、`md` から1単位（`w-column`）の列を `space-4` の溝で2つ。Data の列と同じ線に並ぶ。
 #[component]
 fn RouteList(routes: Vec<Route>) -> Element {
     rsx! {
-        ul { class: "grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-6",
+        ul { class: "grid grid-cols-1 md:w-fit md:grid-cols-2 gap-x-4 gap-y-6",
             for route in routes {
-                li {
+                li { class: "md:w-column",
                     Link { to: route.clone(), class: "block",
                         span { class: "block font-mono text-path text-muted", "{route}" }
                         span { class: "block text-heading", {route.text().heading} }
@@ -229,12 +384,13 @@ fn SectionPage() -> Element {
 }
 
 /// 住所で組む下層ページ。伸びた住所、`title` の見出し（ページ名）、本文の順。サイドバーもパンくずも無い。
+/// 本文の箱は最大2単位（`max-w-page`）で、左右の余白の内側で中央に置く。
 /// 住所は長い一語でも折り返す（not-found はどんな住所でも受ける）。
 /// `with_path` を倒すと住所の行を空にする（not-found が起動前に使う）。
 #[component]
 fn Page(route: Route, #[props(default = true)] with_path: bool, children: Element) -> Element {
     rsx! {
-        main { class: "px-5 py-7",
+        main { class: "mx-auto max-w-page py-7",
             p { class: "font-mono text-path text-muted break-all",
                 {with_path.then(|| route.to_string())}
             }

@@ -45,10 +45,13 @@ impl From<serde_json::Error> for Error {
 /// - 書体 `--font-sans` `--font-mono`: `font-sans` `font-mono`
 /// - 余白 `--spacing-<n>`（tokens の `space-<n>`）: `p-5` `gap-4`
 /// - 角丸 `--radius-<n>`（tokens の `radius-<n>`）: `rounded-0` `rounded-8` `rounded-full`
-/// - 幅 `--container-<n>`（tokens の `layout` の `width-<n>`）: `max-w-column` `w-column`
+/// - 幅 `--container-<n>`（tokens の `layout` の `width-<n>`）: `max-w-column` `max-w-page`
+/// - 切り替わる幅 `--breakpoint-<n>`（tokens の `breakpoint-<n>`）: `md:flex` `lg:px-8`
 ///
-/// 各名前空間の Tailwind 既定値は消すので、tokens.json にない色や大きさのクラスは存在しない。
-/// ダークは `@custom-variant dark` を OS 設定に結び、同じ役割名の色を `:root` で上書きする。
+/// 各名前空間の Tailwind 既定値は消すので、tokens.json にない色や大きさのクラスや、`sm:` のような
+/// 決めていない切り替わる幅は存在しない。文字の `md` の値は、768px から同じ役割名を `:root` で上書きする。
+/// ダークは `<html>` の `data-theme`（ページで選んだ色）を先に見て、無ければ OS 設定に従う。
+/// 同じ役割名の色を `:root` で上書きする。
 pub fn theme_css(tokens_json: &str) -> Result<String, Error> {
     let tokens = Tokens::parse(tokens_json)?;
     let mut out = String::new();
@@ -57,7 +60,14 @@ pub fn theme_css(tokens_json: &str) -> Result<String, Error> {
         "/* docs/design/tokens.json から生成した Tailwind v4 の @theme。手で編集しない。\n\
          \x20  生成: crates/rustruct-web/build.rs（tokens.json を変えると cargo のビルドで更新される） */\n\n",
     );
-    out.push_str("@custom-variant dark (@media (prefers-color-scheme: dark));\n\n");
+    out.push_str(
+        "/* ダーク: ページで選んだ色（<html data-theme>）が先、選んでいなければ OS 設定 */\n\
+         @custom-variant dark {\n\
+         \x20 &:where([data-theme=\"dark\"], [data-theme=\"dark\"] *) {\n    @slot;\n  }\n\
+         \x20 @media (prefers-color-scheme: dark) {\n\
+         \x20   &:where(:not([data-theme=\"light\"], [data-theme=\"light\"] *)) {\n      @slot;\n    }\n  }\n\
+         }\n\n",
+    );
 
     out.push_str("@theme {\n");
 
@@ -113,10 +123,29 @@ pub fn theme_css(tokens_json: &str) -> Result<String, Error> {
         out.push_str(&format!("  --container-{name}: {value};\n"));
     }
 
+    out.push_str("\n  /* 切り替わる幅: breakpoint-<n> を <n>: で使う。決めた幅だけ */\n");
+    out.push_str("  --breakpoint-*: initial;\n");
+    for (name, value) in &tokens.breakpoints {
+        out.push_str(&format!("  --breakpoint-{name}: {value};\n"));
+    }
+
     out.push_str("}\n\n");
 
-    out.push_str("/* ダーク: 同じ役割名の色を OS 設定で切り替える。切替 UI は無い */\n");
-    out.push_str(":root {\n  @variant dark {\n");
+    out.push_str("/* 768px から: 大きな文字と Notes の本文だけ大きくする（docs/adr/0007） */\n");
+    out.push_str(":root {\n  @variant md {\n");
+    for s in &tokens.text_styles {
+        if let Some((size, line_height)) = &s.md {
+            out.push_str(&format!("    --text-{}: {size};\n", s.name));
+            out.push_str(&format!(
+                "    --text-{}--line-height: {line_height};\n",
+                s.name
+            ));
+        }
+    }
+    out.push_str("  }\n}\n\n");
+
+    out.push_str("/* ダーク: 同じ役割名の色を切り替える。フォームとスクロールバーも color-scheme で合わせる */\n");
+    out.push_str(":root {\n  color-scheme: light;\n  @variant dark {\n    color-scheme: dark;\n");
     for c in &tokens.colors {
         out.push_str(&format!("    --color-{}: {};\n", c.name, c.dark));
     }
@@ -179,6 +208,8 @@ struct Tokens {
     radius: Vec<(String, String)>,
     /// `layout` の `width-<n>` の `<n>` と値。
     widths: Vec<(String, String)>,
+    /// `breakpoint` の `breakpoint-<n>` の `<n>` と値。
+    breakpoints: Vec<(String, String)>,
 }
 
 /// 色の役割名と、ライト・ダークそれぞれの値。
@@ -202,6 +233,8 @@ struct TextStyle {
     line_height: String,
     font_weight: u64,
     letter_spacing: Option<String>,
+    /// 768px からの大きさと行送り。画面幅で変えない役割には無い。
+    md: Option<(String, String)>,
 }
 
 impl Tokens {
@@ -214,6 +247,7 @@ impl Tokens {
             spacing: scale(&v, "/spacing/tokens", "space-")?,
             radius: scale(&v, "/radius/tokens", "radius-")?,
             widths: scale(&v, "/layout/tokens", "width-")?,
+            breakpoints: scale(&v, "/breakpoint/tokens", "breakpoint-")?,
         })
     }
 }
@@ -298,6 +332,13 @@ fn text_styles(v: &Value) -> Result<Vec<TextStyle>, Error> {
                     .pointer("/letterSpacing")
                     .and_then(Value::as_str)
                     .map(str::to_string),
+                md: match s.pointer("/md") {
+                    None => None,
+                    Some(md) => Some((
+                        str_at(md, "/fontSize")?.to_string(),
+                        str_at(md, "/lineHeight")?.to_string(),
+                    )),
+                },
             });
         }
     }
@@ -403,12 +444,78 @@ mod tests {
     }
 
     #[test]
-    fn dark_follows_the_os_setting_through_a_custom_variant() {
+    fn dark_follows_the_os_setting_unless_the_page_chose_a_theme() {
         let css = css();
-        assert!(
-            css.contains("@custom-variant dark (@media (prefers-color-scheme: dark));"),
-            "@custom-variant dark が OS 設定に結ばれていない:\n{css}"
-        );
+        let variant = css
+            .find("@custom-variant dark {")
+            .map(|at| {
+                &css[at..at
+                    + css[at..]
+                        .find("\n}\n")
+                        .expect("@custom-variant が閉じていない")]
+            })
+            .unwrap_or_else(|| panic!("@custom-variant dark が無い:\n{css}"));
+        // 選んだダークは OS に依らず、OS のダークは選んだライトに負ける（ui-decisions「画面幅」の切り替え）
+        for part in [
+            r#"&:where([data-theme="dark"], [data-theme="dark"] *)"#,
+            "@media (prefers-color-scheme: dark)",
+            r#"&:where(:not([data-theme="light"], [data-theme="light"] *))"#,
+        ] {
+            assert!(variant.contains(part), "{part} が無い:\n{variant}");
+        }
+    }
+
+    #[test]
+    fn form_controls_and_scrollbars_follow_the_theme_through_color_scheme() {
+        let css = css();
+        assert!(css.contains("color-scheme: light;"), "{css}");
+        assert!(dark_block(&css).contains("color-scheme: dark;"), "{css}");
+    }
+
+    #[test]
+    fn only_the_two_breakpoints_in_tokens_exist() {
+        let css = css();
+        for line in [
+            "--breakpoint-*: initial;",
+            "--breakpoint-md: 768px;",
+            "--breakpoint-lg: 1024px;",
+        ] {
+            assert!(css.contains(line), "{line} が無い:\n{css}");
+        }
+    }
+
+    /// `@variant md { ... }` の中身。768px から文字の大きさを上書きする。
+    fn md_block(css: &str) -> &str {
+        let start = css.find("@variant md {").expect("@variant md が無い");
+        let rest = &css[start..];
+        let end = rest.find("\n  }").expect("@variant md が閉じていない");
+        &rest[..end]
+    }
+
+    #[test]
+    fn large_text_and_prose_grow_from_the_md_breakpoint_and_nothing_else_does() {
+        let css = css();
+        let md = md_block(&css);
+        for line in [
+            "--text-display: 36px;",
+            "--text-display--line-height: 48px;",
+            "--text-title: 26px;",
+            "--text-title--line-height: 36px;",
+            "--text-figure: 64px;",
+            "--text-figure--line-height: 64px;",
+            "--text-prose: 17px;",
+            "--text-prose--line-height: 32px;",
+        ] {
+            assert!(md.contains(line), "768px からの {line} が無い:\n{md}");
+        }
+        for fixed in [
+            "--text-body:",
+            "--text-heading:",
+            "--text-label:",
+            "--text-num:",
+        ] {
+            assert!(!md.contains(fixed), "{fixed} は画面幅で変えない:\n{md}");
+        }
     }
 
     #[test]
@@ -469,6 +576,7 @@ mod tests {
     fn spacing_and_radius_tokens_are_usable_under_tailwinds_namespaces() {
         let css = css();
         for line in [
+            "--spacing-0: 0px;",
             "--spacing-1: 4px;",
             "--spacing-2: 8px;",
             "--spacing-3: 12px;",
@@ -489,6 +597,8 @@ mod tests {
     fn layout_widths_are_usable_as_tailwind_container_sizes() {
         // 本文の1単位（ui-decisions「列の単位」）。max-w-column / w-column で使う
         assert!(css().contains("--container-column: 335px;"), "{}", css());
+        // 本文の箱の最大幅（2単位と溝と区切り。docs/adr/0007 の 2u + 16 + 17）。max-w-page で使う
+        assert!(css().contains("--container-page: 703px;"), "{}", css());
     }
 
     #[test]
@@ -520,7 +630,7 @@ mod tests {
     #[test]
     fn a_dangling_reference_is_an_error() {
         let json = r##"{"color":{"tokens":[{"name":"a","value":{"light":"{nope}","dark":"#000"}}]},
-            "type":{"families":{},"groups":[]},"spacing":{"tokens":[]},"radius":{"tokens":[]}}"##;
+            "type":{"families":{},"groups":[]},"spacing":{"tokens":[]},"radius":{"tokens":[]},"layout":{"tokens":[]},"breakpoint":{"tokens":[]}}"##;
         let err = theme_css(json).expect_err("参照先が無いのに通った");
         assert!(err.to_string().contains("nope"), "{err}");
     }
@@ -530,7 +640,7 @@ mod tests {
         let json = r##"{"color":{"tokens":[
             {"name":"a","value":{"light":"{b}","dark":"#000"}},
             {"name":"b","value":{"light":"{a}","dark":"#000"}}]},
-            "type":{"families":{},"groups":[]},"spacing":{"tokens":[]},"radius":{"tokens":[]}}"##;
+            "type":{"families":{},"groups":[]},"spacing":{"tokens":[]},"radius":{"tokens":[]},"layout":{"tokens":[]},"breakpoint":{"tokens":[]}}"##;
         let err = theme_css(json).expect_err("循環しているのに通った");
         assert!(err.to_string().contains("循環"), "{err}");
     }

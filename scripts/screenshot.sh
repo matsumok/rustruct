@@ -1,8 +1,10 @@
 #!/usr/bin/env sh
-# dx serve の画面をスマホ幅でライト・ダーク 2 枚撮る。エージェントが見た目を自分で確かめるための道具。
-#   sh scripts/screenshot.sh [URL] [出力ディレクトリ]
-#   既定: http://localhost:8080  $TMPDIR（無ければ /tmp）
-# 出力: <dir>/light.png と <dir>/dark.png（スマホ幅 400x800）
+# dx serve の画面を幅ごとにライト・ダークで撮る。エージェントが見た目を自分で確かめるための道具。
+#   sh scripts/screenshot.sh [URL] [出力ディレクトリ] [幅…]
+#   既定: http://localhost:8080  $TMPDIR（無ければ /tmp）  375 820 1280（スマホ・iPad・PC。docs/adr/0007）
+#   高さは SCREENSHOT_HEIGHT（既定 800）。ページの下のほうを見るときに伸ばす
+# 出力: <dir>/<幅>-light.png と <dir>/<幅>-dark.png
+# ダークは OS 設定（--force-dark-mode）で撮る。ページで選んだ色はプロファイルごと毎回消すので残らない
 # Chrome / Edge / Chromium を順に探す。WSL では Windows 側の Chrome を使う（localhost は WSL に届く。
 # サンドボックスの中からは起動できないので、エージェントはサンドボックスを外して実行する）。
 # headless Chrome はウィンドウ幅を 500px より狭くできず、--window-size=400 でも 500px の画面を
@@ -11,8 +13,8 @@
 set -eu
 url=${1:-http://localhost:8080}
 dir=${2:-${TMPDIR:-/tmp}}
-width=400
-height=800
+if [ "$#" -gt 2 ]; then shift 2; else set -- 375 820 1280; fi
+height=${SCREENSHOT_HEIGHT:-800}
 mkdir -p "$dir"
 
 # dev server が無いと Chrome は何も書かずに終わるので、先に確かめる（このスクリプトはサンドボックスの外で動く）
@@ -37,19 +39,21 @@ file_url() {
   case "$p" in //*) printf 'file:%s' "$p" ;; *) printf 'file:///%s' "$p" ;; esac
 }
 
-cat > "$dir/frame.html" <<EOF
+shoot() { # $1=幅 $2=ファイル名 $3=追加フラグ
+  cat > "$dir/frame.html" <<EOF
 <!doctype html><html><head><meta charset="utf-8">
-<style>html,body{margin:0}iframe{display:block;border:0;width:${width}px;height:${height}px}</style>
+<style>html,body{margin:0}iframe{display:block;border:0;width:${1}px;height:${height}px}</style>
 </head><body><iframe src="$url"></iframe></body></html>
 EOF
-
-shoot() { # $1=ファイル名 $2=追加フラグ
+  rm -rf "$dir/profile"
   "$browser" --headless=new --disable-gpu --hide-scrollbars --no-first-run \
     --user-data-dir="$(out "$dir/profile")" \
-    --window-size=$width,$height --virtual-time-budget=5000 $2 \
-    --screenshot="$(out "$dir/$1")" "$(file_url "$dir/frame.html")" >/dev/null 2>&1
-  echo "$dir/$1"
+    --window-size=$1,$height --virtual-time-budget=5000 $3 \
+    --screenshot="$(out "$dir/$2")" "$(file_url "$dir/frame.html")" >/dev/null 2>&1
+  echo "$dir/$2"
 }
 
-shoot light.png ""
-shoot dark.png "--force-dark-mode"
+for width in "$@"; do
+  shoot "$width" "$width-light.png" ""
+  shoot "$width" "$width-dark.png" "--force-dark-mode"
+done

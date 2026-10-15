@@ -1,7 +1,17 @@
 /* docs/design/tokens.json から生成した Tailwind v4 の @theme。手で編集しない。
    生成: crates/rustruct-web/build.rs（tokens.json を変えると cargo のビルドで更新される） */
 
-@custom-variant dark (@media (prefers-color-scheme: dark));
+/* ダーク: ページで選んだ色（<html data-theme>）が先、選んでいなければ OS 設定 */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:not([data-theme="light"], [data-theme="light"] *)) {
+      @slot;
+    }
+  }
+}
 
 @theme {
   /* 色: 役割名。bg-paper / text-ink / border-line のように使う */
@@ -87,6 +97,7 @@
 
   /* 余白: space-<n> を p-<n> / gap-<n> / m-<n> で使う */
   --spacing: initial;
+  --spacing-0: 0px;
   --spacing-1: 4px;
   --spacing-2: 8px;
   --spacing-3: 12px;
@@ -105,11 +116,33 @@
   /* 幅: width-<n> を max-w-<n> / w-<n> で使う */
   --container-*: initial;
   --container-column: 335px;
+  --container-page: 703px;
+
+  /* 切り替わる幅: breakpoint-<n> を <n>: で使う。決めた幅だけ */
+  --breakpoint-*: initial;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
 }
 
-/* ダーク: 同じ役割名の色を OS 設定で切り替える。切替 UI は無い */
+/* 768px から: 大きな文字と Notes の本文だけ大きくする（docs/adr/0007） */
 :root {
+  @variant md {
+    --text-display: 36px;
+    --text-display--line-height: 48px;
+    --text-title: 26px;
+    --text-title--line-height: 36px;
+    --text-prose: 17px;
+    --text-prose--line-height: 32px;
+    --text-figure: 64px;
+    --text-figure--line-height: 64px;
+  }
+}
+
+/* ダーク: 同じ役割名の色を切り替える。フォームとスクロールバーも color-scheme で合わせる */
+:root {
+  color-scheme: light;
   @variant dark {
+    color-scheme: dark;
     --color-paper: #111113;
     --color-fill: #212225;
     --color-line: #2e3135;
