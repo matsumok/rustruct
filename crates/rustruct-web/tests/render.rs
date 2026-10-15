@@ -2,7 +2,7 @@
 //! クラス名の並びは見ない。本文の文字と順序、どこで要素が分かれているか、`<title>` だけを見る。
 
 mod common;
-use common::{assert_in_order, text_of};
+use common::{assert_in_order, element, text_of};
 use rustruct_web::{NOT_FOUND_PATH, render_path, static_paths};
 
 #[test]
@@ -52,9 +52,14 @@ fn home_items_link_to_their_section() {
 }
 
 #[test]
-fn home_shows_the_display_sentence_above_the_list() {
-    let text = text_of(&render_path("/"));
-    assert_in_order(&text, &["構造を計算し、かたちを眺める。", "/tools"]);
+fn home_shows_the_site_address_in_display_above_the_list() {
+    let html = render_path("/");
+    let text = text_of(element(&html, "main"));
+    assert!(
+        text.starts_with("rustruct.matsumok.com"),
+        "トップの一文が住所でない: {text}"
+    );
+    assert_in_order(&text, &["rustruct.matsumok.com", "/tools"]);
 }
 
 #[test]
@@ -72,12 +77,13 @@ fn section_page_has_path_title_and_the_empty_sentence_only() {
             &["rustruct.matsumok.com", path, title, "まだ何もない。"],
         );
         assert_eq!(h1_text(&html), title, "{path} の見出し: {html}");
-        // 一覧（他の部の名前）は出ない
+        // 本文に一覧（他の部の名前）は出ない。ヘッダーの四部のボタンは別
+        let body = text_of(element(&html, "main"));
         for other in ["Tools", "Data", "Studies", "Notes"] {
             if other != title {
                 assert!(
-                    !text.contains(other),
-                    "{path} に {other} が出ている: {text}"
+                    !body.contains(other),
+                    "{path} の本文に {other} が出ている: {body}"
                 );
             }
         }
@@ -92,10 +98,10 @@ fn h1_text(html: &str) -> String {
     text_of(&html[start..end])
 }
 
-/// トップの一覧の各項目: (href, リンクの中の文字)。
+/// トップの一覧の各項目: (href, リンクの中の文字)。本文（`<main>`）の中のリンクだけ。
 fn home_items(home: &str) -> Vec<(String, String)> {
     let mut items = Vec::new();
-    let mut rest = home;
+    let mut rest = element(home, "main");
     while let Some(at) = rest.find("<a ") {
         let a = &rest[at..];
         let close = a.find("</a>").expect("a が閉じていない");
@@ -109,10 +115,7 @@ fn home_items(home: &str) -> Vec<(String, String)> {
 
 #[test]
 fn every_item_on_home_leads_to_a_page_headed_with_the_items_name() {
-    let items: Vec<_> = home_items(&render_path("/"))
-        .into_iter()
-        .filter(|(href, _)| href != "/")
-        .collect();
+    let items = home_items(&render_path("/"));
     assert_eq!(items.len(), 4, "一覧の項目数");
     for (href, item_text) in items {
         // 項目の文字は「パス 名前 一行」の順なので、パスを除いた先頭が名前
@@ -141,7 +144,8 @@ fn root_is_an_empty_page_reserved_for_root() {
         ],
     );
     assert_eq!(h1_text(&html), "root");
-    assert!(!text.contains("Tools"), "/root に一覧が出ている: {text}");
+    let body = text_of(element(&html, "main"));
+    assert!(!body.contains("Tools"), "/root に一覧が出ている: {body}");
 }
 
 #[test]
@@ -274,4 +278,112 @@ fn head_links_the_fonts_and_the_stylesheet() {
         head.contains("fonts.googleapis.com"),
         "フォントの読込が head に無い: {head}"
     );
+}
+
+/// `needle` を含む最初の開きタグ（`<a href="/data" …>` など）。
+fn tag_with<'a>(html: &'a str, needle: &str) -> &'a str {
+    let at = html
+        .find(needle)
+        .unwrap_or_else(|| panic!("{needle} が無い: {html}"));
+    let start = html[..at].rfind('<').expect("タグの始まりが無い");
+    let end = html[at..].find('>').expect("タグが閉じていない") + at;
+    &html[start..=end]
+}
+
+#[test]
+fn header_has_the_wordmark_then_the_four_sections_then_the_page_name_the_theme_and_the_account() {
+    let html = render_path("/data/concrete");
+    let header = element(&html, "header");
+    assert_in_order(
+        &text_of(header),
+        &[
+            "rustruct",
+            ".matsumok.com",
+            "Tools",
+            "Data",
+            "Studies",
+            "Notes",
+            "コンクリート",
+        ],
+    );
+    assert!(
+        header.contains("href=\"/\""),
+        "wordmark からトップへ戻れない: {header}"
+    );
+    for path in ["/tools", "/data", "/studies", "/notes"] {
+        assert!(
+            header.contains(&format!("href=\"{path}\"")),
+            "ヘッダーに {path} が無い: {header}"
+        );
+    }
+    for label in ["メニューを開く", "ライトとダークを切り替える", "アカウント"]
+    {
+        assert!(
+            header.contains(&format!("aria-label=\"{label}\"")),
+            "ヘッダーに「{label}」のボタンが無い: {header}"
+        );
+    }
+}
+
+#[test]
+fn the_header_comes_before_the_page_body() {
+    let html = render_path("/tools");
+    let header = html.find("<header").expect("header が無い");
+    let main = html.find("<main").expect("main が無い");
+    assert!(header < main, "ヘッダーが本文の後にある: {html}");
+}
+
+#[test]
+fn home_has_no_page_name_in_the_header() {
+    let html = render_path("/");
+    let header = text_of(element(&html, "header"));
+    assert!(
+        !header.contains("Home"),
+        "トップのヘッダーにページ名が出ている: {header}"
+    );
+}
+
+#[test]
+fn the_header_marks_the_section_of_the_page() {
+    // 部のページそのものは page、その下のページは true（今いる部）
+    for (path, current) in [
+        ("/data", "aria-current=\"page\""),
+        ("/data/concrete", "aria-current=\"true\""),
+    ] {
+        let html = render_path(path);
+        let header = element(&html, "header");
+        let link = tag_with(header, "href=\"/data\"");
+        assert!(
+            link.contains(current),
+            "{path} で /data に {current} が無い: {link}"
+        );
+        assert_eq!(link.matches("aria-current").count(), 1, "印が二重: {link}");
+        let other = tag_with(header, "href=\"/tools\"");
+        assert!(
+            !other.contains("aria-current"),
+            "{path} で /tools に印がある: {other}"
+        );
+    }
+    let home = render_path("/");
+    let header = element(&home, "header");
+    for path in ["/tools", "/data", "/studies", "/notes"] {
+        let link = tag_with(header, &format!("href=\"{path}\""));
+        assert!(
+            !link.contains("aria-current"),
+            "トップで {path} に印がある: {link}"
+        );
+    }
+}
+
+#[test]
+fn head_applies_the_remembered_theme_before_the_page_is_drawn() {
+    let html = render_path("/");
+    let head = head_of(&html);
+    let script = element(head, "script");
+    for part in ["localStorage", "data-theme", "\"light\"", "\"dark\""] {
+        assert!(
+            script.contains(part),
+            "head の script に {part} が無い: {script}"
+        );
+    }
 }

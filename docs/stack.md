@@ -24,7 +24,7 @@
 - CSS は Tailwind v4。`dx` 内蔵の単体 CLI を使い、Node は入れない
 - 値の源は `docs/design/tokens.json` の一箇所。Tailwind の `@theme` ブロック（色・文字・余白・角丸）は Rust の小さなビルド工程で tokens.json から生成し、手では書かない。`charta` も同じ JSON から色を読む
   - 生成器は `crates/rustruct-web/src/theme.rs` の純粋関数で、`build.rs` が `crates/rustruct-web/theme.css` に書く。`tailwind.css` がそれを `@import` し、dx が `assets/tailwind.css` に出力する。`theme.css` と `assets/tailwind.css` はどちらも生成物だが、`asset!` がコンパイル時にファイルを要求するのでリポジトリに入れる（手で編集しない）
-  - 生成した `@theme` は色・文字・余白・角丸の名前空間で Tailwind の既定値（`bg-red-500`、`text-sm`、`p-3.5` など）を消す。役割名のクラスだけが存在し、tokens.json にない値はマークアップに書けない。`--spacing` の既定の目盛りも消えるので、`w-*` / `max-w-*` / `gap-*` の数値も `space-1`〜`space-8` の範囲だけになる
+  - 生成した `@theme` は色・文字・余白・角丸の名前空間で Tailwind の既定値（`bg-red-500`、`text-sm`、`p-3.5` など）を消す。役割名のクラスだけが存在し、tokens.json にない値はマークアップに書けない。`--spacing` の既定の目盛りも消えるので、`w-*` / `max-w-*` / `gap-*` の数値も `space-0`〜`space-8` の範囲だけになる（`top-0` のような 0 も `space-0` が無いと作られない）
   - `dx serve` は `docs/` を監視しないので、tokens.json を変えたら `.rs` を保存し直すか `dx serve` を再起動する
 - Dioxus 0.7 でコードから読めない挙動（router の feature、SSG の書込先、並行ビルドの順、dx のツール置き場など）は `docs/dioxus-0.7.md`。無いことは vendored ソースを grep する
 - not-found は `/404` に 1 ファイルだけ書き出す（`NOT_FOUND_PATH`）。配信側が未知の住所すべてにこれを返す。どの住所で開かれても同じ中身が届くので、求められた住所は初回描画に入れず、起動後に `use_effect` で出す（上の規則の適用例）

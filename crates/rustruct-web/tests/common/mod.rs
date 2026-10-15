@@ -29,3 +29,19 @@ pub fn assert_in_order(haystack: &str, needles: &[&str]) {
         from += at + n.len();
     }
 }
+
+/// 最初の `<tag …>…</tag>`（入れ子は無い前提）。ヘッダーと本文を分けて見るのに使う。
+// 使うのは render.rs だけ。common はテストのクレートごとに入るので、使わないクレートで警告が出る
+#[allow(dead_code)]
+pub fn element<'a>(html: &'a str, tag: &str) -> &'a str {
+    let start = html
+        .find(&format!("<{tag}"))
+        .unwrap_or_else(|| panic!("<{tag}> が無い: {html}"));
+    let close = format!("</{tag}>");
+    let end = html[start..]
+        .find(&close)
+        .unwrap_or_else(|| panic!("<{tag}> が閉じていない: {html}"))
+        + start
+        + close.len();
+    &html[start..end]
+}

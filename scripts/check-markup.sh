@@ -17,6 +17,7 @@ check "長さの値（px / rem / em）"            '\b[0-9]+(\.[0-9]+)?(px|rem|e
 check "Tailwind の任意値 [...]"              '-\[[^]]+\]'
 check "Tailwind 既定のパレット名"            '\b(bg|text|border|fill|stroke|ring|outline|decoration|accent|caret|shadow)-(red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone|white|black)(-[0-9]+)?\b'
 check "style 属性（CSS の直書き）"           '\bstyle: '
+check "決めていない切り替わる幅（md: と lg: だけ）" '"[^"]*\b(sm|xl|2xl):[a-z]'
 
 [ "$fail" -eq 0 ] && echo "OK: マークアップに値は無い"
 exit "$fail"

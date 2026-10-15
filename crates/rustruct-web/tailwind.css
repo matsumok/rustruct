@@ -9,5 +9,7 @@
     background-color: var(--color-paper);
     color: var(--color-ink);
     font-family: var(--font-sans);
+    /* 住所の #id で飛んだ先を、上に固定したヘッダー（h-8）の下に出す */
+    scroll-padding-top: var(--spacing-8);
   }
 }
