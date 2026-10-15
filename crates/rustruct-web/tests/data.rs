@@ -269,3 +269,13 @@ fn rebar_dimensions_pad_short_decimals_to_line_up_the_points() {
         "桁の足りている 4.23 に空白が付いている: {html}"
     );
 }
+
+#[test]
+fn concrete_allowable_stresses_line_up_the_points() {
+    // Fc 24 の長期: 圧縮 8.00、せん断 0.730 なので、8.00 の後ろに1つ
+    let html = render_path("/data/concrete");
+    assert!(
+        html.contains("8.00<span aria-hidden=\"true\">\u{2007}</span>"),
+        "長期の 8.00 が 0.730 と小数点で揃っていない: {html}"
+    );
+}

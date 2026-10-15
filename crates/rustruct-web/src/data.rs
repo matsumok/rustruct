@@ -205,13 +205,14 @@ fn designation_rows() -> Vec<(&'static str, [String; 4])> {
 
 /// 列ごとの小数の最大の桁数
 fn column_decimals<const N: usize>(rows: &[(&str, [String; N])]) -> [usize; N] {
-    let mut decimals = [0; N];
-    for (_, values) in rows {
-        for (max, value) in decimals.iter_mut().zip(values) {
-            *max = (*max).max(decimals_of(value));
-        }
-    }
-    decimals
+    std::array::from_fn(|column| {
+        max_decimals(rows.iter().map(|(_, values)| values[column].as_str()))
+    })
+}
+
+/// 1つの列の小数の最大の桁数
+fn max_decimals<'a>(values: impl Iterator<Item = &'a str>) -> usize {
+    values.map(decimals_of).max().unwrap_or(0)
 }
 
 /// 小数の桁数（「12.7」は 1、「1,140」は 0）
@@ -271,6 +272,9 @@ pub(crate) fn ConcretePage() -> Element {
     let readout = ConcreteReadout::from_fc_input(&fc.read());
     let [unit_weight, young_modulus] = readout.values().map(str::to_string);
     let allowable_rows = readout.allowable_rows();
+    let long_term_decimals = max_decimals(allowable_rows.iter().map(|row| row.long_term.as_str()));
+    let short_term_decimals =
+        max_decimals(allowable_rows.iter().map(|row| row.short_term.as_str()));
     let (error, warning) = match &readout {
         ConcreteReadout::Computed { warning, .. } => (None, warning.clone()),
         ConcreteReadout::Unusable { error } => (Some(error.clone()), None),
@@ -340,8 +344,8 @@ pub(crate) fn ConcretePage() -> Element {
                                 for row in allowable_rows {
                                     Row {
                                         TextCell { {row.name} }
-                                        NumCell { {row.long_term} }
-                                        NumCell { {row.short_term} }
+                                        DecimalCell { value: row.long_term, decimals: long_term_decimals }
+                                        DecimalCell { value: row.short_term, decimals: short_term_decimals }
                                     }
                                 }
                             }
