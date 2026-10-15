@@ -11,5 +11,8 @@
     font-family: var(--font-sans);
     /* 住所の #id で飛んだ先を、上に固定したヘッダー（h-8）の下に出す */
     scroll-padding-top: var(--spacing-8);
+    /* スクロールバーの場所を短いページでも空けておく。無いと、長いページだけ幅が狭まり、
+       ヘッダーのボタンも中央の本文もずれる（PC のブラウザ。重ねて出るスクロールバーには効かない） */
+    scrollbar-gutter: stable;
   }
 }
