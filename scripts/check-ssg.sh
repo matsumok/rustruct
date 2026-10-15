@@ -23,13 +23,14 @@ if [ "$found" != "$(printf '%s\n' $expected | sort)" ]; then
   ng "住所ごとの HTML が期待と違う。期待: $expected / 実際: $(printf '%s ' $found)"
 fi
 
-# CSS と WASM は 1 つずつ
-one() { # $1=名前 $2=拡張子 → 見つかったファイル（1 つでなければ NG で空）
-  files=$(find "$out" -name "*.$2")
-  if [ "$(printf '%s\n' "$files" | grep -c .)" -eq 1 ]; then printf '%s' "$files"; else ng "$1 が 1 つでない: ${files:-（無し）}"; fi
+# CSS と WASM は 1 つずつ。手元で dx build を重ねると前のビルドのアセットが残って 2 つになる（check.sh の build は先に消す）。
+# $(…) のサブシェルで呼ぶと ng の fail=1 も文言も呼び出し側に届かないので、結果は $one_found に置く
+one() { # $1=名前 $2=拡張子 → $one_found に見つかったファイル（1 つでなければ NG で空）
+  one_found=$(find "$out" -name "*.$2")
+  if [ "$(printf '%s\n' "$one_found" | grep -c .)" -ne 1 ]; then ng "$1 が 1 つでない: $(printf '%s ' ${one_found:-（無し）})"; one_found=; fi
 }
-css=$(one CSS css)
-wasm=$(one WASM wasm)
+one CSS css; css=$one_found
+one WASM wasm; wasm=$one_found
 
 for path in $expected; do
   html="$out${path%/}/index.html"
