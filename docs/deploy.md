@@ -60,7 +60,7 @@ GitHub の Environments（`production`、`preview`）は最初の run が自動�
 - URL は `https://pr-<番号>-rustruct.matsumok-digital.workers.dev`。PR の「deployments」からも辿れる
 - 本番は `workers_dev = false` で workers.dev に出さず、プレビューは `preview_urls = true` で workers.dev に出す。この組み合わせで本当にプレビュー URL が出るかは Cloudflare の文書に明記が無いので、最初の PR で確かめる（出なければ下の「困ったとき」）
 - workers.dev のプレビューは `X-Robots-Tag: noindex` 付きで配られ、検索エンジンには載らない
-- 同じプレビューを上書きした直後は、新しい HTML が届くのに、そこから参照する新しい CSS・読込スクリプト・WASM がしばらく 404 になることがある（#21）。`check-live.sh` はアセットが 404 の間だけ最大 2 分待って取り直す（本番も同じ。間隔と経緯はスクリプトのコメント）。Workers Static Assets の既知の遅れかは、2026-10-14 に workers-sdk を探した範囲では見つからなかった。配置の手順（`wrangler versions upload` など）の側で避けられるかは未確認
+- 同じプレビューを上書きした直後は、新しい HTML が届くのに、そこから参照する新しい CSS・読込スクリプト・WASM がしばらく 404 になることがある（#21）。新しく足したページも、本番の配置直後に not-found の 404 になったことがある（#24）。`check-live.sh` はページとアセットが 404 の間だけ、合わせて最大 2 分待って取り直す（本番も同じ。間隔と経緯はスクリプトのコメント）。Workers Static Assets の既知の遅れかは、2026-10-14 に workers-sdk を探した範囲では見つからなかった。配置の手順（`wrangler versions upload` など）の側で避けられるかは未確認
 - PR を閉じる（merge を含む）と `cleanup` job がプレビューを消す。無料枠は Worker ごと 100 プレビューまで
 - **既知の制限**: プレビューでは未知の住所が本文の無い 404 になる（`wrangler preview` が `not_found_handling` を落とす。cloudflare/workers-sdk#16047、2026-10-14 時点で open）。`check-live.sh` は workers.dev に限りこれを注意に留める。not-found の見た目はプレビューでは確かめられないので本番で見る。直ったら `check-live.sh` のその分岐を消す
 
