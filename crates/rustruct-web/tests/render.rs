@@ -291,7 +291,7 @@ fn tag_with<'a>(html: &'a str, needle: &str) -> &'a str {
 }
 
 #[test]
-fn header_has_the_wordmark_then_the_page_name_the_four_sections_the_theme_and_the_account() {
+fn header_has_the_wordmark_then_the_four_sections_then_the_page_name_the_theme_and_the_account() {
     let html = render_path("/data/concrete");
     let header = element(&html, "header");
     assert_in_order(
@@ -299,11 +299,11 @@ fn header_has_the_wordmark_then_the_page_name_the_four_sections_the_theme_and_th
         &[
             "rustruct",
             ".matsumok.com",
-            "コンクリート",
             "Tools",
             "Data",
             "Studies",
             "Notes",
+            "コンクリート",
         ],
     );
     assert!(

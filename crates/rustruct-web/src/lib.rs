@@ -194,61 +194,66 @@ fn Frame() -> Element {
     }
 }
 
-/// ヘッダー。左右の余白の内側いっぱいに、左にサイト名、右にページ名・四部・ライトとダーク・アカウント。
-/// スマホ（`md` 未満）はサイト名を `rustruct` だけにし、四部・切り替え・アカウントをメニューにしまう。
-/// メニューのボタンはサイト名の左、ページ名は右端。アイコンのボタンは押せる幅を広く取り、端の分は外へ出す。
+/// ヘッダー。左右の余白の内側いっぱいに、左の組（サイト名）、中央の四部、右の組（ページ名・ライトとダーク・
+/// アカウント）。スマホ（`md` 未満）はサイト名を `rustruct` だけにし、四部だけをメニューにしまう（メニューのボタンは
+/// 左の組の頭）。組の中の間は `space-4`。アイコンのボタンは押せる範囲を `space-3` の内側の余白で取り、
+/// その範囲の端を左右の余白の線にそろえる。
 #[component]
 fn Header(route: Route) -> Element {
     let mut menu_open = use_signal(|| false);
     let mut account_note = use_signal(|| false);
     let page_name = (route != Route::Home {}).then(|| route.text().heading);
     rsx! {
-        header { class: "sticky top-0 z-20 flex h-8 items-center gap-4 border-b border-line bg-paper px-5 md:px-7 lg:px-8",
-            button {
-                class: "-ml-3 p-3 text-ink md:hidden",
-                r#type: "button",
-                "aria-label": if menu_open() { "メニューを閉じる" } else { "メニューを開く" },
-                "aria-expanded": if menu_open() { "true" } else { "false" },
-                onclick: move |_| menu_open.toggle(),
-                if menu_open() {
-                    CloseIcon { class: "size-5" }
-                } else {
-                    MenuIcon { class: "size-5" }
+        // sticky は位置を持つので、中央の四部（absolute）はヘッダーを基準に置かれる
+        header { class: "sticky top-0 z-20 flex h-8 items-center justify-between border-b border-line bg-paper px-5 md:px-7 lg:px-8",
+            div { class: "flex items-center gap-4",
+                button {
+                    class: "p-3 text-ink md:hidden",
+                    r#type: "button",
+                    "aria-label": if menu_open() { "メニューを閉じる" } else { "メニューを開く" },
+                    "aria-expanded": if menu_open() { "true" } else { "false" },
+                    onclick: move |_| menu_open.toggle(),
+                    if menu_open() {
+                        CloseIcon { class: "size-5" }
+                    } else {
+                        MenuIcon { class: "size-5" }
+                    }
                 }
+                Link { to: Route::Home {}, onclick: move |_| menu_open.set(false), Wordmark {} }
             }
-            Link { to: Route::Home {}, onclick: move |_| menu_open.set(false), Wordmark {} }
-            // 右に寄せる空き。ページ名を隠す幅でも、ボタンが右端に残る
-            div { class: "flex-1" }
-            // 部のページそのものの名前は、iPad・PC では下線の付いた部のボタンと同じなので出さない
-            span {
-                class: if Route::sections().any(|s| s == route) { "truncate text-body text-muted md:hidden" } else { "truncate text-body text-muted" },
-                {page_name}
-            }
-            nav { class: "hidden md:flex md:items-center md:gap-4",
+            // 四部はヘッダーの中央。左右の組の幅に引かれないよう、並びから外して置く
+            nav { class: "hidden md:absolute md:left-1/2 md:flex md:-translate-x-1/2 md:items-center md:gap-4",
                 for section in Route::sections() {
                     SectionLink { route: route.clone(), section }
                 }
             }
-            button {
-                class: "hidden p-3 text-ink md:block",
-                r#type: "button",
-                "aria-label": "ライトとダークを切り替える",
-                onclick: move |_| toggle_theme(),
-                ThemeIcon {}
-            }
-            // 準備中の一言はボタンの下に重ねて出し、ヘッダーの並びを動かさない
-            div { class: "relative -mr-3 hidden md:block",
+            div { class: "flex min-w-0 items-center gap-4",
+                // 部のページそのものの名前は、iPad・PC では下線の付いた部のボタンと同じなので出さない
+                span {
+                    class: if Route::sections().any(|s| s == route) { "truncate text-body text-muted md:hidden" } else { "truncate text-body text-muted" },
+                    {page_name}
+                }
                 button {
                     class: "p-3 text-ink",
                     r#type: "button",
-                    "aria-label": "アカウント",
-                    "aria-expanded": if account_note() { "true" } else { "false" },
-                    onclick: move |_| account_note.toggle(),
-                    UserIcon { class: "size-5" }
+                    "aria-label": "ライトとダークを切り替える",
+                    onclick: move |_| toggle_theme(),
+                    ThemeIcon {}
                 }
-                if account_note() {
-                    p { class: "absolute top-full right-0 whitespace-nowrap border border-line bg-paper px-3 py-2 text-label text-muted",
-                        {ACCOUNT_NOTE}
+                // 準備中の一言はボタンの下に重ねて出し、ヘッダーの並びを動かさない
+                div { class: "relative",
+                    button {
+                        class: "p-3 text-ink",
+                        r#type: "button",
+                        "aria-label": "アカウント",
+                        "aria-expanded": if account_note() { "true" } else { "false" },
+                        onclick: move |_| account_note.toggle(),
+                        UserIcon { class: "size-5" }
+                    }
+                    if account_note() {
+                        p { class: "absolute top-full right-0 whitespace-nowrap border border-line bg-paper px-3 py-2 text-label text-muted",
+                            {ACCOUNT_NOTE}
+                        }
                     }
                 }
             }
@@ -293,7 +298,7 @@ fn ThemeIcon() -> Element {
 }
 
 /// スマホのメニュー。ヘッダーは残し、その下の画面をまるごと `paper` で覆う（ui-decisions「画面幅」）。
-/// 上から四部（名前とパス）、`line` を挟んでライトとダーク、アカウント（準備中）。項目を選ぶと閉じる。
+/// 中身は四部（名前とパス。今いる部に下線）だけ。ライトとダーク・アカウントはヘッダーにある。項目を選ぶと閉じる。
 #[component]
 fn Menu(route: Route, on_close: EventHandler<()>) -> Element {
     let here = route.section();
@@ -313,20 +318,6 @@ fn Menu(route: Route, on_close: EventHandler<()>) -> Element {
                             span { class: "font-mono text-path text-muted", "{s}" }
                         }
                     }
-                }
-            }
-            div { class: "border-t border-line py-4",
-                button {
-                    class: "flex w-full items-center gap-3 py-3 text-body text-ink",
-                    r#type: "button",
-                    onclick: move |_| toggle_theme(),
-                    ThemeIcon {}
-                    "ライトとダーク"
-                }
-                p { class: "flex items-center gap-3 py-3 text-body text-muted",
-                    UserIcon { class: "size-5" }
-                    "アカウント"
-                    span { class: "text-label", {ACCOUNT_NOTE} }
                 }
             }
         }
@@ -361,7 +352,7 @@ fn split_wordmark() -> (&'static str, &'static str) {
 fn Home() -> Element {
     let (name, domain) = split_wordmark();
     rsx! {
-        main { class: "mx-auto max-w-page",
+        main { class: "mx-auto max-w-page lg:max-w-page-lg",
             p { class: "text-display py-8",
                 {name}
                 wbr {}
@@ -406,12 +397,15 @@ fn SectionPage() -> Element {
 #[component]
 fn Page(route: Route, #[props(default = true)] with_path: bool, children: Element) -> Element {
     rsx! {
-        main { class: "mx-auto max-w-page py-7",
-            p { class: "font-mono text-path text-muted break-all",
-                {with_path.then(|| route.to_string())}
+        main { class: "mx-auto flex max-w-page flex-col gap-3 py-7 lg:max-w-page-lg",
+            // 住所と見出しの組（間は space-2）。本文との間は space-3
+            div { class: "flex flex-col gap-2",
+                p { class: "font-mono text-path text-muted break-all",
+                    {with_path.then(|| route.to_string())}
+                }
+                h1 { class: "text-title", {route.text().heading} }
             }
-            h1 { class: "text-title mt-2", {route.text().heading} }
-            div { class: "text-body mt-3", {children} }
+            div { class: "text-body", {children} }
         }
     }
 }

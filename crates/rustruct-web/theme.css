@@ -116,8 +116,8 @@
   /* 幅: width-<n> を max-w-<n> / w-<n> で使う */
   --container-*: initial;
   --container-column: 335px;
-  /* 本文の箱: 1単位の列2つと space-4 の溝、2列目の区切り（space-4 の余白と 1px の線）から導く */
   --container-page: 703px;
+  --container-page-lg: 767px;
 
   /* 切り替わる幅: breakpoint-<n> を <n>: で使う。決めた幅だけ */
   --breakpoint-*: initial;

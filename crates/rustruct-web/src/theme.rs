@@ -122,10 +122,14 @@ pub fn theme_css(tokens_json: &str) -> Result<String, Error> {
     for (name, value) in &tokens.widths {
         out.push_str(&format!("  --container-{name}: {value};\n"));
     }
-    out.push_str(&format!(
-        "  /* 本文の箱: 1単位の列2つと space-4 の溝、2列目の区切り（space-4 の余白と 1px の線）から導く */\n  --container-page: {}px;\n",
-        page_width(&tokens)?
-    ));
+    // 本文の箱: 1単位の列2つと、間の区切り（線 1px と左右の空き）から導く。空きは data.rs の Columns と同じ
+    // （iPad space-4 → max-w-page、PC space-8 → lg:max-w-page-lg）
+    for (name, gap) in [("page", "4"), ("page-lg", "8")] {
+        out.push_str(&format!(
+            "  --container-{name}: {}px;\n",
+            page_width(&tokens, gap)?
+        ));
+    }
 
     out.push_str("\n  /* 切り替わる幅: breakpoint-<n> を <n>: で使う。決めた幅だけ */\n");
     out.push_str("  --breakpoint-*: initial;\n");
@@ -247,9 +251,9 @@ struct TextSize {
     line_height: String,
 }
 
-/// 本文の箱の最大幅（px）。2列（`width-column` × 2）と溝（`space-4`）と、2列目の区切りの余白（`space-4`）と
-/// 線（1px）。2列が収まる幅そのものなので、tokens.json には持たずに導く（`docs/adr/0007`）。
-fn page_width(tokens: &Tokens) -> Result<u32, Error> {
+/// 本文の箱の最大幅（px）。2列（`width-column` × 2）と、間の区切りの線（1px）と、線の左右の空き
+/// （`space-<gap>` × 2）。2列が収まる幅そのものなので、tokens.json には持たずに導く（`docs/adr/0007`）。
+fn page_width(tokens: &Tokens, gap: &str) -> Result<u32, Error> {
     let px = |list: &[(String, String)], name: &str, what: &str| -> Result<u32, Error> {
         list.iter()
             .find(|(n, _)| n == name)
@@ -257,7 +261,7 @@ fn page_width(tokens: &Tokens) -> Result<u32, Error> {
             .ok_or_else(|| Error::Shape(format!("{what} が px の整数でない")))
     };
     let column = px(&tokens.widths, "column", "width-column")?;
-    let gutter = px(&tokens.spacing, "4", "space-4")?;
+    let gutter = px(&tokens.spacing, gap, &format!("space-{gap}"))?;
     Ok(column * 2 + gutter * 2 + 1)
 }
 
@@ -621,8 +625,9 @@ mod tests {
     fn layout_widths_are_usable_as_tailwind_container_sizes() {
         // 本文の1単位（ui-decisions「列の単位」）。max-w-column / w-column で使う
         assert!(css().contains("--container-column: 335px;"), "{}", css());
-        // 本文の箱の最大幅は tokens に無く、1単位と space-4 から導く（2 × 335 + 2 × 16 + 1）。max-w-page で使う
-        assert!(css().contains("--container-page: 703px;"), "{}", css());
+        // 本文の箱の最大幅は tokens に無く、1単位と区切りの左右の空きから導く。max-w-page / lg:max-w-page-lg で使う
+        assert!(css().contains("--container-page: 703px;"), "{}", css()); // 2 × 335 + 2 × 16 + 1
+        assert!(css().contains("--container-page-lg: 767px;"), "{}", css()); // 2 × 335 + 2 × 48 + 1
     }
 
     #[test]

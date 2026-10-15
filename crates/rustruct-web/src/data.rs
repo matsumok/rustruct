@@ -224,30 +224,33 @@ pub(crate) fn ConcretePage() -> Element {
     rsx! {
         Page { route: Route::DataConcrete {},
             Columns {
-                Column { first: true,
-                    label { class: "block",
-                        span { class: if error.is_some() { "block text-label text-ng" } else { "block text-label text-muted" },
-                            "Fc（N/mm²）"
+                Column {
+                    // 入力のすぐ下に結果（`space-6`）。この組と次の表の間は Column の間（`space-7`）
+                    div { class: "flex flex-col gap-6",
+                        div { class: "flex flex-col gap-1",
+                            label { class: "flex flex-col gap-1",
+                                span { class: if error.is_some() { "text-label text-ng" } else { "text-label text-muted" },
+                                    "Fc（N/mm²）"
+                                }
+                                input {
+                                    class: if error.is_some() {
+                                        "self-start rounded-8 border-2 border-ng bg-paper px-3 py-2 font-mono text-num text-right"
+                                    } else {
+                                        "self-start rounded-8 border border-line-strong bg-paper px-3 py-2 font-mono text-num text-right"
+                                    },
+                                    r#type: "text",
+                                    inputmode: "decimal",
+                                    value: "{fc}",
+                                    oninput: move |e| fc.set(e.value()),
+                                }
+                            }
+                            if let Some(message) = &error {
+                                p { class: "text-label text-ng", {message.clone()} }
+                            }
+                            if let Some(message) = warning {
+                                p { class: "text-label", "! {message}" }
+                            }
                         }
-                        input {
-                            class: if error.is_some() {
-                                "mt-1 w-32 rounded-8 border-2 border-ng bg-paper px-3 py-2 font-mono text-num text-right"
-                            } else {
-                                "mt-1 w-32 rounded-8 border border-line-strong bg-paper px-3 py-2 font-mono text-num text-right"
-                            },
-                            r#type: "text",
-                            inputmode: "decimal",
-                            value: "{fc}",
-                            oninput: move |e| fc.set(e.value()),
-                        }
-                    }
-                    if let Some(message) = &error {
-                        p { class: "mt-1 text-label text-ng", {message.clone()} }
-                    }
-                    if let Some(message) = warning {
-                        p { class: "mt-1 text-label", "! {message}" }
-                    }
-                    div { class: "mt-6",
                         Table {
                             thead {
                                 HeadRow {
@@ -263,122 +266,138 @@ pub(crate) fn ConcretePage() -> Element {
                             }
                         }
                     }
-                    Caption { "許容応力度（N/mm²）" }
-                    Table {
-                        thead {
-                            HeadRow {
-                                HeadCell { first: true, "" }
-                                HeadCell { "長期" }
-                                HeadCell { "短期" }
+                    Block {
+                        Caption { "許容応力度（N/mm²）" }
+                        Table {
+                            thead {
+                                HeadRow {
+                                    HeadCell { left: true, "" }
+                                    HeadCell { "長期" }
+                                    HeadCell { "短期" }
+                                }
                             }
-                        }
-                        tbody {
-                            for row in allowable_rows {
-                                Row {
-                                    TextCell { first: true, {row.name} }
-                                    NumCell { {row.long_term} }
-                                    NumCell { {row.short_term} }
+                            tbody {
+                                for row in allowable_rows {
+                                    Row {
+                                        TextCell { {row.name} }
+                                        NumCell { {row.long_term} }
+                                        NumCell { {row.short_term} }
+                                    }
                                 }
                             }
                         }
                     }
                 }
-                Column { id: "basis", divided: true,
-                    Caption { first: true, "気乾単位体積重量" }
-                    Table {
-                        thead {
-                            HeadRow {
-                                HeadCell { first: true, "Fc（N/mm²）" }
-                                HeadCell { "γ（kN/m³）" }
+                Divider {}
+                Column { id: "basis",
+                    Block {
+                        Caption { "気乾単位体積重量" }
+                        Table {
+                            thead {
+                                HeadRow {
+                                    HeadCell { left: true, "Fc（N/mm²）" }
+                                    HeadCell { "γ（kN/m³）" }
+                                }
                             }
-                        }
-                        tbody {
-                            for (range, gamma) in unit_weight_rows() {
-                                Row {
-                                    TextCell { first: true, {range} }
-                                    NumCell { {gamma} }
+                            tbody {
+                                for (range, gamma) in unit_weight_rows() {
+                                    Row {
+                                        TextCell { {range} }
+                                        NumCell { {gamma} }
+                                    }
                                 }
                             }
                         }
-                    }
-                    Notes {
-                        li { "Fc {fc_max} を超えると最後の区分を使う" }
-                    }
-                    // 出典: 実務の慣例の値（画面には出さない。ADR に書いてある）
-
-                    Caption { "ヤング係数（N/mm²）" }
-                    p { class: "font-mono text-num",
-                        "E = 3.35×10⁴ × (γ/24)² × (Fc/60)"
-                        sup { "1/3" }
-                    }
-                    // 出典: RC 規準（2024 年版）（画面には出さない。ADR に書いてある）
-
-                    Caption { "許容応力度（N/mm²）" }
-                    Table {
-                        thead {
-                            HeadRow {
-                                HeadCell { first: true, "" }
-                                HeadCell { formula: true, "長期" }
-                                HeadCell { formula: true, "短期" }
-                            }
+                        Notes {
+                            li { "Fc {fc_max} を超えると最後の区分を使う" }
                         }
-                        tbody {
-                            for a in Allowable::ALL {
-                                Row {
-                                    TextCell { first: true, {a.name()} }
-                                    FormulaCell { {a.long_term_formula()} }
-                                    FormulaCell { {a.short_term_formula()} }
+                        // 出典: 実務の慣例の値（画面には出さない。ADR に書いてある）
+                    }
+                    Block {
+                        Caption { "ヤング係数（N/mm²）" }
+                        p { class: "font-mono text-num",
+                            "E = 3.35×10⁴ × (γ/24)² × (Fc/60)"
+                            sup { "1/3" }
+                        }
+                        // 出典: RC 規準（2024 年版）（画面には出さない。ADR に書いてある）
+                    }
+                    Block {
+                        Caption { "許容応力度（N/mm²）" }
+                        Table {
+                            thead {
+                                HeadRow {
+                                    HeadCell { left: true, "" }
+                                    HeadCell { left: true, "長期" }
+                                    HeadCell { left: true, "短期" }
+                                }
+                            }
+                            tbody {
+                                for a in Allowable::ALL {
+                                    Row {
+                                        TextCell { {a.name()} }
+                                        FormulaCell { {a.long_term_formula()} }
+                                        FormulaCell { {a.short_term_formula()} }
+                                    }
                                 }
                             }
                         }
+                        // 出典: RC 規準（2024 年版）表 6.1・6.3（画面には出さない。ADR に書いてある）
                     }
-                    // 出典: RC 規準（2024 年版）表 6.1・6.3（画面には出さない。ADR に書いてある）
                 }
             }
         }
     }
 }
 
-/// 本文の列を並べる（ui-decisions「列の単位」）。PC では1単位（`width-column`）の列を `space-4` の溝で横に、
-/// スマホでは縦に積む。
+/// 本文の列を並べる（ui-decisions「列の単位」）。iPad・PC では1単位（`width-column`）の列と区切りを横に並べ、
+/// 間は iPad `space-4`、PC `space-8`（区切りの線の左右が同じ空きになる）。スマホでは縦に積み、間は `space-8`
+/// （`space-7` は表の行の高さとほぼ同じで、区切りが表の次の行の罫に見えたため）。空きはすべてここで決め、
+/// 列と区切りは自分の外に余白を持たない。本文の箱の幅（`max-w-page` / `lg:max-w-page-lg`）は、
+/// この間と1単位から `theme.rs` が導く。
 #[component]
 fn Columns(children: Element) -> Element {
     rsx! {
-        div { class: "md:flex md:items-start md:gap-x-4", {children} }
+        div { class: "flex flex-col gap-8 md:flex-row md:items-start md:gap-4 lg:gap-8", {children} }
     }
 }
 
-/// 本文の1列。スマホでは画面いっぱい、iPad からは1単位の幅（`docs/adr/0007`）。スマホで縦に積むとき、2列目からは `space-7` を空ける。
-/// `divided` の列は前の列との間に `line` の区切りを引く（スマホでは上、PC では左）。スマホの区切りの上下は
-/// `space-8`。`space-7` は表の行の高さとほぼ同じで、区切りが表の次の行の罫に見えたため。入力と結果の列と、
-/// 入力に依らない根拠の列を分けるのに使う。区切りの余白と線は1単位の外に足し（`box-content`）、中身は1単位のまま。`id` を付けると住所の `#id` でその列へ飛べる。
+/// 本文の1列。スマホでは画面いっぱい、iPad からは1単位の幅（`docs/adr/0007`）。中の組（`Block` など）の間は `space-7`。
+/// `id` を付けると住所の `#id` でその列へ飛べる。
 #[component]
-fn Column(
-    #[props(default)] first: bool,
-    #[props(default)] divided: bool,
-    #[props(default)] id: &'static str,
-    children: Element,
-) -> Element {
-    let class = match (first, divided) {
-        (true, _) => "w-full min-w-0 md:max-w-column",
-        (false, false) => "mt-7 md:mt-0 w-full min-w-0 md:max-w-column",
-        (false, true) => {
-            "mt-8 pt-8 border-t border-line md:mt-0 md:pt-0 md:border-t-0 md:border-l md:pl-4 md:box-content w-full min-w-0 md:max-w-column"
-        }
-    };
+fn Column(#[props(default)] id: &'static str, children: Element) -> Element {
     rsx! {
-        div { class, id: (!id.is_empty()).then_some(id), {children} }
-    }
-}
-
-/// 表や式の見出し。`heading`（太字・ink）。中身との間は `space-2`、前の中身との間は `space-7`。
-/// 部の見出し（入力・結果・根拠）は置かず、この見出しで区切る（ui-decisions「列の単位と表」）。
-#[component]
-fn Caption(#[props(default)] first: bool, children: Element) -> Element {
-    rsx! {
-        h2 { class: if first { "mb-2 text-heading" } else { "mt-7 mb-2 text-heading" },
+        div {
+            class: "flex w-full min-w-0 flex-col gap-7 md:max-w-column",
+            id: (!id.is_empty()).then_some(id),
             {children}
         }
+    }
+}
+
+/// 列と列の間の `line` の区切り。入力と結果の列と、入力に依らない根拠の列を分ける。
+/// スマホでは横の線、iPad・PC では高さいっぱいの縦の線（Tailwind の初期化が `hr` に高さ 0 を当てるので `h-auto` で戻す）。
+/// 前後の空きは `Columns` が持つ。
+#[component]
+fn Divider() -> Element {
+    rsx! {
+        hr { class: "border-line md:h-auto md:self-stretch md:border-t-0 md:border-l" }
+    }
+}
+
+/// 表や式の一まとまり。見出し（`Caption`）、表や式、注記の順で、間は `space-2`。
+/// 部の見出し（入力・結果・根拠）は置かず、この見出しで区切る（ui-decisions「列の単位と表」）。
+#[component]
+fn Block(children: Element) -> Element {
+    rsx! {
+        section { class: "flex flex-col gap-2", {children} }
+    }
+}
+
+/// 表や式の見出し。`heading`（太字・ink）。
+#[component]
+fn Caption(children: Element) -> Element {
+    rsx! {
+        h2 { class: "text-heading", {children} }
     }
 }
 
@@ -386,12 +405,14 @@ fn Caption(#[props(default)] first: bool, children: Element) -> Element {
 #[component]
 fn Notes(children: Element) -> Element {
     rsx! {
-        ul { class: "mt-2 list-disc pl-4 text-label text-muted", {children} }
+        ul { class: "list-disc pl-4 text-label text-muted", {children} }
     }
 }
 
 /// 表示用の表（ui-decisions「列の単位と表」）。横罫だけで、線はすべて `line`（`ink` は部の見出しの上だけ）。
 /// 縦罫と塗りは使わない。幅は列いっぱい（1単位）。入りきらない表は外側を `overflow-x-auto` で包む。
+/// セルは左に `space-3` を取り、最初の列だけ左を詰めて右に `space-3`（表の端の列を端に寄せる）。
+/// 位置で変わる形は CSS の `first:` で決め、セルに「最初かどうか」を渡さない。
 #[component]
 fn Table(children: Element) -> Element {
     rsx! {
@@ -415,22 +436,13 @@ fn Row(children: Element) -> Element {
     }
 }
 
-/// 列見出し。`label` の muted。`first` の列は左、`formula` の列は式（`FormulaCell`）に合わせて左、
-/// ほかは数値の列なので右に揃える。セルの左右は `space-3`、表の端の列は端に寄せる。
+/// 列見出し。`label` の muted。揃えは列の中身に合わせる: `left` の列（名前・区分の `TextCell`、式の
+/// `FormulaCell`）は左、数値の列（`NumCell`）は右。
 #[component]
-fn HeadCell(
-    #[props(default)] first: bool,
-    #[props(default)] formula: bool,
-    children: Element,
-) -> Element {
-    let class = match (first, formula) {
-        (true, _) => "py-2 pr-3 text-left text-label text-muted font-normal",
-        (false, true) => "py-2 pl-3 text-left text-label text-muted font-normal",
-        (false, false) => "py-2 pl-3 last:pr-0 text-right text-label text-muted font-normal",
-    };
+fn HeadCell(#[props(default)] left: bool, children: Element) -> Element {
     rsx! {
         th {
-            class,
+            class: if left { "py-2 pl-3 first:pl-0 first:pr-3 text-left text-label text-muted font-normal" } else { "py-2 pl-3 first:pl-0 first:pr-3 text-right text-label text-muted font-normal" },
             {children}
         }
     }
@@ -438,20 +450,17 @@ fn HeadCell(
 
 /// 名前や区分のセル。`body` で左揃え。
 #[component]
-fn TextCell(#[props(default)] first: bool, children: Element) -> Element {
+fn TextCell(children: Element) -> Element {
     rsx! {
-        td { class: if first { "py-2 pr-3 text-body" } else { "py-2 px-3 text-body" }, {children} }
+        td { class: "py-2 pl-3 first:pl-0 first:pr-3 text-body", {children} }
     }
 }
 
 /// 数値のセル。`num` の等幅で右揃え。
 #[component]
-fn NumCell(#[props(default)] first: bool, children: Element) -> Element {
+fn NumCell(children: Element) -> Element {
     rsx! {
-        td {
-            class: if first { "py-2 pr-3 font-mono text-num whitespace-nowrap" } else { "py-2 pl-3 font-mono text-num text-right whitespace-nowrap" },
-            {children}
-        }
+        td { class: "py-2 pl-3 first:pl-0 first:pr-3 font-mono text-num text-right whitespace-nowrap", {children} }
     }
 }
 
@@ -459,7 +468,7 @@ fn NumCell(#[props(default)] first: bool, children: Element) -> Element {
 #[component]
 fn FormulaCell(children: Element) -> Element {
     rsx! {
-        td { class: "py-2 pl-3 font-mono text-num whitespace-nowrap", {children} }
+        td { class: "py-2 pl-3 first:pl-0 first:pr-3 font-mono text-num whitespace-nowrap", {children} }
     }
 }
 
@@ -469,13 +478,13 @@ pub(crate) fn RebarPage() -> Element {
     rsx! {
         Page { route: Route::DataRebar {},
             Columns {
-                Column { first: true,
-                    Caption { first: true, "呼び名" }
-                        div {
+                Column {
+                    Block {
+                        Caption { "呼び名" }
                         Table {
                             thead {
                                 HeadRow {
-                                    HeadCell { first: true, "呼び名" }
+                                    HeadCell { left: true, "呼び名" }
                                     HeadCell { "公称直径" br {} "d（mm）" }
                                     HeadCell { "公称周長" br {} "l（mm）" }
                                     HeadCell { "公称断面積" br {} "S（mm²）" }
@@ -485,7 +494,7 @@ pub(crate) fn RebarPage() -> Element {
                             tbody {
                                 for designation in BarDesignation::ALL.iter().copied() {
                                     Row {
-                                        TextCell { first: true, {designation.name()} }
+                                        TextCell { {designation.name()} }
                                         NumCell { {significant(designation.nominal_diameter().as_mm(), 3)} }
                                         NumCell { {format!("{:.1}", designation.nominal_perimeter().as_mm())} }
                                         NumCell { {significant(designation.nominal_area().as_mm2(), 4)} }
@@ -505,13 +514,13 @@ pub(crate) fn RebarPage() -> Element {
                     }
                 }
                 Column {
-                    Caption { first: true, "許容応力度（N/mm²）" }
-                        div {
+                    Block {
+                        Caption { "許容応力度（N/mm²）" }
                         div { class: "overflow-x-auto",
                             Table {
                                 thead {
                                     HeadRow {
-                                        HeadCell { first: true, "種類" }
+                                        HeadCell { left: true, "種類" }
                                         HeadCell { "長期 引張・圧縮" }
                                         HeadCell { "長期 せん断補強" }
                                         HeadCell { "短期 引張・圧縮" }
@@ -521,7 +530,7 @@ pub(crate) fn RebarPage() -> Element {
                                 tbody {
                                     for kind in RebarKind::ALL.iter().copied() {
                                         Row {
-                                            TextCell { first: true, {kind.symbol()} }
+                                            TextCell { {kind.symbol()} }
                                             NumCell { {long_term_tension_compression(kind)} }
                                             NumCell { {integer(kind.allowable_shear_reinforcement().long_term)} }
                                             NumCell { {integer(kind.allowable_tension_compression(BarDesignation::D25).short_term)} }

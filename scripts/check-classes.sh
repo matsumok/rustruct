@@ -10,8 +10,9 @@ cd "$(dirname "$0")/.."
 css=crates/rustruct-web/assets/tailwind.css
 fail=0
 
-classes=$(grep -rhoE 'class: "[^"{}]*"' crates/rustruct-web/src \
-  | sed -E 's/^class: "//; s/"$//' | tr ' ' '\n' | grep -v '^$' | sort -u)
+# class: "…" と、class: if … { "…" } else { "…" }（行をまたいでもよい）の文字をすべて拾う
+classes=$(perl -0777 -ne 'while (/class:\s*(if\b[^{]*\{\s*"[^"]*"\s*\}\s*else\s*\{\s*"[^"]*"\s*\}|"[^"{}]*")/g) { my $m = $1; print "$1\n" while $m =~ /"([^"]*)"/g }' \
+  $(find crates/rustruct-web/src -name '*.rs') | tr ' ' '\n' | grep -v '^$' | sort -u)
 
 for c in $classes; do
   # セレクタでは : . / を \ で逃がす（.sm\:grid-cols-2 の形）
