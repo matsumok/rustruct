@@ -53,7 +53,7 @@
     --radius-0: 0px;
     --radius-8: 8px;
     --radius-full: 9999px;
-    --container-column: 360px;
+    --container-column: 335px;
   }
 }
 @layer base {
@@ -421,6 +421,11 @@
   .md\:flex {
     @media (width >= 48rem) {
       display: flex;
+    }
+  }
+  .md\:max-w-column {
+    @media (width >= 48rem) {
+      max-width: var(--container-column);
     }
   }
   .md\:items-start {

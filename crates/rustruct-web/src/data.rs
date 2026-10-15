@@ -348,7 +348,7 @@ fn Columns(children: Element) -> Element {
     }
 }
 
-/// 本文の1列。幅は1単位まで。スマホで縦に積むとき、2列目からは `space-7` を空ける。
+/// 本文の1列。スマホでは画面いっぱい、iPad からは1単位の幅（`docs/adr/0007`）。スマホで縦に積むとき、2列目からは `space-7` を空ける。
 /// `divided` の列は前の列との間に `line` の区切りを引く（スマホでは上、PC では左）。スマホの区切りの上下は
 /// `space-8`。`space-7` は表の行の高さとほぼ同じで、区切りが表の次の行の罫に見えたため。入力と結果の列と、
 /// 入力に依らない根拠の列を分けるのに使う。`id` を付けると住所の `#id` でその列へ飛べる。
@@ -360,10 +360,10 @@ fn Column(
     children: Element,
 ) -> Element {
     let class = match (first, divided) {
-        (true, _) => "w-full min-w-0 max-w-column",
-        (false, false) => "mt-7 md:mt-0 w-full min-w-0 max-w-column",
+        (true, _) => "w-full min-w-0 md:max-w-column",
+        (false, false) => "mt-7 md:mt-0 w-full min-w-0 md:max-w-column",
         (false, true) => {
-            "mt-8 pt-8 border-t border-line md:mt-0 md:pt-0 md:border-t-0 md:border-l md:pl-4 w-full min-w-0 max-w-column"
+            "mt-8 pt-8 border-t border-line md:mt-0 md:pt-0 md:border-t-0 md:border-l md:pl-4 w-full min-w-0 md:max-w-column"
         }
     };
     rsx! {

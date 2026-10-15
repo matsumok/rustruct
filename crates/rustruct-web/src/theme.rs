@@ -488,7 +488,7 @@ mod tests {
     #[test]
     fn layout_widths_are_usable_as_tailwind_container_sizes() {
         // 本文の1単位（ui-decisions「列の単位」）。max-w-column / w-column で使う
-        assert!(css().contains("--container-column: 360px;"), "{}", css());
+        assert!(css().contains("--container-column: 335px;"), "{}", css());
     }
 
     #[test]
