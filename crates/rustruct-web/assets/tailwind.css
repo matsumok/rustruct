@@ -323,9 +323,6 @@
   .gap-2 {
     gap: var(--spacing-2);
   }
-  .gap-3 {
-    gap: var(--spacing-3);
-  }
   .gap-4 {
     gap: var(--spacing-4);
   }
@@ -346,11 +343,6 @@
   }
   .self-start {
     align-self: flex-start;
-  }
-  .truncate {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .overflow-x-auto {
     overflow-x: auto;
@@ -518,16 +510,6 @@
       padding-left: var(--spacing-0);
     }
   }
-  .md\:absolute {
-    @media (width >= 768px) {
-      position: absolute;
-    }
-  }
-  .md\:left-1\/2 {
-    @media (width >= 768px) {
-      left: calc(1/2 * 100%);
-    }
-  }
   .md\:flex {
     @media (width >= 768px) {
       display: flex;
@@ -563,12 +545,6 @@
       max-width: var(--container-column);
     }
   }
-  .md\:-translate-x-1\/2 {
-    @media (width >= 768px) {
-      --tw-translate-x: calc(calc(1/2 * 100%) * -1);
-      translate: var(--tw-translate-x) var(--tw-translate-y);
-    }
-  }
   .md\:grid-cols-2 {
     @media (width >= 768px) {
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -577,11 +553,6 @@
   .md\:flex-row {
     @media (width >= 768px) {
       flex-direction: row;
-    }
-  }
-  .md\:items-center {
-    @media (width >= 768px) {
-      align-items: center;
     }
   }
   .md\:items-start {
@@ -791,21 +762,6 @@
   syntax: "*";
   inherits: false;
 }
-@property --tw-translate-x {
-  syntax: "*";
-  inherits: false;
-  initial-value: 0;
-}
-@property --tw-translate-y {
-  syntax: "*";
-  inherits: false;
-  initial-value: 0;
-}
-@property --tw-translate-z {
-  syntax: "*";
-  inherits: false;
-  initial-value: 0;
-}
 @layer properties {
   @supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))) {
     *, ::before, ::after, ::backdrop {
@@ -816,9 +772,6 @@
       --tw-skew-y: initial;
       --tw-border-style: solid;
       --tw-font-weight: initial;
-      --tw-translate-x: 0;
-      --tw-translate-y: 0;
-      --tw-translate-z: 0;
     }
   }
 }
