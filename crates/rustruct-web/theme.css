@@ -106,6 +106,7 @@
   --spacing-6: 28px;
   --spacing-7: 40px;
   --spacing-8: 48px;
+  --spacing-9: 80px;
 
   /* 角丸: radius-<n> を rounded-<n> で使う */
   --radius-*: initial;
@@ -117,7 +118,7 @@
   --container-*: initial;
   --container-column: 335px;
   --container-page: 703px;
-  --container-page-lg: 767px;
+  --container-page-lg: 831px;
 
   /* 切り替わる幅: breakpoint-<n> を <n>: で使う。決めた幅だけ */
   --breakpoint-*: initial;

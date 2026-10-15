@@ -123,8 +123,8 @@ pub fn theme_css(tokens_json: &str) -> Result<String, Error> {
         out.push_str(&format!("  --container-{name}: {value};\n"));
     }
     // 本文の箱: 1単位の列2つと、間の区切り（線 1px と左右の空き）から導く。空きは data.rs の Columns と同じ
-    // （iPad space-4 → max-w-page、PC space-8 → lg:max-w-page-lg）
-    for (name, gap) in [("page", "4"), ("page-lg", "8")] {
+    // （iPad space-4 → max-w-page、PC space-9 → lg:max-w-page-lg）
+    for (name, gap) in [("page", "4"), ("page-lg", "9")] {
         out.push_str(&format!(
             "  --container-{name}: {}px;\n",
             page_width(&tokens, gap)?
@@ -613,6 +613,7 @@ mod tests {
             "--spacing-6: 28px;",
             "--spacing-7: 40px;",
             "--spacing-8: 48px;",
+            "--spacing-9: 80px;",
             "--radius-0: 0px;",
             "--radius-8: 8px;",
             "--radius-full: 9999px;",
@@ -627,7 +628,7 @@ mod tests {
         assert!(css().contains("--container-column: 335px;"), "{}", css());
         // 本文の箱の最大幅は tokens に無く、1単位と区切りの左右の空きから導く。max-w-page / lg:max-w-page-lg で使う
         assert!(css().contains("--container-page: 703px;"), "{}", css()); // 2 × 335 + 2 × 16 + 1
-        assert!(css().contains("--container-page-lg: 767px;"), "{}", css()); // 2 × 335 + 2 × 48 + 1
+        assert!(css().contains("--container-page-lg: 831px;"), "{}", css()); // 2 × 335 + 2 × 80 + 1
     }
 
     #[test]

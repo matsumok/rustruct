@@ -350,14 +350,14 @@ pub(crate) fn ConcretePage() -> Element {
 }
 
 /// 本文の列を並べる（ui-decisions「列の単位」）。iPad・PC では1単位（`width-column`）の列と区切りを横に並べ、
-/// 間は iPad `space-4`、PC `space-8`（区切りの線の左右が同じ空きになる）。スマホでは縦に積み、間は `space-8`
+/// 間は iPad `space-4`、PC `space-9`（区切りの線の左右が同じ空きになる）。スマホでは縦に積み、間は `space-8`
 /// （`space-7` は表の行の高さとほぼ同じで、区切りが表の次の行の罫に見えたため）。空きはすべてここで決め、
 /// 列と区切りは自分の外に余白を持たない。本文の箱の幅（`max-w-page` / `lg:max-w-page-lg`）は、
 /// この間と1単位から `theme.rs` が導く。
 #[component]
 fn Columns(children: Element) -> Element {
     rsx! {
-        div { class: "flex flex-col gap-8 md:flex-row md:items-start md:gap-4 lg:gap-8", {children} }
+        div { class: "flex flex-col gap-8 md:flex-row md:items-start md:gap-4 lg:gap-9", {children} }
     }
 }
 

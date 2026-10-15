@@ -54,12 +54,13 @@
     --spacing-6: 28px;
     --spacing-7: 40px;
     --spacing-8: 48px;
+    --spacing-9: 80px;
     --radius-0: 0px;
     --radius-8: 8px;
     --radius-full: 9999px;
     --container-column: 335px;
     --container-page: 703px;
-    --container-page-lg: 767px;
+    --container-page-lg: 831px;
     --breakpoint-md: 768px;
     --breakpoint-lg: 1024px;
   }
@@ -620,9 +621,9 @@
       max-width: var(--container-page-lg);
     }
   }
-  .lg\:gap-8 {
+  .lg\:gap-9 {
     @media (width >= 1024px) {
-      gap: var(--spacing-8);
+      gap: var(--spacing-9);
     }
   }
   .lg\:px-8 {
