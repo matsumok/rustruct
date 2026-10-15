@@ -544,8 +544,14 @@ pub(crate) fn RebarPage() -> Element {
 
 /// 長期の引張・圧縮。D29 以上で値が変わる種類は、表 6.2 と同じく「215（*195）」と書き、凡例を注記に置く
 fn long_term_tension_compression(kind: RebarKind) -> String {
-    let below = integer(kind.allowable_tension_compression(BarDesignation::D25).long_term);
-    let d29_and_up = integer(kind.allowable_tension_compression(BarDesignation::D29).long_term);
+    let below = integer(
+        kind.allowable_tension_compression(BarDesignation::D25)
+            .long_term,
+    );
+    let d29_and_up = integer(
+        kind.allowable_tension_compression(BarDesignation::D29)
+            .long_term,
+    );
     if below == d29_and_up {
         below
     } else {
