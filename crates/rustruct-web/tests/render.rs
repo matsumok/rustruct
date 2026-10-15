@@ -280,42 +280,19 @@ fn head_links_the_fonts_and_the_stylesheet() {
     );
 }
 
-/// `needle` を含む最初の開きタグ（`<a href="/data" …>` など）。
-fn tag_with<'a>(html: &'a str, needle: &str) -> &'a str {
-    let at = html
-        .find(needle)
-        .unwrap_or_else(|| panic!("{needle} が無い: {html}"));
-    let start = html[..at].rfind('<').expect("タグの始まりが無い");
-    let end = html[at..].find('>').expect("タグが閉じていない") + at;
-    &html[start..=end]
-}
-
 #[test]
-fn header_has_the_wordmark_then_the_four_sections_then_the_page_name_the_theme_and_the_account() {
+fn header_has_the_wordmark_the_theme_and_the_account_only() {
     let html = render_path("/data/concrete");
     let header = element(&html, "header");
-    assert_in_order(
-        &text_of(header),
-        &[
-            "rustruct",
-            ".matsumok.com",
-            "Tools",
-            "Data",
-            "Studies",
-            "Notes",
-            "コンクリート",
-        ],
+    let text = text_of(header);
+    assert_eq!(
+        text, "rustruct.matsumok.com",
+        "ヘッダーの文字はサイト名だけ: {header}"
     );
     assert!(
         header.contains("href=\"/\""),
         "wordmark からトップへ戻れない: {header}"
     );
-    for path in ["/tools", "/data", "/studies", "/notes"] {
-        assert!(
-            header.contains(&format!("href=\"{path}\"")),
-            "ヘッダーに {path} が無い: {header}"
-        );
-    }
     for label in ["メニューを開く", "ライトとダークを切り替える", "アカウント"]
     {
         assert!(
@@ -331,48 +308,6 @@ fn the_header_comes_before_the_page_body() {
     let header = html.find("<header").expect("header が無い");
     let main = html.find("<main").expect("main が無い");
     assert!(header < main, "ヘッダーが本文の後にある: {html}");
-}
-
-#[test]
-fn home_has_no_page_name_in_the_header() {
-    let html = render_path("/");
-    let header = text_of(element(&html, "header"));
-    assert!(
-        !header.contains("Home"),
-        "トップのヘッダーにページ名が出ている: {header}"
-    );
-}
-
-#[test]
-fn the_header_marks_the_section_of_the_page() {
-    // 部のページそのものは page、その下のページは true（今いる部）
-    for (path, current) in [
-        ("/data", "aria-current=\"page\""),
-        ("/data/concrete", "aria-current=\"true\""),
-    ] {
-        let html = render_path(path);
-        let header = element(&html, "header");
-        let link = tag_with(header, "href=\"/data\"");
-        assert!(
-            link.contains(current),
-            "{path} で /data に {current} が無い: {link}"
-        );
-        assert_eq!(link.matches("aria-current").count(), 1, "印が二重: {link}");
-        let other = tag_with(header, "href=\"/tools\"");
-        assert!(
-            !other.contains("aria-current"),
-            "{path} で /tools に印がある: {other}"
-        );
-    }
-    let home = render_path("/");
-    let header = element(&home, "header");
-    for path in ["/tools", "/data", "/studies", "/notes"] {
-        let link = tag_with(header, &format!("href=\"{path}\""));
-        assert!(
-            !link.contains("aria-current"),
-            "トップで {path} に印がある: {link}"
-        );
-    }
 }
 
 #[test]

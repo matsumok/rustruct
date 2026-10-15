@@ -194,23 +194,15 @@ fn Frame() -> Element {
     }
 }
 
-/// ヘッダー。左右の余白の内側いっぱいに、左の組（サイト名）、中央の四部、右の組（ページ名・ライトとダーク・
-/// アカウント）。スマホ（`md` 未満）はサイト名を `rustruct` だけにし、四部だけをメニューにしまう（メニューのボタンは
-/// 左の組の頭）。組の中の間は `space-4`。アイコンのボタンは押せる範囲を `space-3` の内側の余白で取り、
-/// その範囲の端を左右の余白の線にそろえる。
+/// ヘッダー。左右の余白の内側いっぱいに、左の組（サイト名）と右の組（ライトとダーク・アカウント）。
+/// スマホ（`md` 未満）はサイト名を `rustruct` だけにし、四部へはメニューから行く（メニューのボタンは左の組の頭）。
+/// 組の中の間は `space-4`。アイコンのボタンは押せる範囲を `space-3` の内側の余白で取り、その範囲の端を
+/// 左右の余白の線にそろえる。
 #[component]
 fn Header(route: Route) -> Element {
     let mut menu_open = use_signal(|| false);
     let mut account_note = use_signal(|| false);
-    let page_name = (route != Route::Home {}).then(|| route.text().heading);
-    // 部のページそのものの名前は、iPad・PC では下線の付いた部のボタンと同じなので出さない
-    let page_name_class = if Route::sections().any(|s| s == route) {
-        "truncate text-body text-muted md:hidden"
-    } else {
-        "truncate text-body text-muted"
-    };
     rsx! {
-        // sticky は位置を持つので、中央の四部（absolute）はヘッダーを基準に置かれる
         header { class: "sticky top-0 z-20 flex h-8 items-center justify-between border-b border-line bg-paper px-5 md:px-7 lg:px-8",
             div { class: "flex items-center gap-4",
                 button {
@@ -227,17 +219,7 @@ fn Header(route: Route) -> Element {
                 }
                 Link { to: Route::Home {}, onclick: move |_| menu_open.set(false), Wordmark {} }
             }
-            // 四部はヘッダーの中央。左右の組の幅に引かれないよう、並びから外して置く
-            nav { class: "hidden md:absolute md:left-1/2 md:flex md:-translate-x-1/2 md:items-center md:gap-4",
-                for section in Route::sections() {
-                    SectionLink { route: route.clone(), section }
-                }
-            }
-            div { class: "flex min-w-0 items-center gap-4",
-                // トップにはページ名が無い
-                if let Some(name) = page_name {
-                    span { class: page_name_class, {name} }
-                }
+            div { class: "flex items-center gap-4",
                 button {
                     class: "p-3 text-ink",
                     r#type: "button",
@@ -276,20 +258,6 @@ const ACCOUNT_NOTE: &str = "登録は準備中";
 /// ここではその下のページの `true` だけを付ける（同じ属性を二重にしない）。
 fn aria_current(route: &Route, section: &Route) -> Option<&'static str> {
     (route != section && route.section().as_ref() == Some(section)).then_some("true")
-}
-
-/// ヘッダーの四部のボタン。今いる部には `accent` の下線（差し色の使い場所の一つ）。
-#[component]
-fn SectionLink(route: Route, section: Route) -> Element {
-    let here = route.section().as_ref() == Some(&section);
-    rsx! {
-        Link {
-            to: section.clone(),
-            class: if here { "text-body text-ink underline decoration-accent underline-offset-4" } else { "text-body text-ink" },
-            "aria-current": aria_current(&route, &section),
-            {section.text().heading}
-        }
-    }
 }
 
 /// ライトとダークのアイコン。今の色のほうを出す。色は描く前に決まるが、どちらかはブラウザでしか分からないので、
@@ -402,8 +370,9 @@ fn SectionPage() -> Element {
 #[component]
 fn Page(route: Route, #[props(default = true)] with_path: bool, children: Element) -> Element {
     rsx! {
-        main { class: "mx-auto flex max-w-page flex-col gap-3 py-7 lg:max-w-page-lg",
-            // 住所と見出しの組（間は space-2）。本文との間は space-3
+        main { class: "mx-auto flex max-w-page flex-col gap-7 py-7 lg:max-w-page-lg",
+            // 住所と見出しの組（間は space-2）。本文との間は space-7（ページの見出しも一つの区切りなので、
+            // セクションの間と同じ。12 では狭く見えた。2026-10-15、20・28・40 を撮り比べて本人が決めた）
             div { class: "flex flex-col gap-2",
                 p { class: "font-mono text-path text-muted break-all",
                     {with_path.then(|| route.to_string())}
