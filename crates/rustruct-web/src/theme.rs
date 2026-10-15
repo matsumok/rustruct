@@ -122,6 +122,10 @@ pub fn theme_css(tokens_json: &str) -> Result<String, Error> {
     for (name, value) in &tokens.widths {
         out.push_str(&format!("  --container-{name}: {value};\n"));
     }
+    out.push_str(&format!(
+        "  /* 本文の箱: 1単位の列2つと space-4 の溝、2列目の区切り（space-4 の余白と 1px の線）から導く */\n  --container-page: {}px;\n",
+        page_width(&tokens)?
+    ));
 
     out.push_str("\n  /* 切り替わる幅: breakpoint-<n> を <n>: で使う。決めた幅だけ */\n");
     out.push_str("  --breakpoint-*: initial;\n");
@@ -134,11 +138,11 @@ pub fn theme_css(tokens_json: &str) -> Result<String, Error> {
     out.push_str("/* 768px から: 大きな文字と Notes の本文だけ大きくする（docs/adr/0007） */\n");
     out.push_str(":root {\n  @variant md {\n");
     for s in &tokens.text_styles {
-        if let Some((size, line_height)) = &s.md {
-            out.push_str(&format!("    --text-{}: {size};\n", s.name));
+        if let Some(md) = &s.md {
+            out.push_str(&format!("    --text-{}: {};\n", s.name, md.font_size));
             out.push_str(&format!(
-                "    --text-{}--line-height: {line_height};\n",
-                s.name
+                "    --text-{}--line-height: {};\n",
+                s.name, md.line_height
             ));
         }
     }
@@ -234,7 +238,27 @@ struct TextStyle {
     font_weight: u64,
     letter_spacing: Option<String>,
     /// 768px からの大きさと行送り。画面幅で変えない役割には無い。
-    md: Option<(String, String)>,
+    md: Option<TextSize>,
+}
+
+/// 文字の大きさと行送りの組。
+struct TextSize {
+    font_size: String,
+    line_height: String,
+}
+
+/// 本文の箱の最大幅（px）。2列（`width-column` × 2）と溝（`space-4`）と、2列目の区切りの余白（`space-4`）と
+/// 線（1px）。2列が収まる幅そのものなので、tokens.json には持たずに導く（`docs/adr/0007`）。
+fn page_width(tokens: &Tokens) -> Result<u32, Error> {
+    let px = |list: &[(String, String)], name: &str, what: &str| -> Result<u32, Error> {
+        list.iter()
+            .find(|(n, _)| n == name)
+            .and_then(|(_, v)| v.strip_suffix("px")?.parse().ok())
+            .ok_or_else(|| Error::Shape(format!("{what} が px の整数でない")))
+    };
+    let column = px(&tokens.widths, "column", "width-column")?;
+    let gutter = px(&tokens.spacing, "4", "space-4")?;
+    Ok(column * 2 + gutter * 2 + 1)
 }
 
 impl Tokens {
@@ -334,10 +358,10 @@ fn text_styles(v: &Value) -> Result<Vec<TextStyle>, Error> {
                     .map(str::to_string),
                 md: match s.pointer("/md") {
                     None => None,
-                    Some(md) => Some((
-                        str_at(md, "/fontSize")?.to_string(),
-                        str_at(md, "/lineHeight")?.to_string(),
-                    )),
+                    Some(md) => Some(TextSize {
+                        font_size: str_at(md, "/fontSize")?.to_string(),
+                        line_height: str_at(md, "/lineHeight")?.to_string(),
+                    }),
                 },
             });
         }
@@ -597,7 +621,7 @@ mod tests {
     fn layout_widths_are_usable_as_tailwind_container_sizes() {
         // 本文の1単位（ui-decisions「列の単位」）。max-w-column / w-column で使う
         assert!(css().contains("--container-column: 335px;"), "{}", css());
-        // 本文の箱の最大幅（2単位と溝と区切り。docs/adr/0007 の 2u + 16 + 17）。max-w-page で使う
+        // 本文の箱の最大幅は tokens に無く、1単位と space-4 から導く（2 × 335 + 2 × 16 + 1）。max-w-page で使う
         assert!(css().contains("--container-page: 703px;"), "{}", css());
     }
 

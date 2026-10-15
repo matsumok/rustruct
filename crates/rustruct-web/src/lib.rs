@@ -201,7 +201,6 @@ fn Frame() -> Element {
 fn Header(route: Route) -> Element {
     let mut menu_open = use_signal(|| false);
     let mut account_note = use_signal(|| false);
-    let section = route.section();
     let page_name = (route != Route::Home {}).then(|| route.text().heading);
     rsx! {
         header { class: "sticky top-0 z-20 flex h-8 items-center gap-4 border-b border-line bg-paper px-5 md:px-7 lg:px-8",
@@ -218,10 +217,16 @@ fn Header(route: Route) -> Element {
                 }
             }
             Link { to: Route::Home {}, onclick: move |_| menu_open.set(false), Wordmark {} }
-            span { class: "ml-auto truncate text-body text-muted", {page_name} }
+            // 右に寄せる空き。ページ名を隠す幅でも、ボタンが右端に残る
+            div { class: "flex-1" }
+            // 部のページそのものの名前は、iPad・PC では下線の付いた部のボタンと同じなので出さない
+            span {
+                class: if Route::sections().any(|s| s == route) { "truncate text-body text-muted md:hidden" } else { "truncate text-body text-muted" },
+                {page_name}
+            }
             nav { class: "hidden md:flex md:items-center md:gap-4",
-                for s in Route::sections() {
-                    SectionLink { section: s.clone(), current: aria_current(&route, &s, section.as_ref()) }
+                for section in Route::sections() {
+                    SectionLink { route: route.clone(), section }
                 }
             }
             button {
@@ -231,37 +236,47 @@ fn Header(route: Route) -> Element {
                 onclick: move |_| toggle_theme(),
                 ThemeIcon {}
             }
-            if account_note() {
-                span { class: "hidden text-label text-muted md:inline", "登録は準備中" }
-            }
-            button {
-                class: "-mr-3 hidden p-3 text-ink md:block",
-                r#type: "button",
-                "aria-label": "アカウント",
-                onclick: move |_| account_note.toggle(),
-                UserIcon { class: "size-5" }
+            // 準備中の一言はボタンの下に重ねて出し、ヘッダーの並びを動かさない
+            div { class: "relative -mr-3 hidden md:block",
+                button {
+                    class: "p-3 text-ink",
+                    r#type: "button",
+                    "aria-label": "アカウント",
+                    "aria-expanded": if account_note() { "true" } else { "false" },
+                    onclick: move |_| account_note.toggle(),
+                    UserIcon { class: "size-5" }
+                }
+                if account_note() {
+                    p { class: "absolute top-full right-0 whitespace-nowrap border border-line bg-paper px-3 py-2 text-label text-muted",
+                        {ACCOUNT_NOTE}
+                    }
+                }
             }
         }
         if menu_open() {
-            Menu { route: route.clone(), section, on_close: move |_| menu_open.set(false) }
+            Menu { route: route.clone(), on_close: move |_| menu_open.set(false) }
         }
     }
 }
 
+/// ログインの仕組みができるまで、アカウントのボタンが言うこと（ui-decisions「画面幅」）。
+const ACCOUNT_NOTE: &str = "登録は準備中";
+
 /// 今いる部の印（`aria-current`）。部のページそのものには `Link` が自分で `page` を付けるので、
 /// ここではその下のページの `true` だけを付ける（同じ属性を二重にしない）。
-fn aria_current(route: &Route, section: &Route, current: Option<&Route>) -> Option<&'static str> {
-    (route != section && current == Some(section)).then_some("true")
+fn aria_current(route: &Route, section: &Route) -> Option<&'static str> {
+    (route != section && route.section().as_ref() == Some(section)).then_some("true")
 }
 
 /// ヘッダーの四部のボタン。今いる部には `accent` の下線（差し色の使い場所の一つ）。
 #[component]
-fn SectionLink(section: Route, current: Option<&'static str>) -> Element {
+fn SectionLink(route: Route, section: Route) -> Element {
+    let here = route.section().as_ref() == Some(&section);
     rsx! {
         Link {
             to: section.clone(),
-            class: if current.is_some() { "text-body text-ink underline decoration-accent underline-offset-4" } else { "text-body text-ink" },
-            "aria-current": current,
+            class: if here { "text-body text-ink underline decoration-accent underline-offset-4" } else { "text-body text-ink" },
+            "aria-current": aria_current(&route, &section),
             {section.text().heading}
         }
     }
@@ -280,7 +295,8 @@ fn ThemeIcon() -> Element {
 /// スマホのメニュー。ヘッダーは残し、その下の画面をまるごと `paper` で覆う（ui-decisions「画面幅」）。
 /// 上から四部（名前とパス）、`line` を挟んでライトとダーク、アカウント（準備中）。項目を選ぶと閉じる。
 #[component]
-fn Menu(route: Route, section: Option<Route>, on_close: EventHandler<()>) -> Element {
+fn Menu(route: Route, on_close: EventHandler<()>) -> Element {
+    let here = route.section();
     rsx! {
         div { class: "fixed inset-x-0 top-8 bottom-0 z-10 overflow-y-auto bg-paper px-5 md:hidden",
             ul { class: "py-4",
@@ -289,9 +305,9 @@ fn Menu(route: Route, section: Option<Route>, on_close: EventHandler<()>) -> Ele
                         Link {
                             to: s.clone(),
                             class: "flex items-baseline justify-between py-3",
-                            "aria-current": aria_current(&route, &s, section.as_ref()),
+                            "aria-current": aria_current(&route, &s),
                             onclick: move |_| on_close.call(()),
-                            span { class: if section.as_ref() == Some(&s) { "text-heading underline decoration-accent underline-offset-4" } else { "text-heading" },
+                            span { class: if here.as_ref() == Some(&s) { "text-heading underline decoration-accent underline-offset-4" } else { "text-heading" },
                                 {s.text().heading}
                             }
                             span { class: "font-mono text-path text-muted", "{s}" }
@@ -310,7 +326,7 @@ fn Menu(route: Route, section: Option<Route>, on_close: EventHandler<()>) -> Ele
                 p { class: "flex items-center gap-3 py-3 text-body text-muted",
                     UserIcon { class: "size-5" }
                     "アカウント"
-                    span { class: "text-label", "登録は準備中" }
+                    span { class: "text-label", {ACCOUNT_NOTE} }
                 }
             }
         }

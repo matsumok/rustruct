@@ -209,8 +209,14 @@
   }
 }
 @layer utilities {
+  .absolute {
+    position: absolute;
+  }
   .fixed {
     position: fixed;
+  }
+  .relative {
+    position: relative;
   }
   .static {
     position: static;
@@ -226,6 +232,12 @@
   }
   .top-8 {
     top: var(--spacing-8);
+  }
+  .top-full {
+    top: 100%;
+  }
+  .right-0 {
+    right: var(--spacing-0);
   }
   .bottom-0 {
     bottom: var(--spacing-0);
@@ -265,9 +277,6 @@
   }
   .-ml-3 {
     margin-left: calc(var(--spacing-3) * -1);
-  }
-  .ml-auto {
-    margin-left: auto;
   }
   .box-content {
     box-sizing: content-box;
@@ -311,6 +320,9 @@
   }
   .min-w-0 {
     min-width: var(--spacing-0);
+  }
+  .flex-1 {
+    flex: 1;
   }
   .transform {
     transform: var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,);

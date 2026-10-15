@@ -210,8 +210,7 @@ fn ssg_paths_are_the_static_routes_and_the_not_found_page() {
 
 #[test]
 fn root_is_not_listed_on_home() {
-    let html = render_path("/");
-    let text = text_of(&html);
+    let text = text_of(&render_path("/"));
     assert!(!text.contains("/root"), "トップに /root が出ている: {text}");
 }
 
