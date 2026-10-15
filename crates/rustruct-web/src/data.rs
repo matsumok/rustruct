@@ -318,8 +318,8 @@ pub(crate) fn ConcretePage() -> Element {
                         thead {
                             HeadRow {
                                 HeadCell { first: true, "" }
-                                HeadCell { first: true, "長期" }
-                                HeadCell { first: true, "短期" }
+                                HeadCell { formula: true, "長期" }
+                                HeadCell { formula: true, "短期" }
                             }
                         }
                         tbody {
@@ -415,13 +415,22 @@ fn Row(children: Element) -> Element {
     }
 }
 
-/// 列見出し。`label` の muted。`first` の列は左、ほかは数値の列なので右に揃える。
-/// セルの左右は `space-3`、表の端の列は端に寄せる。
+/// 列見出し。`label` の muted。`first` の列は左、`formula` の列は式（`FormulaCell`）に合わせて左、
+/// ほかは数値の列なので右に揃える。セルの左右は `space-3`、表の端の列は端に寄せる。
 #[component]
-fn HeadCell(#[props(default)] first: bool, children: Element) -> Element {
+fn HeadCell(
+    #[props(default)] first: bool,
+    #[props(default)] formula: bool,
+    children: Element,
+) -> Element {
+    let class = match (first, formula) {
+        (true, _) => "py-2 pr-3 text-left text-label text-muted font-normal",
+        (false, true) => "py-2 pl-3 text-left text-label text-muted font-normal",
+        (false, false) => "py-2 pl-3 last:pr-0 text-right text-label text-muted font-normal",
+    };
     rsx! {
         th {
-            class: if first { "py-2 pr-3 text-left text-label text-muted font-normal" } else { "py-2 pl-3 last:pr-0 text-right text-label text-muted font-normal" },
+            class,
             {children}
         }
     }
