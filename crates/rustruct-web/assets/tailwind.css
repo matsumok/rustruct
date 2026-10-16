@@ -14,6 +14,7 @@
     --color-ink: #1c2024;
     --color-muted: #60646c;
     --color-ng: #ce2c31;
+    --color-scrim: #1c202466;
     --color-accent: #3e63dd;
     --color-chart-3: #1c2024;
     --text-display: 30px;
@@ -211,6 +212,17 @@
   }
 }
 @layer utilities {
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
   .absolute {
     position: absolute;
   }
@@ -226,14 +238,14 @@
   .sticky {
     position: sticky;
   }
-  .inset-x-0 {
-    inset-inline: var(--spacing-0);
+  .inset-0 {
+    inset: var(--spacing-0);
+  }
+  .inset-y-0 {
+    inset-block: var(--spacing-0);
   }
   .top-0 {
     top: var(--spacing-0);
-  }
-  .top-8 {
-    top: var(--spacing-8);
   }
   .top-full {
     top: 100%;
@@ -241,14 +253,14 @@
   .right-0 {
     right: var(--spacing-0);
   }
-  .bottom-0 {
-    bottom: var(--spacing-0);
-  }
-  .z-10 {
-    z-index: 10;
+  .left-0 {
+    left: var(--spacing-0);
   }
   .z-20 {
     z-index: 20;
+  }
+  .z-30 {
+    z-index: 30;
   }
   .mx-auto {
     margin-inline: auto;
@@ -377,6 +389,10 @@
     border-style: var(--tw-border-style);
     border-width: 2px;
   }
+  .border-r {
+    border-right-style: var(--tw-border-style);
+    border-right-width: 1px;
+  }
   .border-b {
     border-bottom-style: var(--tw-border-style);
     border-bottom-width: 1px;
@@ -392,6 +408,9 @@
   }
   .bg-paper {
     background-color: var(--color-paper);
+  }
+  .bg-scrim {
+    background-color: var(--color-scrim);
   }
   .p-3 {
     padding: var(--spacing-3);
@@ -533,6 +552,11 @@
       }
     }
   }
+  .md\:box-content {
+    @media (width >= 768px) {
+      box-sizing: content-box;
+    }
+  }
   .md\:block {
     @media (width >= 768px) {
       display: block;
@@ -551,6 +575,11 @@
   .md\:h-auto {
     @media (width >= 768px) {
       height: auto;
+    }
+  }
+  .md\:w-auto {
+    @media (width >= 768px) {
+      width: auto;
     }
   }
   .md\:w-column {
@@ -670,6 +699,7 @@
     --color-muted: #b0b4ba;
     --color-ng: #ff9592;
     --color-on-ink: #111113;
+    --color-scrim: #000000a6;
     --color-accent: #3e63dd;
     --color-accent-soft: #304384;
     --color-chart-1: #ffca16;
@@ -713,6 +743,7 @@
       --color-muted: #b0b4ba;
       --color-ng: #ff9592;
       --color-on-ink: #111113;
+      --color-scrim: #000000a6;
       --color-accent: #3e63dd;
       --color-accent-soft: #304384;
       --color-chart-1: #ffca16;

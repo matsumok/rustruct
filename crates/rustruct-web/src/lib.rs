@@ -26,6 +26,8 @@ mod data;
 mod icons;
 pub use data::{AllowableRow, ConcreteReadout};
 use data::{ConcretePage, DataIndex, RebarPage};
+use dioxus_primitives::collapsible::{Collapsible, CollapsibleContent, CollapsibleTrigger};
+use dioxus_primitives::dialog::{DialogContent, DialogRoot, DialogTitle};
 use icons::{ChevronIcon, CloseIcon, DarkIcon, LightIcon, MenuIcon, UserIcon};
 #[cfg(feature = "server")]
 pub use ssg::serve_config;
@@ -238,17 +240,14 @@ fn Header(route: Route) -> Element {
     rsx! {
         header { class: "sticky top-0 z-20 flex h-8 items-center justify-between border-b border-line bg-paper px-5 md:px-7 lg:px-8",
             div { class: "flex items-center gap-4",
+                // 閉じるボタンはメニューの側の同じ位置にある（メニューは幕ごとヘッダーに重なる）
                 button {
                     class: "p-3 text-ink",
                     r#type: "button",
-                    "aria-label": if menu_open() { "メニューを閉じる" } else { "メニューを開く" },
+                    "aria-label": "メニューを開く",
                     "aria-expanded": if menu_open() { "true" } else { "false" },
-                    onclick: move |_| menu_open.toggle(),
-                    if menu_open() {
-                        CloseIcon { class: "size-5" }
-                    } else {
-                        MenuIcon { class: "size-5" }
-                    }
+                    onclick: move |_| menu_open.set(true),
+                    MenuIcon { class: "size-5" }
                 }
                 Link { to: Route::Home {}, onclick: move |_| menu_open.set(false), Wordmark {} }
                 Breadcrumb { route: route.clone() }
@@ -279,9 +278,7 @@ fn Header(route: Route) -> Element {
                 }
             }
         }
-        if menu_open() {
-            Menu { route: route.clone(), on_close: move |_| menu_open.set(false) }
-        }
+        Menu { route: route.clone(), open: menu_open }
     }
 }
 
@@ -331,16 +328,36 @@ fn ThemeIcon() -> Element {
     }
 }
 
-/// メニュー。ヘッダーは残し、その下の画面をまるごと `paper` で覆う（ui-decisions「画面幅」）。左右の余白はヘッダーと同じ。
-/// iPad・PC でも木は1単位（`max-w-column`）の幅に収め、住所が画面の右端まで離れないようにする。
-/// 中身は住所の木（四部と、その下のページ）。ライトとダーク・アカウントはヘッダーにある。項目を選ぶと閉じる。
+/// メニュー。左から出すパネルで、本文には `scrim` の幕を掛ける（ui-decisions「メニュー」）。パネルはヘッダーの高さから
+/// 始まり、一番上の行の × はヘッダーのメニューのボタンと同じ位置。スマホではパネルが画面の幅いっぱいになる。
+/// iPad・PC では木の1単位（`w-column`）と左右の余白の幅。
+/// 振る舞いは `dioxus-primitives` の dialog に任せる（Esc と幕を押すと閉じる、フォーカスをパネルに閉じ込める、
+/// `role="dialog"`）。幕がヘッダーにも重なるので、ヘッダーのボタンと「外を押すと閉じる」がぶつからない。
+/// 中身は住所の木（四部と、その下のページ）。項目を選ぶと閉じる。
 #[component]
-fn Menu(route: Route, on_close: EventHandler<()>) -> Element {
+fn Menu(route: Route, open: Signal<bool>) -> Element {
+    let mut open = open;
     rsx! {
-        div { class: "fixed inset-x-0 top-8 bottom-0 z-10 overflow-y-auto bg-paper px-5 md:px-7 lg:px-8",
-            ul { class: "py-4 md:max-w-column",
-                for s in Route::sections() {
-                    MenuNode { node: s, here: route.clone(), depth: 0, on_close }
+        DialogRoot {
+            class: "fixed inset-0 z-30 bg-scrim",
+            open: Some(open()),
+            on_open_change: move |v| open.set(v),
+            DialogContent {
+                class: "fixed inset-y-0 left-0 w-full overflow-y-auto border-r border-line bg-paper md:w-auto",
+                DialogTitle { class: "sr-only", "メニュー" }
+                div { class: "flex h-8 items-center border-b border-line px-5 md:px-7 lg:px-8",
+                    button {
+                        class: "p-3 text-ink",
+                        r#type: "button",
+                        "aria-label": "メニューを閉じる",
+                        onclick: move |_| open.set(false),
+                        CloseIcon { class: "size-5" }
+                    }
+                }
+                ul { class: "px-5 py-4 md:w-column md:box-content md:px-7 lg:px-8",
+                    for s in Route::sections() {
+                        MenuNode { node: s, here: route.clone(), depth: 0, on_close: move |_| open.set(false) }
+                    }
                 }
             }
         }
@@ -349,7 +366,7 @@ fn Menu(route: Route, on_close: EventHandler<()>) -> Element {
 
 /// メニューの木の1段。見出し（と枝なら開け閉めのボタン）を左に、住所を右に置き、枝の子をその下に字下げして並べる。
 /// 枝は今いるページを含むときだけ開いた形で出る。今いるページの見出しに `accent` の下線（#28）。
-/// 段も子もルーターの住所一覧から導く（`Route::children`）。
+/// 段も子もルーターの住所一覧から導く（`Route::children`）。開け閉めは `dioxus-primitives` の collapsible。
 #[component]
 fn MenuNode(node: Route, here: Route, depth: usize, on_close: EventHandler<()>) -> Element {
     let children = node.children();
@@ -368,36 +385,44 @@ fn MenuNode(node: Route, here: Route, depth: usize, on_close: EventHandler<()>) 
     } else {
         "size-4 -rotate-90"
     };
+    let link = rsx! {
+        Link {
+            to: node.clone(),
+            class: "py-2",
+            "aria-current": aria_current(&here, &node),
+            onclick: move |_| on_close.call(()),
+            span { class, {heading} }
+        }
+    };
+    let path = rsx! {
+        span { class: "font-mono text-path text-muted", "{node}" }
+    };
+    if children.is_empty() {
+        return rsx! {
+            li { class: "flex items-center justify-between", {link} {path} }
+        };
+    }
     rsx! {
         li {
-            div { class: "flex items-center justify-between",
-                div { class: "flex items-center",
-                    Link {
-                        to: node.clone(),
-                        class: "py-2",
-                        "aria-current": aria_current(&here, &node),
-                        onclick: move |_| on_close.call(()),
-                        span { class,
-                            {heading}
-                        }
-                    }
-                    if !children.is_empty() {
-                        button {
+            Collapsible {
+                open: Some(open()),
+                on_open_change: move |v| open.set(v),
+                div { class: "flex items-center justify-between",
+                    div { class: "flex items-center",
+                        {link}
+                        CollapsibleTrigger {
                             class: "p-3 text-muted",
-                            r#type: "button",
                             "aria-label": if open() { "{heading}を閉じる" } else { "{heading}を開く" },
-                            "aria-expanded": if open() { "true" } else { "false" },
-                            onclick: move |_| open.toggle(),
                             ChevronIcon { class: chevron }
                         }
                     }
+                    {path}
                 }
-                span { class: "font-mono text-path text-muted", "{node}" }
-            }
-            if open() && !children.is_empty() {
-                ul { class: "pl-5",
-                    for c in children {
-                        MenuNode { node: c, here: here.clone(), depth: depth + 1, on_close }
+                CollapsibleContent {
+                    ul { class: "pl-5",
+                        for c in children {
+                            MenuNode { node: c, here: here.clone(), depth: depth + 1, on_close }
+                        }
                     }
                 }
             }
