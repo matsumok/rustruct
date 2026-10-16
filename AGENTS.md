@@ -15,6 +15,10 @@ Rust は stable。`rust-toolchain.toml` が channel と wasm ターゲットを�
 - 配置: `main` への push で CI が Cloudflare Workers Static Assets に置き、PR にはプレビュー URL が付く。設定は `wrangler.toml`、人がやること（Secrets、DNS）と困ったときは `docs/deploy.md`。手元から配置はしない
 - レビューの規則は `CODING_STANDARDS.md`
 
+## 公開リポジトリに書かないもの
+
+このリポジトリは公開。本人の claude.ai のアーティファクト（デザインシステム、4画面のモック）の URL と ID は、リポジトリのファイル、コミットメッセージ、PR と Issue の本文・コメントのどこにも書かない。指すときは「本人の claude.ai のデザインシステム」と書く。URL はエージェントの手元の memory に置く（無ければ本人に聞く）。2026-10-13 から 10-16 まで `docs/ui-decisions.md` に ID が載っていた（履歴には残る。本人の判断で書き換えない）。
+
 ## Agent skills
 
 ### Issue tracker
