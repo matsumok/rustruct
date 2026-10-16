@@ -122,12 +122,12 @@ impl Allowable {
     }
 
     /// 長期の根拠の式。規準の「A かつ B 以下」は min(A, B) と書く
-    fn long_term_formula(self) -> &'static str {
+    fn long_term_formula(self) -> Formula {
         match self {
-            Self::Compression => "Fc/3",
-            Self::Shear => "min(Fc/30, 0.49+Fc/100)",
-            Self::BondTop => "min(Fc/15, 0.9+2Fc/75)",
-            Self::BondOther => "min(Fc/10, 1.35+Fc/25)",
+            Self::Compression => Formula::Plain("Fc/3"),
+            Self::Shear => Formula::Min("Fc/30", "0.49+Fc/100"),
+            Self::BondTop => Formula::Min("Fc/15", "0.9+2Fc/75"),
+            Self::BondOther => Formula::Min("Fc/10", "1.35+Fc/25"),
         }
     }
 
@@ -147,6 +147,14 @@ impl Allowable {
             Self::BondOther => c.allowable_bond(BarPosition::Other),
         }
     }
+}
+
+/// 根拠の表の式。`Min` は min(A, B) で、`FormulaCell` が A の後で折り返して B を A の下に揃える。
+/// 1行の min(A, B) では式の列が広く、名前の列が語の途中で切れたため。
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Formula {
+    Plain(&'static str),
+    Min(&'static str, &'static str),
 }
 
 /// 許容応力度の表の1行。値は有効数字 3 桁の文字（`docs/materials/adr/0003`）。
@@ -398,9 +406,16 @@ pub(crate) fn ConcretePage() -> Element {
                             tbody {
                                 for a in Allowable::ALL {
                                     Row {
-                                        TextCell { {a.name()} }
-                                        FormulaCell { {a.long_term_formula()} }
-                                        FormulaCell { {a.short_term_formula()} }
+                                        // 式が2行になる付着は、名前も括弧書きの前で改行する。1行では式と短期の列に押されて
+                                        // スマホ幅で「（その他／の鉄筋）」と語の途中で切れたため
+                                        TextCell {
+                                            match a.name().split_once('（') {
+                                                Some((head, rest)) => rsx! { {head} br {} "（{rest}" },
+                                                None => rsx! { {a.name()} },
+                                            }
+                                        }
+                                        FormulaCell { formula: a.long_term_formula() }
+                                        FormulaCell { formula: Formula::Plain(a.short_term_formula()) }
                                     }
                                 }
                             }
@@ -586,11 +601,19 @@ fn ParenCell(children: Element) -> Element {
     }
 }
 
-/// 式のセル。`num` の等幅で左揃え、折り返さない。
+/// 式のセル。`num` の等幅で左揃え、勝手には折り返さない。min(A, B) は「min(」の右に A と B を縦に積む。
 #[component]
-fn FormulaCell(children: Element) -> Element {
+fn FormulaCell(formula: Formula) -> Element {
     rsx! {
-        td { class: "py-2 pl-3 first:pl-0 first:pr-3 font-mono text-num whitespace-nowrap", {children} }
+        td { class: "py-2 pl-3 first:pl-0 first:pr-3 font-mono text-num whitespace-nowrap",
+            match formula {
+                Formula::Plain(f) => rsx! { {f} },
+                Formula::Min(a, b) => rsx! {
+                    "min("
+                    span { class: "inline-block align-top", "{a}," br {} "{b})" }
+                },
+            }
+        }
     }
 }
 

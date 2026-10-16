@@ -207,7 +207,7 @@ fn concrete_page_reads_input_then_results_then_their_basis() {
             "0.730",
             "Fc ≦ 36",
             "E = 3.35×10⁴ × (γ/24)² × (Fc/60)1/3",
-            "min(Fc/30, 0.49+Fc/100)",
+            "min(Fc/30,0.49+Fc/100)",
         ],
     );
 }
@@ -245,10 +245,18 @@ fn allowable_stress_basis_has_long_and_short_term_columns_and_no_notes() {
             "Fc/3",
             "長期 × 2",
             "せん断",
-            "min(Fc/30, 0.49+Fc/100)",
+            "min(Fc/30,0.49+Fc/100)",
             "長期 × 1.5",
         ],
     );
+    let html = render_path("/data/concrete");
+    // min(A, B) は「,」の後で改行して B を A の下に積み、式が2行になる付着は名前も括弧書きの前で改行する
+    for stacked in [
+        "min(<span class=\"inline-block align-top\">Fc/30,<br/>0.49+Fc/100)",
+        "付着<br/>（上端筋）",
+    ] {
+        assert!(html.contains(stacked), "{stacked} が無い: {html}");
+    }
     for note in ["短期は長期の", "かぶりが", "Fc は N/mm²"] {
         assert!(!text.contains(note), "注記「{note}」が出ている");
     }
