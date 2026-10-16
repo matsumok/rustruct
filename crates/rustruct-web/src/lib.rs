@@ -26,7 +26,7 @@ mod data;
 mod icons;
 pub use data::{AllowableRow, ConcreteReadout};
 use data::{ConcretePage, DataIndex, RebarPage};
-use icons::{CloseIcon, DarkIcon, LightIcon, MenuIcon, UserIcon};
+use icons::{ChevronIcon, CloseIcon, DarkIcon, LightIcon, MenuIcon, UserIcon};
 #[cfg(feature = "server")]
 pub use ssg::serve_config;
 pub use ssg::{NOT_FOUND_PATH, static_paths};
@@ -143,17 +143,50 @@ impl Route {
         format!("{} · {WORDMARK}", self.text().heading)
     }
 
-    /// このページが入る四部の一つ（`/data/concrete` なら Data）。トップ・root・not-found は無し。
-    /// not-found はどの住所でも同じ 1 ファイルなので、`/tools/nothing` でも部に入れない（ADR-0001 の規則）。
-    fn section(&self) -> Option<Route> {
-        if matches!(self, Route::NotFound { .. }) {
-            return None;
+    /// ヘッダーのパンくずの段。住所を「/」ごとに区切った各段と、押すと行くページ（今いる段と、ページの無い段は
+    /// None）。行き先はルーターの住所一覧から引くので、一覧を別に書かない。トップは段が無い。not-found は
+    /// どの住所でも同じ 1 ファイルなので、住所を出さない（ADR-0001 の規則）。
+    fn trail(&self) -> Vec<(String, Option<Route>)> {
+        if matches!(self, Route::Home {} | Route::NotFound { .. }) {
+            return Vec::new();
         }
         let path = self.to_string();
-        Route::sections().find(|section| {
-            let base = section.to_string();
-            path == base || path.starts_with(&format!("{base}/"))
-        })
+        let mut prefix = String::new();
+        let mut steps = path.split('/').filter(|s| !s.is_empty()).peekable();
+        let mut trail = Vec::new();
+        while let Some(step) = steps.next() {
+            prefix = format!("{prefix}/{step}");
+            let to = steps.peek().and_then(|_| {
+                Route::static_routes()
+                    .into_iter()
+                    .find(|r| r.to_string() == prefix)
+            });
+            trail.push((format!("/{step}"), to));
+        }
+        trail
+    }
+
+    /// 住所が一段だけ深いページ（`/data` なら `/data/concrete` と `/data/rebar`）。メニューの木の枝。
+    /// ルーターの住所一覧から導く。
+    fn children(&self) -> Vec<Route> {
+        let base = format!("{self}/");
+        Route::static_routes()
+            .into_iter()
+            .filter(|r| {
+                r.to_string()
+                    .strip_prefix(&base)
+                    .is_some_and(|rest| !rest.is_empty() && !rest.contains('/'))
+            })
+            .collect()
+    }
+
+    /// `other` がこのページか、その下のページか。not-found はどこにも入らない（ADR-0001 の規則）。
+    fn holds(&self, other: &Route) -> bool {
+        if matches!(other, Route::NotFound { .. }) {
+            return false;
+        }
+        let (base, path) = (self.to_string(), other.to_string());
+        path == base || path.starts_with(&format!("{base}/"))
     }
 }
 
@@ -218,6 +251,7 @@ fn Header(route: Route) -> Element {
                     }
                 }
                 Link { to: Route::Home {}, onclick: move |_| menu_open.set(false), Wordmark {} }
+                Breadcrumb { route: route.clone() }
             }
             div { class: "flex items-center gap-4",
                 button {
@@ -251,13 +285,40 @@ fn Header(route: Route) -> Element {
     }
 }
 
+/// 今いる場所。wordmark の右に住所を段ごとに置き、親の段はそのページへのリンク、今いる段はリンクにしない
+/// （#28）。文字は wordmark と同じ大きさの等幅で、親の段は `.matsumok.com` と同じ muted の 400。
+/// スマホでは出さない（今いる場所はメニューの木で示す）。
+#[component]
+fn Breadcrumb(route: Route) -> Element {
+    let trail = route.trail();
+    if trail.is_empty() {
+        return rsx! {};
+    }
+    let last = trail.len() - 1;
+    rsx! {
+        nav { class: "hidden md:block", "aria-label": "現在地",
+            ol { class: "flex font-mono text-wordmark font-normal",
+                for (i, (step, to)) in trail.into_iter().enumerate() {
+                    li {
+                        match to {
+                            Some(to) => rsx! { Link { to, class: "text-muted hover:text-ink", {step} } },
+                            None if i == last => rsx! { span { class: "text-ink", "aria-current": "page", {step} } },
+                            None => rsx! { span { class: "text-muted", {step} } },
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// ログインの仕組みができるまで、アカウントのボタンが言うこと（ui-decisions「画面幅」）。
 const ACCOUNT_NOTE: &str = "登録は準備中";
 
-/// 今いる部の印（`aria-current`）。部のページそのものには `Link` が自分で `page` を付けるので、
-/// ここではその下のページの `true` だけを付ける（同じ属性を二重にしない）。
-fn aria_current(route: &Route, section: &Route) -> Option<&'static str> {
-    (route != section && route.section().as_ref() == Some(section)).then_some("true")
+/// 今いるページを含む段の印（`aria-current`）。今いるページそのものには `Link` が自分で `page` を付けるので、
+/// ここではその上の段の `true` だけを付ける（同じ属性を二重にしない）。
+fn aria_current(here: &Route, node: &Route) -> Option<&'static str> {
+    (here != node && node.holds(here)).then_some("true")
 }
 
 /// ライトとダークのアイコン。今の色のほうを出す。色は描く前に決まるが、どちらかはブラウザでしか分からないので、
@@ -271,25 +332,71 @@ fn ThemeIcon() -> Element {
 }
 
 /// スマホのメニュー。ヘッダーは残し、その下の画面をまるごと `paper` で覆う（ui-decisions「画面幅」）。
-/// 中身は四部（名前とパス。今いる部に下線）だけ。ライトとダーク・アカウントはヘッダーにある。項目を選ぶと閉じる。
+/// 中身は住所の木（四部と、その下のページ）。ライトとダーク・アカウントはヘッダーにある。項目を選ぶと閉じる。
 #[component]
 fn Menu(route: Route, on_close: EventHandler<()>) -> Element {
-    let here = route.section();
     rsx! {
         div { class: "fixed inset-x-0 top-8 bottom-0 z-10 overflow-y-auto bg-paper px-5 md:hidden",
             ul { class: "py-4",
                 for s in Route::sections() {
-                    li {
-                        Link {
-                            to: s.clone(),
-                            class: "flex items-baseline justify-between py-3",
-                            "aria-current": aria_current(&route, &s),
-                            onclick: move |_| on_close.call(()),
-                            span { class: if here.as_ref() == Some(&s) { "text-heading underline decoration-accent underline-offset-4" } else { "text-heading" },
-                                {s.text().heading}
-                            }
-                            span { class: "font-mono text-path text-muted", "{s}" }
+                    MenuNode { node: s, here: route.clone(), depth: 0, on_close }
+                }
+            }
+        }
+    }
+}
+
+/// メニューの木の1段。見出し（と枝なら開け閉めのボタン）を左に、住所を右に置き、枝の子をその下に字下げして並べる。
+/// 枝は今いるページを含むときだけ開いた形で出る。今いるページの見出しに `accent` の下線（#28）。
+/// 段も子もルーターの住所一覧から導く（`Route::children`）。
+#[component]
+fn MenuNode(node: Route, here: Route, depth: usize, on_close: EventHandler<()>) -> Element {
+    let children = node.children();
+    let mut open = use_signal(|| node.holds(&here));
+    let heading = node.text().heading;
+    // 四部は heading、その下のページは body。今いるページには下線
+    let class = match (depth == 0, node == here) {
+        (true, false) => "text-heading",
+        (true, true) => "text-heading underline decoration-accent underline-offset-4",
+        (false, false) => "text-body",
+        (false, true) => "text-body underline decoration-accent underline-offset-4",
+    };
+    // 閉じた枝の印は右向き
+    let chevron = if open() {
+        "size-4"
+    } else {
+        "size-4 -rotate-90"
+    };
+    rsx! {
+        li {
+            div { class: "flex items-center justify-between",
+                div { class: "flex items-center",
+                    Link {
+                        to: node.clone(),
+                        class: "py-3",
+                        "aria-current": aria_current(&here, &node),
+                        onclick: move |_| on_close.call(()),
+                        span { class,
+                            {heading}
                         }
+                    }
+                    if !children.is_empty() {
+                        button {
+                            class: "p-3 text-muted",
+                            r#type: "button",
+                            "aria-label": if open() { "{heading}を閉じる" } else { "{heading}を開く" },
+                            "aria-expanded": if open() { "true" } else { "false" },
+                            onclick: move |_| open.toggle(),
+                            ChevronIcon { class: chevron }
+                        }
+                    }
+                }
+                span { class: "font-mono text-path text-muted", "{node}" }
+            }
+            if open() && !children.is_empty() {
+                ul { class: "pl-5",
+                    for c in children {
+                        MenuNode { node: c, here: here.clone(), depth: depth + 1, on_close }
                     }
                 }
             }
@@ -363,22 +470,16 @@ fn SectionPage() -> Element {
     }
 }
 
-/// 住所で組む下層ページ。伸びた住所、`title` の見出し（ページ名）、本文の順。サイドバーもパンくずも無い。
+/// 下層ページ。`title` の見出し（ページ名）、本文の順。サイドバーは無い。
 /// 本文の箱は最大2単位（`max-w-page`）で、左右の余白の内側で中央に置く。
-/// 住所は長い一語でも折り返す（not-found はどんな住所でも受ける）。
-/// `with_path` を倒すと住所の行を空にする（not-found が起動前に使う）。
+/// 住所は本文に出さない。iPad・PC はヘッダーのパンくず、スマホはメニューの木で示す（#28）。
 #[component]
-fn Page(route: Route, #[props(default = true)] with_path: bool, children: Element) -> Element {
+fn Page(route: Route, children: Element) -> Element {
     rsx! {
+        // 見出しと本文の間は space-7（ページの見出しも一つの区切りなので、セクションの間と同じ。12 では狭く見えた。
+        // 2026-10-15、20・28・40 を撮り比べて本人が決めた）
         main { class: "mx-auto flex max-w-page flex-col gap-7 py-7 lg:max-w-page-lg",
-            // 住所と見出しの組（間は space-2）。本文との間は space-7（ページの見出しも一つの区切りなので、
-            // セクションの間と同じ。12 では狭く見えた。2026-10-15、20・28・40 を撮り比べて本人が決めた）
-            div { class: "flex flex-col gap-2",
-                p { class: "font-mono text-path text-muted break-all",
-                    {with_path.then(|| route.to_string())}
-                }
-                h1 { class: "text-title", {route.text().heading} }
-            }
+            h1 { class: "text-title", {route.text().heading} }
             div { class: "text-body", {children} }
         }
     }
@@ -395,14 +496,11 @@ fn RootPage() -> Element {
 
 /// 存在しない住所。同じ枠の中で「ない」ことを一文で示す。
 ///
-/// 静的な 1 ファイル（`NOT_FOUND_PATH`）がどの住所でも届くので、求められた住所はブラウザでしか
-/// 決まらない。初回描画には入れず、起動後に `use_effect` で出す（ADR-0001 の規則）。
+/// 静的な 1 ファイル（`NOT_FOUND_PATH`）がどの住所でも届くので、求められた住所は出さない（ADR-0001 の規則）。
 #[component]
 fn NotFound(segments: Vec<String>) -> Element {
     let route = Route::NotFound { segments };
-    let mut started = use_signal(|| false);
-    use_effect(move || started.set(true));
     rsx! {
-        Page { route: route.clone(), with_path: started(), {route.text().description} }
+        Page { route: route.clone(), {route.text().description} }
     }
 }
