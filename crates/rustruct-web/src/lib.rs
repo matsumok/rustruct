@@ -240,7 +240,7 @@ fn Header(route: Route) -> Element {
     rsx! {
         header { class: "sticky top-0 z-20 flex h-8 items-center justify-between border-b border-line bg-paper px-5 md:px-7 lg:px-8",
             div { class: "flex items-center gap-4",
-                // 閉じるボタンはメニューの側の同じ位置にある（メニューは幕ごとヘッダーに重なる）
+                // 閉じるボタンはメニューの右上にある（メニューは幕ごとヘッダーに重なる）
                 button {
                     class: "p-3 text-ink",
                     r#type: "button",
@@ -329,7 +329,7 @@ fn ThemeIcon() -> Element {
 }
 
 /// メニュー。左から出すパネルで、本文には `scrim` の幕を掛ける（ui-decisions「メニュー」）。パネルはヘッダーの高さから
-/// 始まり、一番上の行の × はヘッダーのメニューのボタンと同じ位置。スマホではパネルが画面の幅いっぱいになる。
+/// 始まり、一番上の行の右端に × を置く（2026-10-16、本人の指示）。スマホではパネルが画面の幅いっぱいになる。
 /// iPad・PC では木の1単位（`w-column`）と左右の余白の幅。
 /// 振る舞いは `dioxus-primitives` の dialog に任せる（Esc と幕を押すと閉じる、フォーカスをパネルに閉じ込める、
 /// `role="dialog"`）。幕がヘッダーにも重なるので、ヘッダーのボタンと「外を押すと閉じる」がぶつからない。
@@ -345,7 +345,7 @@ fn Menu(route: Route, open: Signal<bool>) -> Element {
             DialogContent {
                 class: "fixed inset-y-0 left-0 w-full overflow-y-auto border-r border-line bg-paper md:w-auto",
                 DialogTitle { class: "sr-only", "メニュー" }
-                div { class: "flex h-8 items-center border-b border-line px-5 md:px-7 lg:px-8",
+                div { class: "flex h-8 items-center justify-end border-b border-line px-5 md:px-7 lg:px-8",
                     button {
                         class: "p-3 text-ink",
                         r#type: "button",
