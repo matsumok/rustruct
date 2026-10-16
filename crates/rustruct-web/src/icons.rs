@@ -1,4 +1,4 @@
-//! ヘッダーのボタンのアイコン（`docs/ui-decisions.md`「画面幅」。アイコンはヘッダーのボタンだけ）。
+//! ヘッダーのボタンとメニューの開け閉めのアイコン（`docs/ui-decisions.md`「画面幅」）。
 //!
 //! IBM の Carbon（`@carbon/icons` 11.90.0、32 の格子の SVG）の path をそのまま写した。
 //! Copyright IBM Corp. Apache License 2.0（写しは `src/icons/LICENSE`）。
@@ -104,5 +104,13 @@ pub fn UserIcon(class: &'static str) -> Element {
                 ),
             ],
         }
+    }
+}
+
+/// 開け閉め（`chevron--down`）。閉じた枝は置く側で右向きに回す。
+#[component]
+pub fn ChevronIcon(class: &'static str) -> Element {
+    rsx! {
+        Icon { class, paths: &[("M16 22 6 12 7.4 10.6 16 19.2 24.6 10.6 26 12 16 22z", "")] }
     }
 }

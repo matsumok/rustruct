@@ -12,6 +12,9 @@ rustruct-types.workspace = true
 rustruct-calc.workspace = true
 charta.workspace = true
 dioxus.workspace = true
+# 開け閉めやダイアログの振る舞い（Esc・外を押して閉じる・フォーカス・読み上げ）。見た目は付けず Tailwind で書く（#28）。
+# crates.io にはまだ出ていないので、git の版を固定する
+dioxus-primitives = { git = "https://github.com/DioxusLabs/components", rev = "9a758255", default-features = false }
 
 # 継ぎ目 A（パス → HTML 文字列、src/prerender.rs）はネイティブだけ。ブラウザの WASM には入れない
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
