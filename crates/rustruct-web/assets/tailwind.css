@@ -408,9 +408,6 @@
   .py-2 {
     padding-block: var(--spacing-2);
   }
-  .py-3 {
-    padding-block: var(--spacing-3);
-  }
   .py-4 {
     padding-block: var(--spacing-4);
   }
@@ -544,11 +541,6 @@
   .md\:flex {
     @media (width >= 768px) {
       display: flex;
-    }
-  }
-  .md\:hidden {
-    @media (width >= 768px) {
-      display: none;
     }
   }
   .md\:inline {

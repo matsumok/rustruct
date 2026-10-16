@@ -228,7 +228,7 @@ fn Frame() -> Element {
 }
 
 /// ヘッダー。左右の余白の内側いっぱいに、左の組（サイト名）と右の組（ライトとダーク・アカウント）。
-/// スマホ（`md` 未満）はサイト名を `rustruct` だけにし、四部へはメニューから行く（メニューのボタンは左の組の頭）。
+/// スマホ（`md` 未満）はサイト名を `rustruct` だけにする。四部へはどの幅でもメニューから行く（メニューのボタンは左の組の頭）。
 /// 組の中の間は `space-4`。アイコンのボタンは押せる範囲を `space-3` の内側の余白で取り、その範囲の端を
 /// 左右の余白の線にそろえる。
 #[component]
@@ -239,7 +239,7 @@ fn Header(route: Route) -> Element {
         header { class: "sticky top-0 z-20 flex h-8 items-center justify-between border-b border-line bg-paper px-5 md:px-7 lg:px-8",
             div { class: "flex items-center gap-4",
                 button {
-                    class: "p-3 text-ink md:hidden",
+                    class: "p-3 text-ink",
                     r#type: "button",
                     "aria-label": if menu_open() { "メニューを閉じる" } else { "メニューを開く" },
                     "aria-expanded": if menu_open() { "true" } else { "false" },
@@ -331,13 +331,14 @@ fn ThemeIcon() -> Element {
     }
 }
 
-/// スマホのメニュー。ヘッダーは残し、その下の画面をまるごと `paper` で覆う（ui-decisions「画面幅」）。
+/// メニュー。ヘッダーは残し、その下の画面をまるごと `paper` で覆う（ui-decisions「画面幅」）。左右の余白はヘッダーと同じ。
+/// iPad・PC でも木は1単位（`max-w-column`）の幅に収め、住所が画面の右端まで離れないようにする。
 /// 中身は住所の木（四部と、その下のページ）。ライトとダーク・アカウントはヘッダーにある。項目を選ぶと閉じる。
 #[component]
 fn Menu(route: Route, on_close: EventHandler<()>) -> Element {
     rsx! {
-        div { class: "fixed inset-x-0 top-8 bottom-0 z-10 overflow-y-auto bg-paper px-5 md:hidden",
-            ul { class: "py-4",
+        div { class: "fixed inset-x-0 top-8 bottom-0 z-10 overflow-y-auto bg-paper px-5 md:px-7 lg:px-8",
+            ul { class: "py-4 md:max-w-column",
                 for s in Route::sections() {
                     MenuNode { node: s, here: route.clone(), depth: 0, on_close }
                 }
@@ -373,7 +374,7 @@ fn MenuNode(node: Route, here: Route, depth: usize, on_close: EventHandler<()>) 
                 div { class: "flex items-center",
                     Link {
                         to: node.clone(),
-                        class: "py-3",
+                        class: "py-2",
                         "aria-current": aria_current(&here, &node),
                         onclick: move |_| on_close.call(()),
                         span { class,
