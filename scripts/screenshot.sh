@@ -40,13 +40,18 @@ file_url() {
 }
 
 shoot() { # $1=幅 $2=ファイル名 $3=追加フラグ
+  # ページは scrollbar-gutter: stable なので、iframe の中ではスクロールバーの幅（Windows で 15px）を本文から引く。
+  # スマホと iPad（1024px 未満。docs/adr/0007）はスクロールバーを本文に重ね、幅を取らない。その幅では Chrome にも
+  # 重ねさせる。無いと 375 で撮っても 360 の画面で組まれ、折り返しを誤診する。PC は実機も幅を取るので、そのまま
+  scroll=
+  [ "$1" -lt 1024 ] && scroll=--enable-features=OverlayScrollbar
   cat > "$dir/frame.html" <<EOF
 <!doctype html><html><head><meta charset="utf-8">
 <style>html,body{margin:0}iframe{display:block;border:0;width:${1}px;height:${height}px}</style>
 </head><body><iframe src="$url"></iframe></body></html>
 EOF
   rm -rf "$dir/profile"
-  "$browser" --headless=new --disable-gpu --hide-scrollbars --no-first-run \
+  "$browser" --headless=new --disable-gpu --hide-scrollbars $scroll --no-first-run \
     --user-data-dir="$(out "$dir/profile")" \
     --window-size=$1,$height --virtual-time-budget=5000 $3 \
     --screenshot="$(out "$dir/$2")" "$(file_url "$dir/frame.html")" >/dev/null 2>&1
