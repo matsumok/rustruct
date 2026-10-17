@@ -247,6 +247,7 @@ pub(crate) fn ConcretePage() -> Element {
                     if let Some(message) = warning {
                         p { class: "mt-1 text-label", "! {message}" }
                     }
+                    div { class: "mt-6", crate::proto_primitives::Proto { fc } }
                     div { class: "mt-6",
                         Table {
                             thead {

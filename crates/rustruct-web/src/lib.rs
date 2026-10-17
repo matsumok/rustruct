@@ -19,6 +19,9 @@ pub use prerender::render_path;
 /// SSG: 書き出す住所の列挙と、書く場所の設定。
 mod ssg;
 
+/// PROTOTYPE（使い捨て）。dioxus-primitives の試作。
+mod proto_primitives;
+
 /// Data: 材料や規格の値のページ。
 mod data;
 pub use data::{AllowableRow, ConcreteReadout};

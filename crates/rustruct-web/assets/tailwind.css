@@ -9,11 +9,13 @@
     --default-font-family: var(--font-sans);
     --default-mono-font-family: var(--font-mono);
     --color-paper: #ffffff;
+    --color-fill: #f0f0f3;
     --color-line: #e0e1e6;
     --color-line-strong: #8b8d98;
     --color-ink: #1c2024;
     --color-muted: #60646c;
     --color-ng: #ce2c31;
+    --color-on-ink: #ffffff;
     --color-accent: #3e63dd;
     --color-chart-3: #1c2024;
     --text-display: 30px;
@@ -202,8 +204,20 @@
   }
 }
 @layer utilities {
+  .absolute {
+    position: absolute;
+  }
+  .relative {
+    position: relative;
+  }
   .static {
     position: static;
+  }
+  .top-full {
+    top: 100%;
+  }
+  .z-10 {
+    z-index: 10;
   }
   .mt-1 {
     margin-top: var(--spacing-1);
@@ -232,11 +246,25 @@
   .contents {
     display: contents;
   }
+  .flex {
+    display: flex;
+  }
   .grid {
     display: grid;
   }
+  .inline-block {
+    display: inline-block;
+  }
   .table {
     display: table;
+  }
+  .size-2 {
+    width: var(--spacing-2);
+    height: var(--spacing-2);
+  }
+  .size-4 {
+    width: var(--spacing-4);
+    height: var(--spacing-4);
   }
   .w-column {
     width: var(--container-column);
@@ -252,6 +280,21 @@
   }
   .grid-cols-1 {
     grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+  .flex-col {
+    flex-direction: column;
+  }
+  .items-center {
+    align-items: center;
+  }
+  .justify-center {
+    justify-content: center;
+  }
+  .gap-2 {
+    gap: var(--spacing-2);
+  }
+  .gap-3 {
+    gap: var(--spacing-3);
   }
   .gap-4 {
     gap: var(--spacing-4);
@@ -302,8 +345,14 @@
   .border-ng {
     border-color: var(--color-ng);
   }
+  .bg-on-ink {
+    background-color: var(--color-on-ink);
+  }
   .bg-paper {
     background-color: var(--color-paper);
+  }
+  .p-3 {
+    padding: var(--spacing-3);
   }
   .p-5 {
     padding: var(--spacing-5);
@@ -313,6 +362,9 @@
   }
   .px-5 {
     padding-inline: var(--spacing-5);
+  }
+  .py-1 {
+    padding-block: var(--spacing-1);
   }
   .py-2 {
     padding-block: var(--spacing-2);
@@ -412,6 +464,31 @@
   }
   .text-ng {
     color: var(--color-ng);
+  }
+  .data-\[highlighted\=true\]\:bg-fill {
+    &[data-highlighted="true"] {
+      background-color: var(--color-fill);
+    }
+  }
+  .data-\[selected\=true\]\:text-accent {
+    &[data-selected="true"] {
+      color: var(--color-accent);
+    }
+  }
+  .data-\[state\=checked\]\:border-ink {
+    &[data-state="checked"] {
+      border-color: var(--color-ink);
+    }
+  }
+  .data-\[state\=checked\]\:bg-ink {
+    &[data-state="checked"] {
+      background-color: var(--color-ink);
+    }
+  }
+  .data-\[state\=closed\]\:hidden {
+    &[data-state="closed"] {
+      display: none;
+    }
   }
   .sm\:grid-cols-2 {
     @media (width >= 40rem) {

@@ -12,6 +12,7 @@ rustruct-types.workspace = true
 rustruct-calc.workspace = true
 charta.workspace = true
 dioxus.workspace = true
+dioxus-primitives = { git = "https://github.com/DioxusLabs/components", rev = "9a758255ea26e2b20c8cecf4c1c946feb9e71da7", version = "0.0.1" }
 
 # 継ぎ目 A（パス → HTML 文字列、src/prerender.rs）はネイティブだけ。ブラウザの WASM には入れない
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -26,5 +27,5 @@ serde_json.workspace = true
 
 [features]
 default = []
-web = ["dioxus/web"]
+web = ["dioxus/web", "dioxus-primitives/web"]
 server = ["dioxus/server"]
