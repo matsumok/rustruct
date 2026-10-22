@@ -12,6 +12,7 @@ mod fixed;
 mod hyperbolic;
 mod levy;
 mod linear;
+mod simply_supported;
 mod solver;
 mod support_type;
 
@@ -160,6 +161,7 @@ pub fn solve_with_terms(plate: &Plate, terms: usize) -> Result<Solution, PlateEr
     let b = rep_ly / rep_lx;
     let solver: Box<dyn Solver> = match support_type {
         SupportType::FFFF => Box::new(fixed::solve(b, terms).ok_or(PlateError::Singular)?),
+        SupportType::SSSS => Box::new(simply_supported::solve(b, terms)),
         SupportType::RRRR | SupportType::RRRS => return Err(PlateError::Unstable(support_type)),
         SupportType::FFFR
         | SupportType::FFFS
@@ -177,8 +179,7 @@ pub fn solve_with_terms(plate: &Plate, terms: usize) -> Result<Solution, PlateEr
         | SupportType::FSSS
         | SupportType::RRSS
         | SupportType::RSRS
-        | SupportType::RSSS
-        | SupportType::SSSS => return Err(PlateError::Unsupported(support_type)),
+        | SupportType::RSSS => return Err(PlateError::Unsupported(support_type)),
     };
     Ok(Solution {
         plate: *plate,
