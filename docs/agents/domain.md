@@ -31,10 +31,19 @@ Multi-context repo (presence of `GLOSSARY-MAP.md` at the root). This repo is mul
 ├── GLOSSARY.md                        ← site-wide language
 └── docs/
     ├── adr/                           ← site-wide decisions
+    ├── materials/                     ← a context shared by several Tools
+    │   ├── GLOSSARY.md
+    │   └── adr/
+    ├── slab/                          ← same, for the RC slab Tools
+    │   ├── GLOSSARY.md
+    │   └── adr/
     └── tools/
-        ├── slab/
+        ├── slab-thickness/
         │   ├── GLOSSARY.md
         │   └── adr/                   ← Tool-specific decisions
+        ├── kirchhoff-plate/
+        │   ├── GLOSSARY.md
+        │   └── adr/
         └── seismic-response/
             ├── GLOSSARY.md
             └── adr/
