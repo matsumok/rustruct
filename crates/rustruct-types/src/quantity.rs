@@ -81,3 +81,121 @@ impl UnitWeight {
         self.0 * 1e6
     }
 }
+
+quantity!(
+    /// 単位面積あたりの荷重（Kirchhoff 板の等分布荷重）。次元は [`Stress`] と同じだが意味が違うので型を分ける。
+    AreaLoad, "N/mm²"
+);
+
+impl AreaLoad {
+    /// 1 kN/m² = 10³ N / 10⁶ mm²
+    pub const fn kn_per_m2(value: f64) -> Self {
+        Self(value * 1e-3)
+    }
+    pub fn as_kn_per_m2(self) -> f64 {
+        self.0 * 1e3
+    }
+    pub const fn n_per_mm2(value: f64) -> Self {
+        Self(value)
+    }
+    pub fn as_n_per_mm2(self) -> f64 {
+        self.0
+    }
+}
+
+quantity!(
+    /// 単位幅あたりの曲げモーメント（板の Mx・My）。
+    MomentPerLength, "N·mm/mm"
+);
+
+impl MomentPerLength {
+    /// 1 kN·m/m = 10³ N × 10³ mm / 10³ mm
+    pub const fn knm_per_m(value: f64) -> Self {
+        Self(value * 1e3)
+    }
+    pub fn as_knm_per_m(self) -> f64 {
+        self.0 * 1e-3
+    }
+    pub const fn nmm_per_mm(value: f64) -> Self {
+        Self(value)
+    }
+    pub fn as_nmm_per_mm(self) -> f64 {
+        self.0
+    }
+}
+
+quantity!(
+    /// 単位長さあたりの力（板のせん断力と辺の反力）。せん断力と反力は名前で区別し、型は分けない。
+    ForcePerLength, "N/mm"
+);
+
+impl ForcePerLength {
+    /// 1 kN/m = 10³ N / 10³ mm
+    pub const fn kn_per_m(value: f64) -> Self {
+        Self(value)
+    }
+    pub fn as_kn_per_m(self) -> f64 {
+        self.0
+    }
+    pub const fn n_per_mm(value: f64) -> Self {
+        Self(value)
+    }
+    pub fn as_n_per_mm(self) -> f64 {
+        self.0
+    }
+}
+
+quantity!(
+    /// 集中する力（板の隅反力）。
+    Force, "N"
+);
+
+impl Force {
+    pub const fn kn(value: f64) -> Self {
+        Self(value * 1e3)
+    }
+    pub fn as_kn(self) -> f64 {
+        self.0 * 1e-3
+    }
+    pub const fn n(value: f64) -> Self {
+        Self(value)
+    }
+    pub fn as_n(self) -> f64 {
+        self.0
+    }
+}
+
+/// ポアソン比。無次元。0 以上 0.5 未満の範囲は生成で守る（`docs/tools/kirchhoff-plate/adr/0005`）。
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default)]
+pub struct PoissonRatio(f64);
+
+/// ポアソン比を作れない理由。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PoissonRatioError {
+    /// 0 以上 0.5 未満の有限値でない
+    OutOfRange,
+}
+
+impl std::fmt::Display for PoissonRatioError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::OutOfRange => f.write_str("ポアソン比が 0 以上 0.5 未満でない"),
+        }
+    }
+}
+
+impl std::error::Error for PoissonRatioError {}
+
+impl PoissonRatio {
+    pub fn new(value: f64) -> Result<Self, PoissonRatioError> {
+        // NaN は両方の比較で偽になり、ここで弾かれる
+        if (0.0..0.5).contains(&value) {
+            Ok(Self(value))
+        } else {
+            Err(PoissonRatioError::OutOfRange)
+        }
+    }
+    pub fn value(self) -> f64 {
+        self.0
+    }
+}
