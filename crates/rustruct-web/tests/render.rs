@@ -64,11 +64,7 @@ fn home_shows_the_site_address_in_display_above_the_list() {
 
 #[test]
 fn section_page_has_path_title_and_the_empty_sentence_only() {
-    for (path, title) in [
-        ("/tools", "Tools"),
-        ("/studies", "Studies"),
-        ("/notes", "Notes"),
-    ] {
+    for (path, title) in [("/studies", "Studies"), ("/notes", "Notes")] {
         let html = render_path(path);
         let text = text_of(&html);
         // 枠の wordmark の後に、伸びた住所、見出し、一文の順
@@ -197,6 +193,7 @@ fn ssg_paths_are_the_static_routes_and_the_not_found_page() {
         [
             "/",
             "/tools",
+            "/tools/kirchhoff-plate",
             "/data",
             "/data/concrete",
             "/data/rebar",
@@ -226,6 +223,10 @@ fn title_is_page_name_then_site_name() {
     for (path, title) in [
         ("/", "Home · rustruct.matsumok.com"),
         ("/tools", "Tools · rustruct.matsumok.com"),
+        (
+            "/tools/kirchhoff-plate",
+            "Kirchhoff 板の曲げ · rustruct.matsumok.com",
+        ),
         ("/data", "Data · rustruct.matsumok.com"),
         ("/data/concrete", "コンクリート · rustruct.matsumok.com"),
         ("/data/rebar", "鉄筋 · rustruct.matsumok.com"),
