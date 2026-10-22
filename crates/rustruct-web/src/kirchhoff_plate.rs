@@ -194,10 +194,8 @@ pub struct PlateReadout {
 pub struct EdgeRow {
     /// 辺の名前（x = 0 など）
     pub name: String,
-    /// 中点の、辺に直交する方向の曲げモーメント（kN·m/m）
-    pub moment: String,
-    /// 中点の辺の反力（kN/m）
-    pub reaction: String,
+    /// 辺に直交する方向の曲げモーメントの辺の最大値
+    pub max_moment: Maximum,
     /// せん断力の辺の最大値
     pub max_shear: Maximum,
     /// 辺の反力の辺の最大値
@@ -217,10 +215,30 @@ pub struct CenterRow {
 /// 辺の最大値の 1 つ
 #[derive(Debug, Clone, PartialEq)]
 pub struct Maximum {
-    /// 絶対値が最大の値（kN/m）
+    /// 絶対値が最大の値（曲げモーメントは kN·m/m、せん断力と辺の反力は kN/m）
     pub value: String,
-    /// 辺の始点からの位置（m）
+    /// 辺の始点からの位置（m）。値が辺の全体で 0 のときは「—」
     pub along: String,
+}
+
+impl Maximum {
+    fn new(value: f64, along: Length) -> Self {
+        Self {
+            value: figures(value),
+            along: if value == 0.0 {
+                NOT_COMPUTED.into()
+            } else {
+                figures(along.as_mm() / 1000.0)
+            },
+        }
+    }
+
+    fn not_computed() -> Self {
+        Self {
+            value: NOT_COMPUTED.into(),
+            along: NOT_COMPUTED.into(),
+        }
+    }
 }
 
 /// 釣り合いの行（kN）
@@ -266,16 +284,9 @@ impl PlateReadout {
             edges: EDGES
                 .map(|(edge, _)| EdgeRow {
                     name: edge.to_string(),
-                    moment: dash(),
-                    reaction: dash(),
-                    max_shear: Maximum {
-                        value: dash(),
-                        along: dash(),
-                    },
-                    max_reaction: Maximum {
-                        value: dash(),
-                        along: dash(),
-                    },
+                    max_moment: Maximum::not_computed(),
+                    max_shear: Maximum::not_computed(),
+                    max_reaction: Maximum::not_computed(),
                 })
                 .to_vec(),
             corners: Corner::ALL
@@ -300,20 +311,15 @@ impl PlateReadout {
         let edges = EDGES
             .map(|(edge, _)| {
                 edge_total += solution.edge_reaction_total(edge, EDGE_DIVISIONS).as_kn();
-                let mid = solution.edge(edge, 2)[1];
                 let max = solution.edge_maximum(edge, EDGE_DIVISIONS);
                 EdgeRow {
                     name: edge.to_string(),
-                    moment: figures(mid.moment.as_knm_per_m()),
-                    reaction: figures(mid.reaction.as_kn_per_m()),
-                    max_shear: Maximum {
-                        value: figures(max.shear.value.as_kn_per_m()),
-                        along: figures(max.shear.along.as_mm() / 1000.0),
-                    },
-                    max_reaction: Maximum {
-                        value: figures(max.reaction.value.as_kn_per_m()),
-                        along: figures(max.reaction.along.as_mm() / 1000.0),
-                    },
+                    max_moment: Maximum::new(max.moment.value.as_knm_per_m(), max.moment.along),
+                    max_shear: Maximum::new(max.shear.value.as_kn_per_m(), max.shear.along),
+                    max_reaction: Maximum::new(
+                        max.reaction.value.as_kn_per_m(),
+                        max.reaction.along,
+                    ),
                 }
             })
             .to_vec();
@@ -411,33 +417,34 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                         }
                     }
                     Block {
-                        Caption { "辺の中点" }
+                        Caption { "辺の曲げモーメントの最大値" }
                         Table {
                             thead {
                                 HeadRow {
                                     HeadCell { left: true, "辺" }
                                     HeadCell { "M（kN·m/m）" }
-                                    HeadCell { "V（kN/m）" }
+                                    HeadCell { "位置（m）" }
                                 }
                             }
                             tbody {
                                 for row in readout.edges.iter().cloned() {
                                     Row {
                                         TextCell { {row.name} }
-                                        DecimalCell { value: row.moment, decimals: decimals(|r| &r.moment) }
-                                        DecimalCell { value: row.reaction, decimals: decimals(|r| &r.reaction) }
+                                        DecimalCell { value: row.max_moment.value, decimals: decimals(|r| &r.max_moment.value) }
+                                        DecimalCell { value: row.max_moment.along, decimals: decimals(|r| &r.max_moment.along) }
                                     }
                                 }
                             }
                         }
                         Notes {
-                            li { "M は辺に直交する方向の曲げモーメント" }
+                            li { "辺に沿って絶対値が最大の値と、その位置" }
+                            li { "位置は辺の始点（座標 0 の端）からの距離" }
                             li { "x の辺の M は Mx、y の辺の M は My" }
-                            li { "辺の反力は支える向きを正とする" }
+                            li { "単純支持と自由の辺では 0" }
                         }
                     }
                     Block {
-                        Caption { "辺の最大値" }
+                        Caption { "辺のせん断力と辺の反力の最大値" }
                         Table {
                             thead {
                                 GroupRow {
@@ -465,9 +472,8 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                             }
                         }
                         Notes {
-                            li { "辺に沿って絶対値が最大の値と、その位置" }
-                            li { "位置は辺の始点（座標 0 の端）からの距離" }
                             li { "x の辺の Q は Qx、y の辺の Q は Qy" }
+                            li { "辺の反力は支える向きを正とする" }
                         }
                     }
                     Block {

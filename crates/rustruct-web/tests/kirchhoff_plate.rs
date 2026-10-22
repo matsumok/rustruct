@@ -75,14 +75,14 @@ fn the_page_shows_the_results_of_the_fixed_plate_in_order() {
             "w（mm）",
             "Mx（kN·m/m）",
             "My（kN·m/m）",
-            "辺の中点",
+            "辺の曲げモーメントの最大値",
             "M（kN·m/m）",
-            "V（kN/m）",
+            "位置（m）",
             "x = 0",
             "x = Lx",
             "y = 0",
             "y = Ly",
-            "辺の最大値",
+            "辺のせん断力と辺の反力の最大値",
             "せん断力",
             "辺の反力",
             "隅反力",
@@ -127,18 +127,9 @@ fn assert_not_computed(r: &PlateReadout) {
     let c = &r.center;
     let mut values: Vec<&str> = [&c.w, &c.mx, &c.my].map(String::as_str).to_vec();
     for row in &r.edges {
-        let (s, v) = (&row.max_shear, &row.max_reaction);
-        values.extend(
-            [
-                &row.moment,
-                &row.reaction,
-                &s.value,
-                &s.along,
-                &v.value,
-                &v.along,
-            ]
-            .map(String::as_str),
-        );
+        for m in [&row.max_moment, &row.max_shear, &row.max_reaction] {
+            values.extend([&m.value, &m.along].map(String::as_str));
+        }
     }
     values.extend(r.corners.iter().map(|(_, v)| v.as_str()));
     values.extend([&r.balance.reactions, &r.balance.load].map(String::as_str));
@@ -211,6 +202,30 @@ fn a_swapped_plate_swaps_the_x_and_y_results() {
     let r = readout(|_| {});
     let swapped = readout(|i| (i.lx, i.ly) = ("5.0".into(), "4.0".into()));
     assert_eq!(swapped.center.mx, r.center.my);
-    assert_eq!(swapped.edges[0].moment, r.edges[2].moment);
-    assert_eq!(swapped.edges[2].reaction, r.edges[0].reaction);
+    assert_eq!(swapped.edges[0].max_moment, r.edges[2].max_moment);
+    assert_eq!(swapped.edges[2].max_reaction, r.edges[0].max_reaction);
+}
+
+#[test]
+fn the_edge_moment_is_largest_at_the_middle_of_a_fixed_edge() {
+    let r = readout(|_| {});
+    let along: Vec<&str> = r
+        .edges
+        .iter()
+        .map(|e| e.max_moment.along.as_str())
+        .collect();
+    assert_eq!(along, ["2.50", "2.50", "2.00", "2.00"]);
+}
+
+#[test]
+fn the_edge_moment_of_a_simply_supported_edge_is_zero_with_no_position() {
+    let r = readout(|i| i.supports = Supports::all(Support::SimplySupported));
+    for row in &r.edges {
+        assert_eq!(
+            [row.max_moment.value.as_str(), row.max_moment.along.as_str()],
+            ["0", "—"],
+            "{}",
+            row.name
+        );
+    }
 }
