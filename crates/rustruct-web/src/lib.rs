@@ -19,6 +19,9 @@ pub use prerender::render_path;
 /// SSG: 書き出す住所の列挙と、書く場所の設定。
 mod ssg;
 
+/// 計算のページ（Data と Tool）の表示用の表と列の部品。
+mod table;
+
 /// Data: 材料や規格の値のページ。
 mod data;
 
