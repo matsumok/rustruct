@@ -26,4 +26,4 @@
 
 最初の Data のページは、表ごとに線の濃さ・余白・幅・単位の書き方がばらばらで、結果と根拠の区別もつきにくかった。表の仕組みを決める中で、エージェントがデザインシステム（`docs/design/README.md`）を読まずに「表の頭と尻に `ink`」「単位は括弧」を勧め、一度そのまま組んだ。本人の指摘で、前に決めた約束（`ink` は見出しの上だけ、数字の後の単位）を守る形に直した。デザインの提案は、先に `docs/design/README.md` と `docs/ui-decisions.md` を読み、ぶつかる所を示してからにする（`docs/ui-decisions.md`「エージェントの動き方」）。
 
-デザインシステムの本体は claude.ai のアーティファクト（`docs/ui-decisions.md` の冒頭）にある。この ADR の決め事（`ResultValue` の置き換え、表の部品、`width-column`、単位の書き分け）は、まだそちらに反映していない。ファイル名は初め `0006-display-tables-and-the-360px-column.md` だった。
+この ADR の決め事（`ResultValue` の置き換え、表の部品、`width-column`、単位の書き分け）は、当時デザインシステムの本体だった claude.ai のアーティファクトに反映しないままだった。2026-10-23 に正本をリポジトリにしたので、反映は要らなくなった（`docs/adr/0012`）。ファイル名は初め `0006-display-tables-and-the-360px-column.md` だった。
