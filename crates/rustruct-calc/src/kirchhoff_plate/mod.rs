@@ -1,7 +1,7 @@
 //! Kirchhoff 板の曲げ。言葉は `docs/tools/kirchhoff-plate/GLOSSARY.md`、判断は同じ所の ADR。
 //!
 //! 公開の入口は [`solve`] 一つ。入力（[`Plate`]）から [`Solution`] を得て、点の応答、等間隔グリッドの
-//! 応答、辺に沿った辺の反力の分布、辺の最大値、角ごとの隅反力を取る。公開の座標は角が原点
+//! 応答、辺に沿った辺の反力の分布とその合計、辺の最大値、角ごとの隅反力を取る。公開の座標は角が原点
 //! （x は 0 から Lx、y は 0 から Ly）。符号は ADR-0004。
 //!
 //! 内部では、支持条件の組を 21 種の型と写し方に分け（[`SupportType`]、ADR-0003）、代表の向きの板を
@@ -18,10 +18,10 @@ mod support_type;
 
 use std::fmt;
 
-use rustruct_types::kirchhoff_plate::{Corner, Edge, Supports};
-use rustruct_types::quantity::{
-    AreaLoad, Force, ForcePerLength, Length, MomentPerLength, PoissonRatio, Stress,
-};
+/// 入力は Kirchhoff 板 Model そのもの（`rustruct-types`）
+pub use rustruct_types::kirchhoff_plate::Plate;
+use rustruct_types::kirchhoff_plate::{Corner, Edge};
+use rustruct_types::quantity::{Force, ForcePerLength, Length, MomentPerLength};
 
 use levy::Derivatives;
 use solver::Solver;
@@ -31,25 +31,6 @@ pub use support_type::{Mapping, SupportType};
 /// 級数の項数。利用者の入力にも Model にも持たない定数で、値は収束のテストで決めた
 /// （`docs/tools/kirchhoff-plate/adr/0006`）
 pub const TERMS: usize = 80;
-
-/// 1 枚の板の入力。Model が持つ値と同じ（`docs/tools/kirchhoff-plate/adr/0001`）
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Plate {
-    /// x方向の辺長 Lx
-    pub lx: Length,
-    /// y方向の辺長 Ly
-    pub ly: Length,
-    /// 板厚 t
-    pub thickness: Length,
-    /// ヤング係数 E
-    pub young_modulus: Stress,
-    /// ポアソン比 ν
-    pub poisson_ratio: PoissonRatio,
-    /// 等分布荷重 p（下向き正）
-    pub load: AreaLoad,
-    /// 4 辺の支持条件の組
-    pub supports: Supports,
-}
 
 /// 入力が不正な理由。辺長・板厚・ヤング係数は正の有限値、荷重は有限値（0 と上向きも可）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -316,6 +297,21 @@ impl Solution {
             shear: extreme(|s| s.shear),
             reaction: extreme(|s| s.reaction),
         }
+    }
+
+    /// 辺の反力の辺全体の合計（支える向きが正）。`edge` と同じ評価点の値を台形則で足す。
+    /// 角の近くで級数が振れるので、評価点の間を滑らかとみなす高次の則は使わない
+    pub fn edge_reaction_total(&self, edge: Edge, divisions: usize) -> Force {
+        let samples = self.edge(edge, divisions);
+        Force::n(
+            samples
+                .windows(2)
+                .map(|pair| {
+                    let ds = pair[1].along.as_mm() - pair[0].along.as_mm();
+                    (pair[0].reaction.as_n_per_mm() + pair[1].reaction.as_n_per_mm()) / 2.0 * ds
+                })
+                .sum(),
+        )
     }
 
     /// 隅反力（板を下に押さえる向きが正）。R = 2 D (1 − ν) s_x s_y w_xy。s_x・s_y は角の座標の符号

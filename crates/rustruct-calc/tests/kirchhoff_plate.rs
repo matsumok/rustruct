@@ -160,30 +160,18 @@ fn fixed_edges_have_zero_deflection_and_zero_slope() {
     assert_within(ratio_y, 0.25, 1e-2, "y = Ly の辺の近くの w(h)/w(2h)");
 }
 
-/// 辺の反力の台形則の積分 [N]
-fn integrated_reaction(s: &Solution, edge: Edge, divisions: usize) -> f64 {
-    let samples = s.edge(edge, divisions);
-    samples
-        .windows(2)
-        .map(|pair| {
-            let ds = pair[1].along.as_mm() - pair[0].along.as_mm();
-            (pair[0].reaction.as_n_per_mm() + pair[1].reaction.as_n_per_mm()) / 2.0 * ds
-        })
-        .sum()
-}
-
 #[test]
 fn edge_reactions_balance_the_total_load() {
     // 辺の反力の合計 − 隅反力の合計 = 荷重の合計（ADR-0004）。四辺固定では隅反力は 0。
-    // 辺の反力は角の近くで級数が振れる（角から辺長の 5 % 以内で最大の 2 % 程度）ので、台形則の積分は
-    // 荷重の合計の 1e-3 を許す
+    // 辺の反力は角の近くで級数が振れる（角から辺長の 5 % 以内で最大の 2 % 程度）ので、評価点の値から
+    // 足した合計は荷重の合計の 1e-3 を許す
     for (lx, ly) in [(2000.0, 2000.0), (2000.0, 3000.0), (4000.0, 2000.0)] {
         let p = fixed(lx, ly, 0.15, 8.0);
         let s = solve(&p).unwrap();
         let total = p.load.as_n_per_mm2() * lx * ly;
         let reactions: f64 = Edge::ALL
             .iter()
-            .map(|&e| integrated_reaction(&s, e, 400))
+            .map(|&e| s.edge_reaction_total(e, 400).as_n())
             .sum();
         let corners: f64 = Corner::ALL
             .iter()
