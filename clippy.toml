@@ -1,0 +1,10 @@
+# 双曲線関数は比の形の部品（rustruct-calc の kirchhoff_plate::hyperbolic）だけで評価する。
+# 級数の高次の項では引数が数百になり、cosh・sinh そのものは f64 の範囲を超える（docs/tools/kirchhoff-plate/adr/0002）
+disallowed-methods = [
+  { path = "f64::cosh", reason = "比の形（kirchhoff_plate::hyperbolic の cosh_ratio）で書く。そのままでは大きな引数で溢れる" },
+  { path = "f64::sinh", reason = "比の形（kirchhoff_plate::hyperbolic の sinh_ratio）で書く。そのままでは大きな引数で溢れる" },
+  { path = "f64::tanh", reason = "kirchhoff_plate::hyperbolic の tanh（e^{−2k} の形）で書く" },
+  { path = "f32::cosh", reason = "f64::cosh と同じ" },
+  { path = "f32::sinh", reason = "f64::sinh と同じ" },
+  { path = "f32::tanh", reason = "f64::tanh と同じ" },
+]
