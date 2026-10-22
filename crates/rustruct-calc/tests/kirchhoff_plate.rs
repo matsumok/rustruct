@@ -54,16 +54,11 @@ fn unstable_combinations_are_refused() {
 
 #[test]
 fn types_without_a_solution_yet_are_unsupported() {
-    let ssss = plate(
-        1000.0,
-        1000.0,
-        0.0,
-        1.0,
-        Supports::all(Support::SimplySupported),
-    );
+    let mut fffr = Supports::all(Support::Fixed);
+    fffr.y_ly = Support::Free;
     assert_eq!(
-        solve(&ssss).err(),
-        Some(PlateError::Unsupported(SupportType::SSSS))
+        solve(&plate(1000.0, 1000.0, 0.0, 1.0, fffr)).err(),
+        Some(PlateError::Unsupported(SupportType::FFFR))
     );
 }
 
