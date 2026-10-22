@@ -450,6 +450,12 @@ fn the_edge_maximum_of_a_square_plate_is_at_the_middle_of_the_edge() {
         assert_eq!(m.reaction.value, mid.reaction, "{e} の反力の最大");
         assert_eq!(m.shear.along.as_mm(), l / 2.0, "{e} のせん断力の最大の位置");
         assert_eq!(m.shear.value, mid.shear, "{e} のせん断力の最大");
+        assert_eq!(
+            m.moment.along.as_mm(),
+            l / 2.0,
+            "{e} の曲げモーメントの最大の位置"
+        );
+        assert_eq!(m.moment.value, mid.moment, "{e} の曲げモーメントの最大");
     }
     // 辺の上の曲げモーメントは内部の評価と同じ値（辺の中央、打ち切りの差だけ）
     let edge = s.edge(Edge::X0, 2)[1];

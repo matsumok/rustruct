@@ -20,7 +20,7 @@ use std::fmt;
 
 /// 入力は Kirchhoff 板 Model そのもの（`rustruct-types`）
 pub use rustruct_types::kirchhoff_plate::Plate;
-use rustruct_types::kirchhoff_plate::{Corner, Edge};
+use rustruct_types::kirchhoff_plate::{Corner, Edge, Support};
 use rustruct_types::quantity::{Force, ForcePerLength, Length, MomentPerLength};
 
 use levy::Derivatives;
@@ -108,16 +108,17 @@ pub struct EdgeSample {
 
 /// 絶対値が最大の値と、辺の始点からのその位置
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Extreme {
-    pub value: ForcePerLength,
+pub struct Extreme<T> {
+    pub value: T,
     pub along: Length,
 }
 
-/// 辺の最大値（GLOSSARY）。せん断力と辺の反力それぞれの絶対値の最大と位置
+/// 辺の最大値（GLOSSARY）。辺に直交する方向の曲げモーメント、せん断力、辺の反力それぞれの絶対値の最大と位置
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EdgeMaximum {
-    pub shear: Extreme,
-    pub reaction: Extreme,
+    pub moment: Extreme<MomentPerLength>,
+    pub shear: Extreme<ForcePerLength>,
+    pub reaction: Extreme<ForcePerLength>,
 }
 
 /// 解。入力と、正規化で決まった型と写し方、代表の向きの板の解き方（係数を持つ）。
@@ -244,9 +245,14 @@ impl Solution {
         out
     }
 
-    /// 辺に沿った応答。辺を `divisions` 等分した divisions + 1 点を、始点（座標 0 の端）から順に
+    /// 辺に沿った応答。辺を `divisions` 等分した divisions + 1 点を、始点（座標 0 の端）から順に。
+    /// 境界条件で 0 の値（単純支持と自由の辺の曲げモーメント、自由の辺の反力）は、級数の打ち切りの屑を
+    /// 残さずちょうど 0 で返す
     pub fn edge(&self, edge: Edge, divisions: usize) -> Vec<EdgeSample> {
         let (lx, ly) = (self.plate.lx.as_mm(), self.plate.ly.as_mm());
+        let support = self.plate.supports.at(edge);
+        let moment_vanishes = matches!(support, Support::SimplySupported | Support::Free);
+        let reaction_vanishes = support == Support::Free;
         let length = match edge {
             Edge::X0 | Edge::XLx => ly,
             Edge::Y0 | Edge::YLy => lx,
@@ -265,37 +271,50 @@ impl Solution {
                 let r = self.edge_response(rep_edge, d);
                 EdgeSample {
                     along: Length::mm(along),
-                    moment: MomentPerLength::nmm_per_mm(r.moment),
+                    moment: MomentPerLength::nmm_per_mm(if moment_vanishes {
+                        0.0
+                    } else {
+                        r.moment
+                    }),
                     shear: ForcePerLength::n_per_mm(
                         self.mapping.edge_shear_back(rep_edge, r.shear),
                     ),
-                    reaction: ForcePerLength::n_per_mm(r.reaction),
+                    reaction: ForcePerLength::n_per_mm(if reaction_vanishes {
+                        0.0
+                    } else {
+                        r.reaction
+                    }),
                 }
             })
             .collect()
     }
 
-    /// 辺の最大値。`edge` と同じ評価点から、せん断力と辺の反力それぞれの絶対値の最大と位置
+    /// 辺の最大値。`edge` と同じ評価点から、曲げモーメント・せん断力・辺の反力それぞれの絶対値の最大と位置
     pub fn edge_maximum(&self, edge: Edge, divisions: usize) -> EdgeMaximum {
         let samples = self.edge(edge, divisions);
-        let extreme = |pick: fn(&EdgeSample) -> ForcePerLength| {
-            let s = samples
+        // 量の型を跨いで比べるので、内部の単位の数で比べる
+        let extreme = |magnitude: fn(&EdgeSample) -> f64| {
+            samples
                 .iter()
-                .max_by(|a, b| {
-                    pick(a)
-                        .as_n_per_mm()
-                        .abs()
-                        .total_cmp(&pick(b).as_n_per_mm().abs())
-                })
-                .expect("評価点は 1 つ以上");
-            Extreme {
-                value: pick(s),
-                along: s.along,
-            }
+                .max_by(|a, b| magnitude(a).abs().total_cmp(&magnitude(b).abs()))
+                .expect("評価点は 1 つ以上")
         };
+        let moment = extreme(|s| s.moment.as_nmm_per_mm());
+        let shear = extreme(|s| s.shear.as_n_per_mm());
+        let reaction = extreme(|s| s.reaction.as_n_per_mm());
         EdgeMaximum {
-            shear: extreme(|s| s.shear),
-            reaction: extreme(|s| s.reaction),
+            moment: Extreme {
+                value: moment.moment,
+                along: moment.along,
+            },
+            shear: Extreme {
+                value: shear.shear,
+                along: shear.along,
+            },
+            reaction: Extreme {
+                value: reaction.reaction,
+                along: reaction.along,
+            },
         }
     }
 
