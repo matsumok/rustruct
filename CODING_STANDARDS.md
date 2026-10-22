@@ -15,4 +15,6 @@
 
 ## 単位
 
-Issue 1 本が実装の単位。`/implement` で 1 本を通す変更は、複数の受入条件にまたがっていても 1 コミットでよい。
+Issue 1 つが実装の単位。`/implement` で 1 つを通す変更は、複数の受入条件にまたがっていても 1 コミットでよい。
+
+計算（`rustruct-types`・`rustruct-calc`）と画面（`rustruct-web`・`charta`）は別の Issue に切る。本人のレビュー対象（計算）とそうでないもの（画面）を PR で分けるためで、1 つの Issue が全部の層を貫く切り方（tracer bullet）より優先する。計算の Issue だけでも `cargo test` で確かめられる形にする（2026-10-23、Kirchhoff 板のチケットで決めた）。

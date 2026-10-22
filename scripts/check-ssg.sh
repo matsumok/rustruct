@@ -15,8 +15,8 @@ ng() { echo "NG: $1"; fail=1; }
 
 [ -d "$out" ] || { echo "NG: $out が無い（先に dx build --ssg --release --force-sequential）"; exit 1; }
 
-# 住所の集合。crates/rustruct-web/src/ssg.rs の static_paths と同じ（tests/render.rs も同じ一覧を期待値に持つ）
-expected="/ /tools /data /data/concrete /data/rebar /studies /notes /root /404"
+# 住所の集合はルーターから導く（examples/static_paths.rs が static_paths を出す）。ここに住所を書かない
+expected=$(cargo run -q -p rustruct-web --example static_paths --locked) || { echo "NG: 住所の一覧を出せない"; exit 1; }
 sections="/tools /data /studies /notes"
 found=$(cd "$out" && find . -name index.html | sed 's#^\./##; s#/\{0,1\}index\.html$##; s#^#/#' | sort)
 if [ "$found" != "$(printf '%s\n' $expected | sort)" ]; then
