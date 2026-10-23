@@ -159,7 +159,7 @@ fn a_combination_with_a_free_edge_is_solved_and_balances() {
 
 #[test]
 fn a_simply_supported_plate_balances_with_its_corner_reactions_pressing_down() {
-    // 辺の反力の合計は荷重を超え、超えた分を角の隅反力が押さえる（kirchhoff-plate の ADR-0007）
+    // 辺の反力の合計は荷重を超え、超えた分を隅反力が押さえる（kirchhoff-plate の ADR-0007）
     let r = readout(|i| i.supports = Supports::all(Support::SimplySupported));
     assert_eq!(r.notice, None);
     assert_eq!([&r.balance.reactions, &r.balance.load], ["200", "200"]);

@@ -193,7 +193,7 @@ pub struct PlateReadout {
     pub center: CenterRow,
     /// 辺ごとの行。`EDGES` の順
     pub edges: Vec<EdgeRow>,
-    /// 角ごとの隅反力（kN）。`Corner::ALL` の順
+    /// 隅ごとの隅反力（kN）。`Corner::ALL` の順
     pub corners: Vec<(String, String)>,
     /// 釣り合い
     pub balance: Balance,
@@ -365,7 +365,7 @@ fn set_support(supports: &mut Supports, edge: Edge, support: Support) {
     } = support;
 }
 
-/// 角の名前。会う 2 辺で呼ぶ（x = 0・y = 0）
+/// 隅の名前。会う 2 辺で呼ぶ（x = 0・y = 0）
 fn corner_name(corner: Corner) -> String {
     let (x, y) = corner.edges();
     format!("{x}・{y}")

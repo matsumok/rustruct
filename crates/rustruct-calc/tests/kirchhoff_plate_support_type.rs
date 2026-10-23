@@ -72,7 +72,7 @@ fn the_mapping_carries_the_representative_back_to_the_chosen_supports() {
                 s.symbol()
             );
         }
-        // 角は会う 2 辺の写しで決まる
+        // 隅は会う 2 辺の写しで決まる
         for corner in Corner::ALL {
             let (ex, ey) = corner.edges();
             let mapped = mapping.corner(corner).edges();

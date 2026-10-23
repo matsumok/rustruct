@@ -1,4 +1,4 @@
-//! Kirchhoff 板 Model と、支持条件の組、辺・角の呼び方。言葉は `docs/tools/kirchhoff-plate/GLOSSARY.md`。
+//! Kirchhoff 板 Model と、支持条件の組、辺・隅の呼び方。言葉は `docs/tools/kirchhoff-plate/GLOSSARY.md`。
 //! 支持条件の組は利用者が辺ごとに選ぶ値で Model に保存する。型（21 種）と写し方は導出できるので
 //! ここには無く、`rustruct-calc` が求める（ADR-0003）。
 
@@ -87,7 +87,7 @@ impl fmt::Display for Edge {
     }
 }
 
-/// 板の角。会う 2 辺で呼ぶ。
+/// 板の隅。会う 2 辺で呼ぶ。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Corner {
     X0Y0,
@@ -97,10 +97,10 @@ pub enum Corner {
 }
 
 impl Corner {
-    /// 原点の角から反時計回り
+    /// 原点の隅から反時計回り
     pub const ALL: [Corner; 4] = [Corner::X0Y0, Corner::XLxY0, Corner::XLxYLy, Corner::X0YLy];
 
-    /// 角で会う x の辺と y の辺
+    /// 隅で会う x の辺と y の辺
     pub fn edges(self) -> (Edge, Edge) {
         match self {
             Self::X0Y0 => (Edge::X0, Edge::Y0),

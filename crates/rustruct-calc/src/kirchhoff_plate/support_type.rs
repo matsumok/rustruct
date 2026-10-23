@@ -121,7 +121,7 @@ impl Mapping {
         }
     }
 
-    /// 利用者の角を代表の向きの角に写す
+    /// 利用者の隅を代表の向きの隅に写す
     pub fn corner(self, corner: Corner) -> Corner {
         let (ex, ey) = corner.edges();
         let (ex, ey) = (self.edge(ex), self.edge(ey));
@@ -172,7 +172,7 @@ impl Mapping {
         if self.transpose { (ly, lx) } else { (lx, ly) }
     }
 
-    /// 利用者の座標（角が原点、mm）の点を代表の向きの板の座標（角が原点）に
+    /// 利用者の座標（隅が原点、mm）の点を代表の向きの板の座標（隅が原点）に
     pub fn representative_point(self, x: f64, y: f64, lx: f64, ly: f64) -> (f64, f64) {
         let (lx, ly) = self.representative_lengths(lx, ly);
         let (x, y) = if self.transpose { (y, x) } else { (x, y) };
