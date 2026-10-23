@@ -1,8 +1,30 @@
-//! Kirchhoff 板の支持条件の組と、辺・角の呼び方。言葉は `docs/tools/kirchhoff-plate/GLOSSARY.md`。
+//! Kirchhoff 板 Model と、支持条件の組、辺・角の呼び方。言葉は `docs/tools/kirchhoff-plate/GLOSSARY.md`。
 //! 支持条件の組は利用者が辺ごとに選ぶ値で Model に保存する。型（21 種）と写し方は導出できるので
 //! ここには無く、`rustruct-calc` が求める（ADR-0003）。
 
 use std::fmt;
+
+use crate::quantity::{AreaLoad, Length, PoissonRatio, Stress};
+
+/// Kirchhoff 板 Model。1 枚の板の入力で、保存するのはこの値だけ（`docs/tools/kirchhoff-plate/adr/0001`）。
+/// 保存形式（serde）は、保存を実装するときに、サイトの ADR-0004（量の型）が予告した保存形式の見直しと合わせて付ける
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Plate {
+    /// x方向の辺長 Lx
+    pub lx: Length,
+    /// y方向の辺長 Ly
+    pub ly: Length,
+    /// 板厚 t
+    pub thickness: Length,
+    /// ヤング係数 E
+    pub young_modulus: Stress,
+    /// ポアソン比 ν
+    pub poisson_ratio: PoissonRatio,
+    /// 等分布荷重 p（下向き正）
+    pub load: AreaLoad,
+    /// 4 辺の支持条件の組
+    pub supports: Supports,
+}
 
 /// 1 つの辺の支持条件。記号は F・S・R。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -236,17 +236,21 @@ fn simply_supported_edges_have_zero_deflection_and_zero_edge_moment() {
             &format!("({x}, {y}) の辺に直交する曲げモーメント"),
         );
     }
-    // 辺に沿う級数で評価した辺の曲げモーメントは、特解と級数の打ち消し合いの打ち切り（各項 1/β³）で、
-    // 中央の曲げモーメントの 1e-6 程度残る。許容は 1e-5
+    // 辺に沿った応答の、辺に直交する曲げモーメントは境界条件そのものなので、級数の屑を残さずちょうど 0
     for e in Edge::ALL {
         for sample in s.edge(e, 20) {
-            assert_within(
+            assert_eq!(
                 sample.moment.as_nmm_per_mm(),
                 0.0,
-                1e-5 * m_center,
-                &format!("{e} の曲げモーメント {}", sample.along.as_mm()),
+                "{e} の曲げモーメント {}",
+                sample.along.as_mm()
             );
         }
+        assert_eq!(
+            s.edge_maximum(e, 20).moment.value.as_nmm_per_mm(),
+            0.0,
+            "{e} の曲げモーメントの最大"
+        );
     }
     // 単純支持の辺では傾きが残るので、辺からの距離 h のたわみは h に比例する: w(h)/w(2h) → 1/2。
     // h = 辺長の 1/200 で、h² 以上の項による比のずれは 1/200 程度なので許容 1e-2
