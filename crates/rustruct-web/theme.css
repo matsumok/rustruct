@@ -24,6 +24,7 @@
   --color-muted: #60646c;
   --color-ng: #ce2c31;
   --color-on-ink: #ffffff;
+  --color-scrim: #1c202466;
   --color-accent: #3e63dd;
   --color-accent-soft: #c1d0ff;
   --color-chart-1: #ab6400;
@@ -153,6 +154,7 @@
     --color-muted: #b0b4ba;
     --color-ng: #ff9592;
     --color-on-ink: #111113;
+    --color-scrim: #000000a6;
     --color-accent: #3e63dd;
     --color-accent-soft: #304384;
     --color-chart-1: #ffca16;

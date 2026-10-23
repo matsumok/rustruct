@@ -6,7 +6,6 @@
 # 見るもの（住所ごと）:
 #   - 起動後の DOM に data-dioxus-id（hydration がリスナーを付けた印）があり、data-node-hydration（プリレンダー時の
 #     印）が残っている。残っていれば既存の要素が再利用された。hydration が失敗すると要素が作り直されて印が消える
-#   - /404 では住所の行が起動後に埋まる（use_effect 後の再描画）
 #   - ページのコンソール出力（Chrome の stderr の CONSOLE 行）が無い
 # 「項目を押して再読み込みが起きない」「戻るが効く」は DevTools プロトコルが要るので見ない。
 # Chrome / Edge / Chromium は screenshot.sh と同じ探し方。WSL では Windows 側を使う。
@@ -51,9 +50,8 @@ for p in "$@"; do
   hydrated=$(grep -o 'data-dioxus-id="[0-9]*"' "$dir/dom$name.html" | wc -l)
   kept=$(grep -o 'data-node-hydration=' "$dir/dom$name.html" | wc -l)
   console=$(grep 'CONSOLE(' "$dir/log$name.txt" | cut -c1-200)
-  path_line=$(sed -n 's/.*<p class="font-mono text-path[^>]*>\(.*\)<\/p><h1.*/\1/p' "$dir/dom$name.html" | head -c 200)
   echo "== $url$p"
-  echo "   リスナーの付いた要素: $hydrated  プリレンダーの印が残る要素: $kept  住所の行: ${path_line:-（空）}"
+  echo "   リスナーの付いた要素: $hydrated  プリレンダーの印が残る要素: $kept"
   if [ "$hydrated" -eq 0 ]; then echo "   NG: hydration の印が無い（WASM が動いていないか失敗した）"; fail=1; fi
   if [ "$hydrated" -gt 0 ] && [ "$kept" -eq 0 ]; then echo "   NG: プリレンダーの印が消えた（hydration が失敗して作り直した）"; fail=1; fi
   if [ -n "$console" ]; then echo "   NG: コンソール出力がある:"; echo "$console" | sed 's/^/     /'; fail=1; fi

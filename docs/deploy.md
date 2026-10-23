@@ -84,7 +84,7 @@ CI が見ないのは hydration と見た目。本番とプレビューの URL �
 
 - 一覧の項目を押して全画面の再読み込みが起きない。「戻る」が効く
 - OS をダークにして配色が変わる。和文が Plex Sans JP、パスと wordmark が Plex Mono
-- 存在しない住所で not-found の骨組みが出て、起動後に住所の行が埋まる
+- 存在しない住所で not-found の見出しと一文が出る
 
 公開後に `/root/` だけに Cloudflare Access を掛けるなら（`docs/stack.md`）、サービストークンをそのポリシーにも入れるか、`scripts/check-live.sh` の住所一覧から `/root/` を外す。どちらも無いと本番の「live」が落ちる。公開前は上の「公開前の非公開」で全体を閉じている。
 
