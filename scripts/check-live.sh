@@ -110,7 +110,7 @@ esac
 # （cloudflare/workers-sdk#16047、2026-10-14 時点で open）。そこだけ NG にせず注意に留める。本番は厳しいまま
 status=$(fetch "/no-such-address-$$/" "$dir/notfound.html")
 [ "$status" = 404 ] || ng "未知の住所が 404 でない: $status"
-if ! grep -qF 'この住所には何もない。' "$dir/notfound.html"; then
+if ! grep -qF 'ページが見つからない。' "$dir/notfound.html"; then
   case "$url" in
     *.workers.dev) echo "注意: プレビューでは not-found の本文が届かない（workers-sdk#16047 が直るまで）" ;;
     *) ng "未知の住所に not-found の本文が無い" ;;
