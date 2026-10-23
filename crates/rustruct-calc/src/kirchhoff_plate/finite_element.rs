@@ -24,8 +24,8 @@ use std::f64::consts::PI;
 
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Support, Supports};
 
-use super::band::BandMatrix;
 use super::levy::Derivatives;
+use super::linear_solver::{LinearSolver, System};
 use super::solver::Solver;
 
 /// 長い辺の分割数の上限。縦横比がこれを超える板は中央の要素が大きくなるが、連立の大きさを抑える
@@ -238,13 +238,38 @@ pub struct FiniteElement {
 
 /// 解く。短い辺を `divisions` 分割する。連立が解けなければ `None`
 pub fn solve(b: f64, nu: f64, supports: Supports, divisions: usize) -> Option<FiniteElement> {
+    solve_with(b, nu, supports, divisions, LinearSolver::Band)
+}
+
+/// スパイク（計測専用）: 連立の解き方を選んで解く
+pub fn solve_with(
+    b: f64,
+    nu: f64,
+    supports: Supports,
+    divisions: usize,
+    solver: LinearSolver,
+) -> Option<FiniteElement> {
+    let assembled = assemble(b, nu, supports, divisions);
+    let x = assembled.system.solve(solver)?;
+    Some(finish(assembled.fe, assembled.reduced, x, nu))
+}
+
+/// スパイク（計測専用）: 組み立てた連立と、解いたあとに要るもの
+pub struct Assembled {
+    pub fe: FiniteElement,
+    pub reduced: Vec<Option<usize>>,
+    pub system: System,
+}
+
+/// スパイク（計測専用）: 剛性行列と荷重ベクトルを組み立てる
+pub fn assemble(b: f64, nu: f64, supports: Supports, divisions: usize) -> Assembled {
     assert!(
         divisions >= 4 && divisions.is_multiple_of(2),
         "分割数は 4 以上の偶数"
     );
     let (xs, ys) = node_positions(b, divisions);
     let (nx, ny) = (xs.len() - 1, ys.len() - 1);
-    let mut fe = FiniteElement {
+    let fe = FiniteElement {
         nu,
         supports,
         xs,
@@ -280,7 +305,7 @@ pub fn solve(b: f64, nu: f64, supports: Supports, divisions: usize) -> Option<Fi
         })
         .max()
         .unwrap_or(0);
-    let mut k = BandMatrix::zeros(free, bandwidth);
+    let mut entries = Vec::with_capacity(elements.len() * ELEMENT_DOFS * (ELEMENT_DOFS + 1) / 2);
     let mut f = vec![0.0; free];
     for &(i, j) in &elements {
         let (ke, fe_load) = integrals.element(fe.hx(i), fe.hy(j), nu);
@@ -292,12 +317,35 @@ pub fn solve(b: f64, nu: f64, supports: Supports, divisions: usize) -> Option<Fi
                 if let Some(gc) = reduced[dc]
                     && gr >= gc
                 {
-                    k.add(gr, gc, ke[r][c]);
+                    entries.push((gr, gc, ke[r][c]));
                 }
             }
         }
     }
-    let x = k.solve(f)?;
+    Assembled {
+        fe,
+        reduced,
+        system: System {
+            n: free,
+            bandwidth,
+            entries,
+            rhs: f,
+        },
+    }
+}
+
+/// スパイク（計測専用）: 解いた変位を節点に戻し、反力を作る
+pub fn finish(
+    mut fe: FiniteElement,
+    reduced: Vec<Option<usize>>,
+    x: Vec<f64>,
+    nu: f64,
+) -> FiniteElement {
+    let integrals = Integrals::new();
+    let fixed = fe.constrained_dofs();
+    let (nx, ny) = (fe.nx(), fe.ny());
+    let elements: Vec<(usize, usize)> =
+        (0..ny).flat_map(|j| (0..nx).map(move |i| (i, j))).collect();
     for (i, &r) in reduced.iter().enumerate() {
         if let Some(r) = r {
             fe.u[i] = x[r];
@@ -324,7 +372,7 @@ pub fn solve(b: f64, nu: f64, supports: Supports, divisions: usize) -> Option<Fi
         }
     }
     fe.distribute_reactions(&reaction);
-    Some(fe)
+    fe
 }
 
 impl FiniteElement {

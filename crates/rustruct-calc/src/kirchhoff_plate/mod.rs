@@ -15,6 +15,7 @@ mod fixed;
 mod hyperbolic;
 mod levy;
 mod linear;
+pub mod linear_solver;
 mod simply_supported;
 mod solver;
 mod support_type;
@@ -27,7 +28,9 @@ use rustruct_types::quantity::{
 };
 
 pub use finite_element::mesh_divisions;
+pub use finite_element::{Assembled, FiniteElement, assemble, finish, solve_with};
 use levy::Derivatives;
+pub use linear_solver::LinearSolver;
 use solver::Solver;
 use support_type::RepresentativeResponse;
 pub use support_type::{Mapping, SupportType};

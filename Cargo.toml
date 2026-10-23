@@ -27,3 +27,12 @@ rust_decimal = { version = "1.43", default-features = false }
 rust_decimal_macros = { version = "1.40" }
 dioxus = { version = "0.7", features = ["fullstack", "router"] }
 dioxus-ssr = { version = "0.7" }
+
+# スパイク（計測専用）: WASM の大きさを測るプロファイル
+[profile.wasm-size]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

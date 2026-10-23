@@ -1,0 +1,17 @@
+# スパイク（計測専用）: 有限要素の解き方ごとの WASM の大きさと時間を測る殻。main には入れない
+[package]
+name = "wasm-size-probe"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+rustruct-calc.workspace = true
+rustruct-types.workspace = true
+
+[features]
+faer = ["rustruct-calc/faer"]
+nalgebra = ["rustruct-calc/nalgebra"]

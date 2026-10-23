@@ -9,3 +9,10 @@ workspace = true
 
 [dependencies]
 rustruct-types.workspace = true
+faer = { version = "0.24.4", default-features = false, features = ["std", "sparse-linalg"], optional = true }
+nalgebra = { version = "0.35", default-features = false, features = ["std"], optional = true }
+nalgebra-sparse = { version = "0.12", default-features = false, optional = true }
+
+[features]
+faer = ["dep:faer"]
+nalgebra = ["dep:nalgebra", "dep:nalgebra-sparse"]
