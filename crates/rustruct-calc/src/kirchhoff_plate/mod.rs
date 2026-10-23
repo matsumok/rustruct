@@ -5,9 +5,12 @@
 //! （x は 0 から Lx、y は 0 から Ly）。符号は ADR-0004。
 //!
 //! 内部では、支持条件の組を 21 種の型と写し方に分け（[`SupportType`]、ADR-0003）、代表の向きの板を
-//! 中央原点・x の半辺長 1 の無次元の板として型ごとの解き方（`solver`）で解く。解き方が返すのは無次元の
-//! たわみの導関数だけで、曲げモーメント・せん断力・辺の反力・隅反力への換算はこのファイルの一箇所。
+//! 中央原点・x の半辺長 1 の無次元の板として解く。解き方（`solver`）は 2 つ: 型ごとの級数解（ADR-0002）と、
+//! 型によらない有限要素（`finite_element`。級数解と比べるための試作で、[`Method`] で選ぶ）。解き方が返すのは
+//! 無次元のたわみの導関数（と辺の反力）だけで、曲げモーメント・せん断力・隅反力への換算はこのファイルの一箇所。
 
+mod band;
+mod finite_element;
 mod fixed;
 mod hyperbolic;
 mod levy;
@@ -23,6 +26,7 @@ pub use rustruct_types::kirchhoff_plate::Plate;
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Support};
 use rustruct_types::quantity::{Force, ForcePerLength, Length, MomentPerLength};
 
+pub use finite_element::mesh_divisions;
 use levy::Derivatives;
 use solver::Solver;
 use support_type::RepresentativeResponse;
@@ -31,6 +35,17 @@ pub use support_type::{Mapping, SupportType};
 /// 級数の項数。利用者の入力にも Model にも持たない定数で、値は収束のテストで決めた
 /// （`docs/tools/kirchhoff-plate/adr/0006`）
 pub const TERMS: usize = 80;
+
+/// 有限要素の短い辺の分割数。長い辺は辺長に比例させる（[`mesh_divisions`]）。項数と同じく利用者の入力にも
+/// Model にも持たない定数で、値は分割数を倍にしたときの変化が収まることで決めた（`tests/kirchhoff_plate_fe.rs`）
+pub const DIVISIONS: usize = 24;
+
+/// 解き方。級数解（ADR-0002）か、長方形の共形要素の有限要素か
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Method {
+    Series,
+    FiniteElement,
+}
 
 /// 入力が不正な理由。辺長・板厚・ヤング係数は正の有限値、荷重は有限値（0 と上向きも可）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,7 +77,8 @@ pub enum PlateError {
     Unstable(SupportType),
     /// まだ解き方の無い型
     Unsupported(SupportType),
-    /// 級数の係数の連立が解けない。支持の足りない組は手前で弾くので、式か項数の取り方の誤り（サイト ADR-0009）
+    /// 連立一次方程式が解けない。支持の足りない組は手前で弾くので、級数なら式か項数の取り方、有限要素なら
+    /// 拘束の組み立ての誤り（サイト ADR-0009）
     Singular,
 }
 
@@ -72,7 +88,7 @@ impl fmt::Display for PlateError {
             Self::InvalidInput(reason) => write!(f, "{reason}"),
             Self::Unstable(ty) => write!(f, "支持条件の型 {} は不安定", ty.symbol()),
             Self::Unsupported(ty) => write!(f, "支持条件の型 {} は未対応", ty.symbol()),
-            Self::Singular => f.write_str("級数の係数の連立が解けない"),
+            Self::Singular => f.write_str("連立一次方程式が解けない"),
         }
     }
 }
@@ -130,21 +146,28 @@ pub struct Solution {
     solver: Box<dyn Solver>,
 }
 
-/// 入力から解を求める。項数は [`TERMS`]
+/// 入力から解を求める。級数解で、項数は [`TERMS`]
 pub fn solve(plate: &Plate) -> Result<Solution, PlateError> {
-    solve_with_terms(plate, TERMS)
+    solve_with_method(plate, Method::Series)
 }
 
-/// 項数を指定して解く。収束のテスト（ADR-0006）のためにあり、画面は [`solve`] を使う
+/// 解き方を指定して解く。級数解は項数 [`TERMS`]、有限要素は分割数 [`DIVISIONS`]
+pub fn solve_with_method(plate: &Plate, method: Method) -> Result<Solution, PlateError> {
+    match method {
+        Method::Series => solve_with_terms(plate, TERMS),
+        Method::FiniteElement => solve_with_divisions(plate, DIVISIONS),
+    }
+}
+
+/// 項数を指定して級数解で解く。収束のテスト（ADR-0006）のためにあり、画面は [`solve`] を使う
 pub fn solve_with_terms(plate: &Plate, terms: usize) -> Result<Solution, PlateError> {
-    validate(plate)?;
-    let (support_type, mapping) = SupportType::of(plate.supports);
-    let (rep_lx, rep_ly) = mapping.representative_lengths(plate.lx.as_mm(), plate.ly.as_mm());
-    let b = rep_ly / rep_lx;
+    let (support_type, mapping, b) = normalize(plate)?;
     let solver: Box<dyn Solver> = match support_type {
         SupportType::FFFF => Box::new(fixed::solve(b, terms).ok_or(PlateError::Singular)?),
         SupportType::SSSS => Box::new(simply_supported::solve(b, terms)),
-        SupportType::RRRR | SupportType::RRRS => return Err(PlateError::Unstable(support_type)),
+        SupportType::RRRR | SupportType::RRRS => {
+            unreachable!("不安定な型は normalize が弾く")
+        }
         SupportType::FFFR
         | SupportType::FFFS
         | SupportType::FFRR
@@ -169,6 +192,33 @@ pub fn solve_with_terms(plate: &Plate, terms: usize) -> Result<Solution, PlateEr
         mapping,
         solver,
     })
+}
+
+/// 短い辺の分割数を指定して有限要素で解く。不安定な 2 型を除く 19 型すべてが解ける。分割数を倍にしたときの
+/// 変化を見るテストのためにあり、画面は [`solve_with_method`] を使う
+pub fn solve_with_divisions(plate: &Plate, divisions: usize) -> Result<Solution, PlateError> {
+    let (support_type, mapping, b) = normalize(plate)?;
+    let nu = plate.poisson_ratio.value();
+    let solver = finite_element::solve(b, nu, support_type.representative(), divisions)
+        .ok_or(PlateError::Singular)?;
+    Ok(Solution {
+        plate: *plate,
+        support_type,
+        mapping,
+        solver: Box::new(solver),
+    })
+}
+
+/// 入力を確かめ、支持条件の組を型と写し方に分け、代表の向きの板の y の半辺長 b = Ly'/Lx' を求める。
+/// 不安定な型はここで弾く
+fn normalize(plate: &Plate) -> Result<(SupportType, Mapping, f64), PlateError> {
+    validate(plate)?;
+    let (support_type, mapping) = SupportType::of(plate.supports);
+    if matches!(support_type, SupportType::RRRR | SupportType::RRRS) {
+        return Err(PlateError::Unstable(support_type));
+    }
+    let (rep_lx, rep_ly) = mapping.representative_lengths(plate.lx.as_mm(), plate.ly.as_mm());
+    Ok((support_type, mapping, rep_ly / rep_lx))
 }
 
 fn validate(plate: &Plate) -> Result<(), InvalidInput> {
@@ -268,7 +318,7 @@ impl Solution {
                     Edge::Y0 | Edge::YLy => self.xi(rep_along),
                 };
                 let d = self.solver.edge(rep_edge, nd);
-                let r = self.edge_response(rep_edge, d);
+                let r = self.edge_response(rep_edge, nd, d);
                 EdgeSample {
                     along: Length::mm(along),
                     moment: MomentPerLength::nmm_per_mm(if moment_vanishes {
@@ -287,6 +337,22 @@ impl Solution {
                 }
             })
             .collect()
+    }
+
+    /// 辺の反力の合計 [N]（辺に沿った積分、支える向きが正）。辺の反力の合計 − 隅反力の合計 = 荷重の合計
+    /// （ADR-0004）。級数解は辺の反力の数値積分で、有限要素は節点の反力の和そのもの
+    pub fn total_reaction(&self, edge: Edge) -> Force {
+        let rep_edge = self.mapping.edge(edge);
+        let (rep_lx, rep_ly) = self.representative_lengths();
+        let half_along = match rep_edge {
+            Edge::X0 | Edge::XLx => rep_ly / rep_lx,
+            Edge::Y0 | Edge::YLy => 1.0,
+        };
+        let a = self.half_x();
+        let v = self
+            .solver
+            .edge_reaction_total(rep_edge, half_along, self.nu());
+        Force::n(self.p() * a * a * v)
     }
 
     /// 辺の最大値。`edge` と同じ評価点から、曲げモーメント・せん断力・辺の反力それぞれの絶対値の最大と位置
@@ -388,28 +454,23 @@ impl Solution {
         }
     }
 
-    /// 辺の上の応答（内部の単位）。反力は V = −p a (ŵ_xxx + (2 − ν) ŵ_xyy)（せん断力とねじりモーメントの
-    /// 変化の和）を、座標の大きい側の辺では符号を変えて支える向きにする
-    fn edge_response(&self, edge: Edge, d: Derivatives) -> EdgeResponse {
+    /// 辺の上の応答（内部の単位）。反力は解き方の無次元の辺の反力 v̂（支える向きが正。級数解では
+    /// −(ŵ_xxx + (2 − ν) ŵ_xyy)、せん断力とねじりモーメントの変化の和）を V = p a v̂ で有次元にする
+    fn edge_response(&self, edge: Edge, along: f64, d: Derivatives) -> EdgeResponse {
         let r = self.point_response(d);
         let (a, p, nu) = (self.half_x(), self.p(), self.nu());
+        let reaction = p * a * self.solver.edge_reaction(edge, along, nu);
         match edge {
-            Edge::X0 | Edge::XLx => {
-                let v = -p * a * (d.w_xxx + (2.0 - nu) * d.w_xyy);
-                EdgeResponse {
-                    moment: r.mx,
-                    shear: r.qx,
-                    reaction: if edge == Edge::XLx { -v } else { v },
-                }
-            }
-            Edge::Y0 | Edge::YLy => {
-                let v = -p * a * (d.w_yyy + (2.0 - nu) * d.w_xxy);
-                EdgeResponse {
-                    moment: r.my,
-                    shear: r.qy,
-                    reaction: if edge == Edge::YLy { -v } else { v },
-                }
-            }
+            Edge::X0 | Edge::XLx => EdgeResponse {
+                moment: r.mx,
+                shear: r.qx,
+                reaction,
+            },
+            Edge::Y0 | Edge::YLy => EdgeResponse {
+                moment: r.my,
+                shear: r.qy,
+                reaction,
+            },
         }
     }
 }

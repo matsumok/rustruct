@@ -93,9 +93,9 @@ impl ConcreteReadout {
     fn concrete(input: &str) -> Result<Concrete, String> {
         let input = input.trim();
         if input.is_empty() {
-            return Err("Fc を入れる".into());
+            return Err("Fc を入力".into());
         }
-        let fc: f64 = input.parse().map_err(|_| "数値で入れる".to_string())?;
+        let fc: f64 = input.parse().map_err(|_| "数値を入力".to_string())?;
         Concrete::new(Stress::n_per_mm2(fc), ConcreteKind::Normal).map_err(|e| e.to_string())
     }
 }
@@ -398,7 +398,7 @@ pub(crate) fn RebarPage() -> Element {
                         }
                         Notes {
                             li { "l = 3.142d、S = 0.7854d²、w = 0.00785S" }
-                            li { "JIS Z 8401 の規則A で丸める" }
+                            li { "JIS Z 8401 の規則 A で丸める" }
                         }
                         // 出典: JIS G 3112:2025 表6（画面には出さない。ADR に書いてある）
                     }
@@ -436,7 +436,7 @@ pub(crate) fn RebarPage() -> Element {
                             }
                         }
                         Notes {
-                            li { "* D29 以上の太さの鉄筋に対しては（ ）内の数値とする" }
+                            li { "* D29 以上は（ ）内の値" }
                         }
                         // 出典: RC 規準（2024 年版）表 6.2（画面には出さない。ADR に書いてある）
                     }

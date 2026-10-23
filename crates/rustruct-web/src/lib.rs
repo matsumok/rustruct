@@ -114,19 +114,19 @@ impl Route {
                 "Kirchhoff 板の曲げ",
                 "長方形の板の、たわみ・曲げモーメント・反力。",
             ),
-            Route::Data {} => ("Data", "構造設計で参照する材料や規格の値。"),
+            Route::Data {} => ("Data", "構造設計で参照する材料と規格の値。"),
             Route::DataConcrete {} => (
                 "コンクリート",
-                "Fc から単位体積重量・ヤング係数・許容応力度を求める。",
+                "Fc から気乾単位体積重量・ヤング係数・許容応力度を求める。",
             ),
             Route::DataRebar {} => (
                 "鉄筋",
-                "異形棒鋼の呼び名ごとの公称直径・周長・断面積・単位質量と、種類ごとの許容応力度。",
+                "異形棒鋼の呼び名ごとの寸法と単位質量、種類ごとの許容応力度。",
             ),
             Route::Studies {} => ("Studies", "数学やかたちを眺めて考えるための可視化。"),
             Route::Notes {} => ("Notes", "構造や数学についての書きもの。"),
             Route::Root {} => ("root", "root のための場所。"),
-            Route::NotFound { .. } => ("Not found", "この住所には何もない。"),
+            Route::NotFound { .. } => ("Not found", "ページが見つからない。"),
         };
         PageText {
             heading,

@@ -11,6 +11,11 @@ publish = false
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
+# 計算核だけは dev（test が継ぐ）でも最適化する。有限要素の連立は最適化なしだと数十倍遅く、
+# 分割数を倍にする収束のテストが分の桁になる
+[profile.dev.package.rustruct-calc]
+opt-level = 2
+
 [workspace.dependencies]
 rustruct-types = { path = "crates/rustruct-types" }
 rustruct-calc = { path = "crates/rustruct-calc" }

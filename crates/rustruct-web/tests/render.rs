@@ -29,7 +29,7 @@ fn home_lists_the_four_sections_in_order_with_name_blurb_and_path() {
             "構造計算の入力・計算・判定。",
             "/data",
             "Data",
-            "構造設計で参照する材料や規格の値。",
+            "構造設計で参照する材料と規格の値。",
             "/studies",
             "Studies",
             "数学やかたちを眺めて考えるための可視化。",
@@ -154,7 +154,7 @@ fn unknown_path_is_not_found_inside_the_same_frame() {
         &[
             "rustruct.matsumok.com",
             "Not found",
-            "この住所には何もない。",
+            "ページが見つからない。",
         ],
     );
     assert_eq!(h1_text(&html), "Not found");
@@ -254,7 +254,7 @@ fn every_page_has_a_description_meta_derived_from_the_route() {
         ("/studies", "数学やかたちを眺めて考えるための可視化。"),
         ("/notes", "構造や数学についての書きもの。"),
         ("/root", "root のための場所。"),
-        ("/no/such/page", "この住所には何もない。"),
+        ("/no/such/page", "ページが見つからない。"),
     ] {
         let html = render_path(path);
         let head = head_of(&html);
