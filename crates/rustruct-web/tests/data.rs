@@ -178,8 +178,8 @@ fn readout_warns_outside_18_to_100_but_still_computes() {
 #[test]
 fn readout_is_unusable_with_an_error_when_fc_cannot_be_used() {
     for (input, error) in [
-        ("", "Fc を入れる"),
-        ("abc", "数値で入れる"),
+        ("", "Fc を入力"),
+        ("abc", "数値を入力"),
         ("0", "Fc が正の有限値でない"),
         ("-5", "Fc が正の有限値でない"),
     ] {

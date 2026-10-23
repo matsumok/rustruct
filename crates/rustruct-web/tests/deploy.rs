@@ -30,7 +30,7 @@ fn ssg_fixture(root: &Path) -> PathBuf {
     let out = root.join("public");
     write(out.join("index.html"), "<title>Home</title>");
     write(out.join("tools/index.html"), "<title>Tools</title>");
-    write(out.join("404/index.html"), "<p>この住所には何もない。</p>");
+    write(out.join("404/index.html"), "<p>ページが見つからない。</p>");
     write(out.join("assets/app.wasm"), "wasm bytes");
     out
 }
@@ -59,7 +59,7 @@ fn not_found_moves_to_root_404_html_and_the_rest_is_kept() {
 
     assert_eq!(
         fs::read_to_string(deploy.join("404.html")).unwrap(),
-        "<p>この住所には何もない。</p>",
+        "<p>ページが見つからない。</p>",
         "not-found はルートの 404.html に、中身そのままで置かれる"
     );
     assert!(

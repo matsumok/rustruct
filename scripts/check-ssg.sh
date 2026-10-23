@@ -63,7 +63,7 @@ for d in /data/concrete /data/rebar; do
 done
 
 # not-found は空ページの文言と混ざらない
-grep -qF 'この住所には何もない。' "$out/404/index.html" || ng "/404 に「この住所には何もない。」が無い"
+grep -qF 'ページが見つからない。' "$out/404/index.html" || ng "/404 に「ページが見つからない。」が無い"
 grep -qF 'まだ何もない' "$out/404/index.html" && ng "/404 が空ページの文言になっている"
 
 [ "$fail" -eq 0 ] && echo "OK: SSG の出力 $out は住所ごとの HTML と CSS・WASM を揃えている"
