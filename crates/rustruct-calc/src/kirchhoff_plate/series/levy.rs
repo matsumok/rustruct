@@ -6,8 +6,8 @@
 //! 双曲線関数は比の形（`hyperbolic`）だけで、k = β·half_across に対する C = cosh βt / cosh k、S = sinh βt / cosh k。
 
 use std::f64::consts::PI;
-use std::ops::Add;
 
+use super::super::solver::Derivatives;
 use super::hyperbolic::{cosh_ratio, sech2, sinh_ratio, tanh};
 
 /// 級数の局所の枠。級数に沿う向き s の半辺長と、横切る向き t の半辺長
@@ -24,7 +24,7 @@ impl Frame {
     }
 }
 
-/// 局所座標での無次元のたわみとその導関数。1 階は境界条件の組み立てにしか要らないので持たない
+/// 局所座標での無次元のたわみとその導関数。板の座標のもの（`Derivatives`）と同じく 1 階は持たない
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Local {
     pub w: f64,
@@ -35,35 +35,6 @@ pub struct Local {
     pub w_sst: f64,
     pub w_stt: f64,
     pub w_ttt: f64,
-}
-
-/// 板の座標 (x, y) での無次元のたわみとその導関数
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct Derivatives {
-    pub w: f64,
-    pub w_xx: f64,
-    pub w_yy: f64,
-    pub w_xy: f64,
-    pub w_xxx: f64,
-    pub w_xxy: f64,
-    pub w_xyy: f64,
-    pub w_yyy: f64,
-}
-
-impl Add for Derivatives {
-    type Output = Derivatives;
-    fn add(self, o: Derivatives) -> Derivatives {
-        Derivatives {
-            w: self.w + o.w,
-            w_xx: self.w_xx + o.w_xx,
-            w_yy: self.w_yy + o.w_yy,
-            w_xy: self.w_xy + o.w_xy,
-            w_xxx: self.w_xxx + o.w_xxx,
-            w_xxy: self.w_xxy + o.w_xxy,
-            w_xyy: self.w_xyy + o.w_xyy,
-            w_yyy: self.w_yyy + o.w_yyy,
-        }
-    }
 }
 
 /// 局所座標の向き。s が x に沿うか y に沿うか

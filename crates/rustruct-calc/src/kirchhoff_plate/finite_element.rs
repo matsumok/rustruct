@@ -1,5 +1,5 @@
-//! Kirchhoff 板を長方形の共形要素で解く有限要素の解き方。板の中央を原点に、x の半辺長を 1、y の半辺長を
-//! b = Ly/Lx とした無次元の板（p = 1、D = 1）を、支持条件の型によらず一本のコードで解く。
+//! Kirchhoff 板を長方形の共形要素で解く有限要素の解き方（ADR-0002）。板の中央を原点に、x の半辺長を 1、
+//! y の半辺長を b = Ly/Lx とした無次元の板（p = 1、D = 1）を、支持条件の型によらず一本のコードで解く。
 //!
 //! 要素は節点に 4 つの自由度（w、w_x、w_y、w_xy）を持つ双 3 次エルミートの長方形で、要素の間で w と
 //! その 1 階の導関数が連続（共形）。要素の剛性は曲げのひずみエネルギーから ν を含めて組み、等分布荷重は
@@ -25,8 +25,7 @@ use std::f64::consts::PI;
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Support, Supports};
 
 use super::band::BandMatrix;
-use super::levy::Derivatives;
-use super::solver::Solver;
+use super::solver::{Derivatives, Solver};
 
 /// 長い辺の分割数の上限。縦横比がこれを超える板は中央の要素が大きくなるが、連立の大きさを抑える
 const MAX_DIVISIONS: usize = 512;
@@ -60,7 +59,7 @@ fn node_positions(b: f64, divisions: usize) -> (Vec<f64>, Vec<f64>) {
     }
 }
 
-/// 短い辺を `divisions` 分割したときの (x の分割数, y の分割数)。収束のテストのためにある
+/// 短い辺を `divisions` 分割したときの (x の分割数, y の分割数)。分割数のテスト（ADR-0006）のためにある
 pub fn mesh_divisions(b: f64, divisions: usize) -> (usize, usize) {
     let (xs, ys) = node_positions(b, divisions);
     (xs.len() - 1, ys.len() - 1)
