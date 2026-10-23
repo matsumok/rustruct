@@ -395,7 +395,7 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                         div { class: "flex flex-col gap-1",
                             InputSheet { inputs, errors: readout.errors.clone() }
                             Notes {
-                                li { "ν は 0 を基本とする（RC の慣例）" }
+                                li { "ν は 0 を基本とする" }
                             }
                             for (field , message) in readout.errors.iter().copied() {
                                 p { class: "text-label text-ng", "{field.label()}: {message}" }
@@ -462,11 +462,11 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                             }
                         }
                         Notes {
-                            li { "辺に沿って絶対値が最大の値と、その位置" }
-                            li { "位置は辺の始点（座標 0 の端）からの距離" }
+                            li { "辺上の絶対値の最大値と、その位置" }
+                            li { "位置は座標 0 の端からの距離" }
                             li { "M は曲げモーメント、Q はせん断力、V は辺の反力" }
-                            li { "x の辺の M・Q は Mx・Qx、y の辺は My・Qy" }
-                            li { "単純支持と自由の辺では M は 0" }
+                            li { "左右の辺の M・Q は Mx・Qx、上下の辺は My・Qy" }
+                            li { "単純支持辺と自由辺では M は 0" }
                             li { "辺の反力は支える向きを正とする" }
                         }
                     }
@@ -475,7 +475,7 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                         Table {
                             thead {
                                 HeadRow {
-                                    HeadCell { left: true, "角" }
+                                    HeadCell { left: true, "隅" }
                                     HeadCell { "R（kN）" }
                                 }
                             }
@@ -509,8 +509,8 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                             }
                         }
                         Notes {
-                            li { "ΣV は 4 辺の辺の反力の合計" }
-                            li { "ΣR は 4 つの角の隅反力の合計" }
+                            li { "ΣV は辺の反力の合計" }
+                            li { "ΣR は隅反力の合計" }
                         }
                     }
                 }
