@@ -1,4 +1,4 @@
-//! 四辺単純支持（SSSS）の級数解。板の中央を原点に、x の半辺長を 1、y の半辺長を b = Ly/Lx とした無次元の板
+//! 四辺単純支持（SSSS）の級数解（参照解）。板の中央を原点に、x の半辺長を 1、y の半辺長を b = Ly/Lx とした無次元の板
 //! （p = 1、D = 1）を解く。
 //!
 //! たわみは荷重の項（`levy::Series::load`）だけで閉じる。荷重の項は、級数に沿う向きの両端と、横切る向きの
@@ -9,8 +9,8 @@
 
 use rustruct_types::kirchhoff_plate::{Corner, Edge};
 
-use super::levy::{Derivatives, Frame, Orientation, Series};
-use super::solver::Solver;
+use super::super::solver::{Derivatives, Solver};
+use super::levy::{Frame, Orientation, Series};
 
 pub struct SimplySupported {
     /// y の半辺長 b = Ly/Lx
@@ -64,7 +64,7 @@ impl Solver for SimplySupported {
     }
 
     fn corner_w_xy(&self, corner: Corner) -> f64 {
-        // 角はどちらの級数にとっても辺の上。x に沿う級数で評価する。各項は 1/β³ で減り、符号は角ごとに揃う
+        // 隅はどちらの級数にとっても辺の上。x に沿う級数で評価する。各項は 1/β³ で減り、符号は隅ごとに揃う
         let (x, y) = match corner {
             Corner::X0Y0 => (-1.0, -self.b),
             Corner::XLxY0 => (1.0, -self.b),

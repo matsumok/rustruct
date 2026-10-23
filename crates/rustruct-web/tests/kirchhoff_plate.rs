@@ -147,10 +147,14 @@ fn an_unstable_combination_shows_dashes_and_says_the_plate_is_not_held() {
 }
 
 #[test]
-fn an_unsupported_combination_shows_dashes_and_says_it_cannot_be_solved_yet() {
+fn a_combination_with_a_free_edge_is_solved_and_balances() {
+    // 不安定な組以外はすべて解ける（kirchhoff-plate の ADR-0002）。自由辺の反力は 0 で、残る辺が荷重を受ける
     let r = readout(|i| i.supports.x_lx = Support::Free);
-    assert_eq!(r.notice, Some("この組はまだ解けない"));
-    assert_not_computed(&r);
+    assert_eq!(r.notice, None);
+    assert!(r.errors.is_empty());
+    assert_eq!(r.balance.reactions, r.balance.load);
+    let free: f64 = r.edges[1].max_reaction.value.parse().unwrap();
+    assert_eq!(free, 0.0, "{:#?}", r.edges);
 }
 
 #[test]

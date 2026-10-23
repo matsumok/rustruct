@@ -19,7 +19,7 @@ use crate::{Page, Route};
 /// 計算できない値の表示（`docs/ui-decisions.md`「エラーと警告」）
 const NOT_COMPUTED: &str = "—";
 
-/// 辺の最大値と辺の反力の合計を取る評価点の分け方。辺を等分する数
+/// 辺の最大値を取る評価点の分け方。辺を等分する数
 const EDGE_DIVISIONS: usize = 100;
 
 /// 入力の Sheet の欄。並びは Sheet の行の順
@@ -272,7 +272,6 @@ impl PlateReadout {
                 Err(PlateError::Unstable(_)) => {
                     Self::not_computed(Some("この支持条件の組では板を支えられない"))
                 }
-                Err(PlateError::Unsupported(_)) => Self::not_computed(Some("この組はまだ解けない")),
                 // 入力は手前で読んだので来ない。来たら解けないことだけを言う
                 Err(PlateError::InvalidInput(_) | PlateError::Singular) => {
                     Self::not_computed(Some("この入力では解けない"))
@@ -320,7 +319,7 @@ impl PlateReadout {
         let mut edge_total = 0.0;
         let edges = EDGES
             .map(|(edge, _)| {
-                edge_total += solution.edge_reaction_total(edge, EDGE_DIVISIONS).as_kn();
+                edge_total += solution.total_reaction(edge).as_kn();
                 let max = solution.edge_maximum(edge, EDGE_DIVISIONS);
                 EdgeRow {
                     name: edge.to_string(),

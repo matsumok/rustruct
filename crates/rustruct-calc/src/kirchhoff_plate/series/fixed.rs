@@ -1,4 +1,4 @@
-//! 四辺固定（FFFF）の級数解。板の中央を原点に、x の半辺長を 1、y の半辺長を b = Ly/Lx とした無次元の板
+//! 四辺固定（FFFF）の級数解（参照解）。板の中央を原点に、x の半辺長を 1、y の半辺長を b = Ly/Lx とした無次元の板
 //! （p = 1、D = 1）を解く。
 //!
 //! たわみは、四辺単純支持の板の解（荷重の項）に、x = ±1 の辺と y = ±b の辺に未知の曲げモーメントを
@@ -10,11 +10,9 @@
 
 use rustruct_types::kirchhoff_plate::{Corner, Edge};
 
-use super::levy::{
-    Derivatives, Frame, Orientation, Series, alternating, load_edge_slope, moment_edge_slope,
-};
+use super::super::solver::{Derivatives, Solver};
+use super::levy::{Frame, Orientation, Series, alternating, load_edge_slope, moment_edge_slope};
 use super::linear::Matrix;
-use super::solver::Solver;
 
 pub struct Fixed {
     /// y の半辺長 b = Ly/Lx
