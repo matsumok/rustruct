@@ -6,8 +6,9 @@
 //! 形状関数で節点に配る。形状関数が x の多項式と y の多項式の積なので、剛性も荷重も 1 次元の積分の積で
 //! 閉じる。1 次元の積分は 4 点の Gauss 積分で厳密。
 //!
-//! 節点は辺に寄せて密に置く（余弦の間隔）。せん断力と辺の反力は隅の近くで急に変わり、辺の曲げモーメントは
-//! 辺の上で読むので、等間隔より辺の近くを細かくするほうが同じ節点数で精度が出る。
+//! 節点は x と y のどちらも辺全体に置く余弦の間隔で、辺に寄せて密にする。せん断力と辺の反力は隅の近くで
+//! 急に変わり、辺の曲げモーメントは辺の上で読むので、等間隔より辺の近くを細かくするほうが同じ節点数で精度が
+//! 出る。長い辺の分割数は辺長に合わせて増やす。
 //!
 //! 支持条件は節点の自由度の拘束だけで表す。固定辺はその辺の上で w と法線方向の傾きが 0 なので、辺に沿う
 //! 導関数も 0 になり 4 つすべてを拘束する。単純支持の辺は w が 0 なので w と辺に沿う傾きを拘束し、法線方向の
@@ -27,35 +28,34 @@ use rustruct_types::kirchhoff_plate::{Corner, Edge, Support, Supports};
 use super::band::BandMatrix;
 use super::solver::{Derivatives, Solver};
 
-/// 長い辺の分割数の上限。縦横比がこれを超える板は中央の要素が大きくなるが、連立の大きさを抑える
+/// 長い辺の分割数の上限。縦横比がこれを超える板は長い辺の要素が粗くなるが、連立の大きさを抑える
 const MAX_DIVISIONS: usize = 512;
 
-/// 短い辺を `divisions` 分割したときの節点の座標 (x の節点, y の節点)。短い辺は両端に寄せた余弦の間隔
-/// （中央について対称、両端が密）。長い辺は、両端に短い辺と同じ間隔の並びを半分ずつ置き、その間を短い辺の
-/// 中央の要素と同じ大きさで等間隔に埋める。辺の近くの要素の大きさが辺長によらず揃い、細長い要素ができない
+/// 短い辺を `divisions` 分割したときの節点の座標 (x の節点, y の節点)。どちらの辺も辺全体に置く余弦の間隔
+/// （中央について対称、両端が密）。長い辺の分割数は、短い辺の分割数に、長い辺の余りの長さ（辺長の差の 2 倍）を
+/// 短い辺の中央の要素の大きさで割って切り上げた数（偶数にそろえ、`MAX_DIVISIONS` で抑える）を足したもの
 fn node_positions(b: f64, divisions: usize) -> (Vec<f64>, Vec<f64>) {
     let (short, long) = (b.min(1.0), b.max(1.0));
-    let cosine: Vec<f64> = (0..=divisions)
-        .map(|k| -short * (PI * k as f64 / divisions as f64).cos())
-        .collect();
+    let cosine = |half: f64, n: usize| -> Vec<f64> {
+        (0..=n)
+            .map(|k| -half * (PI * k as f64 / n as f64).cos())
+            .collect()
+    };
+    let shorter = cosine(short, divisions);
     let longer = if long == short {
-        cosine.clone()
+        shorter.clone()
     } else {
         let half = divisions / 2;
-        let offset = long - short;
-        let middle = 2.0 * offset;
-        let step = cosine[half + 1] - cosine[half];
+        let middle = 2.0 * (long - short);
+        let step = shorter[half + 1] - shorter[half];
         let count = ((middle / step).ceil() as usize).clamp(2, MAX_DIVISIONS - divisions);
         let count = count + count % 2;
-        let mut xs: Vec<f64> = cosine[..=half].iter().map(|x| x - offset).collect();
-        xs.extend((1..count).map(|k| -offset + middle * k as f64 / count as f64));
-        xs.extend(cosine[half..].iter().map(|x| x + offset));
-        xs
+        cosine(long, divisions + count)
     };
     if b >= 1.0 {
-        (cosine, longer)
+        (shorter, longer)
     } else {
-        (longer, cosine)
+        (longer, shorter)
     }
 }
 
@@ -804,20 +804,18 @@ mod tests {
     }
 
     #[test]
-    fn the_longer_side_keeps_the_edge_spacing_and_fills_the_middle_evenly() {
-        // b = 3: y の両端に x と同じ並びの半分ずつ、間は x の中央の要素の大きさ以下で等間隔
+    fn the_longer_side_is_a_cosine_spacing_over_its_whole_length() {
+        // b = 3: y は辺全体に置く余弦の間隔で、分割数は x の 8 に中を埋める数（偶数）を足したもの
         let (xs, ys) = node_positions(3.0, 8);
+        assert_eq!(xs, node_positions(1.0, 8).0);
         let n = ys.len() - 1;
-        assert!((ys[0] + 3.0).abs() < 1e-15 && (ys[n] - 3.0).abs() < 1e-15);
-        for k in 0..=4 {
-            assert!((ys[k] - (xs[k] - 2.0)).abs() < 1e-15);
-            assert!((ys[n - k] - (xs[8 - k] + 2.0)).abs() < 1e-15);
-        }
-        let middle = xs[5] - xs[4];
-        for pair in ys[4..=n - 4].windows(2) {
-            assert!(pair[1] - pair[0] <= middle + 1e-15);
+        assert!(n > 8 && n.is_multiple_of(2));
+        for (k, y) in ys.iter().enumerate() {
+            assert!((y + 3.0 * (PI * k as f64 / n as f64).cos()).abs() < 1e-15);
+            assert!((y + ys[n - k]).abs() < 1e-15);
         }
         assert!(ys[n / 2].abs() < 1e-15);
+        assert!(ys[1] - ys[0] < ys[n / 2 + 1] - ys[n / 2]);
         // 向きを変えても同じ並びが x に来る
         let (xs2, ys2) = node_positions(1.0 / 3.0, 8);
         assert_eq!(ys2.len(), 9);
