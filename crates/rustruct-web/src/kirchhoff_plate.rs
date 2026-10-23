@@ -64,6 +64,16 @@ const EDGES: [(Edge, &str); 4] = [
     (Edge::YLy, "上"),
 ];
 
+/// 入力の Sheet の 1 行に並べる、対になる欄
+const FIELD_PAIRS: [[InputField; 2]; 3] = [
+    [InputField::Lx, InputField::Ly],
+    [InputField::Thickness, InputField::YoungModulus],
+    [InputField::PoissonRatio, InputField::Load],
+];
+
+/// 入力の Sheet の 1 行に並べる、向かい合う辺
+const EDGE_PAIRS: [[(Edge, &str); 2]; 2] = [[EDGES[0], EDGES[1]], [EDGES[2], EDGES[3]]];
+
 /// 支持条件の選び方。並びは選択肢の順
 const SUPPORTS: [(Support, &str); 3] = [
     (Support::Fixed, "固定"),
@@ -385,6 +395,9 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                     div { class: "flex flex-col gap-6",
                         div { class: "flex flex-col gap-1",
                             InputSheet { inputs, errors: readout.errors.clone() }
+                            Notes {
+                                li { "ν は 0 を基本とする（RC の慣例）" }
+                            }
                             for (field , message) in readout.errors.iter().copied() {
                                 p { class: "text-label text-ng", "{field.label()}: {message}" }
                             }
@@ -417,13 +430,22 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                         }
                     }
                     Block {
-                        Caption { "辺の曲げモーメントの最大値" }
+                        Caption { "辺の最大値（位置は m）" }
                         Table {
                             thead {
+                                GroupRow {
+                                    HeadCell { left: true, rows: 2, "辺" }
+                                    GroupCell { span: 2, "M（kN·m/m）" }
+                                    GroupCell { span: 2, "Q（kN/m）" }
+                                    GroupCell { span: 2, "V（kN/m）" }
+                                }
                                 HeadRow {
-                                    HeadCell { left: true, "辺" }
-                                    HeadCell { "M（kN·m/m）" }
-                                    HeadCell { "位置（m）" }
+                                    HeadCell { "値" }
+                                    HeadCell { "位置" }
+                                    HeadCell { "値" }
+                                    HeadCell { "位置" }
+                                    HeadCell { "値" }
+                                    HeadCell { "位置" }
                                 }
                             }
                             tbody {
@@ -432,37 +454,6 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                                         TextCell { {row.name} }
                                         DecimalCell { value: row.max_moment.value, decimals: decimals(|r| &r.max_moment.value) }
                                         DecimalCell { value: row.max_moment.along, decimals: decimals(|r| &r.max_moment.along) }
-                                    }
-                                }
-                            }
-                        }
-                        Notes {
-                            li { "辺に沿って絶対値が最大の値と、その位置" }
-                            li { "位置は辺の始点（座標 0 の端）からの距離" }
-                            li { "x の辺の M は Mx、y の辺の M は My" }
-                            li { "単純支持と自由の辺では 0" }
-                        }
-                    }
-                    Block {
-                        Caption { "辺のせん断力と辺の反力の最大値" }
-                        Table {
-                            thead {
-                                GroupRow {
-                                    HeadCell { left: true, rows: 2, "辺" }
-                                    GroupCell { span: 2, "せん断力" }
-                                    GroupCell { span: 2, "辺の反力" }
-                                }
-                                HeadRow {
-                                    HeadCell { "Q（kN/m）" }
-                                    HeadCell { "位置（m）" }
-                                    HeadCell { "V（kN/m）" }
-                                    HeadCell { "位置（m）" }
-                                }
-                            }
-                            tbody {
-                                for row in readout.edges.iter().cloned() {
-                                    Row {
-                                        TextCell { {row.name} }
                                         DecimalCell { value: row.max_shear.value, decimals: decimals(|r| &r.max_shear.value) }
                                         DecimalCell { value: row.max_shear.along, decimals: decimals(|r| &r.max_shear.along) }
                                         DecimalCell { value: row.max_reaction.value, decimals: decimals(|r| &r.max_reaction.value) }
@@ -472,7 +463,11 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                             }
                         }
                         Notes {
-                            li { "x の辺の Q は Qx、y の辺の Q は Qy" }
+                            li { "辺に沿って絶対値が最大の値と、その位置" }
+                            li { "位置は辺の始点（座標 0 の端）からの距離" }
+                            li { "M は曲げモーメント、Q はせん断力、V は辺の反力" }
+                            li { "x の辺の M・Q は Mx・Qx、y の辺は My・Qy" }
+                            li { "単純支持と自由の辺では M は 0" }
                             li { "辺の反力は支える向きを正とする" }
                         }
                     }
@@ -525,43 +520,54 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
     }
 }
 
-/// 入力の Sheet（デザインシステムの Sheet）。行見出し（欄の名前）は書けないので `fill`、値のセルは
-/// `paper` に `line` の格子。選んだセルは `ink`、読めないセルは `ng` の太い内枠（`outline-2`）で、行見出しも `ng`。
-/// 外の角だけ `radius-8`（ツールの入力カード）。
+/// 入力の Sheet（デザインシステムの Sheet）。対になる欄を 1 行に 2 組ずつ並べる（スマホで縦に長くしないため）。
+/// 行見出し（欄の名前）は書けないので `fill`、値のセルは `paper` に `line` の格子。選んだセルは `ink`、
+/// 読めないセルは `ng` の太い内枠（`outline-2`）で、行見出しも `ng`。外の角だけ `radius-8`（ツールの入力カード）。
 #[component]
 fn InputSheet(inputs: Signal<PlateInputs>, errors: Vec<(InputField, &'static str)>) -> Element {
     let supports = inputs.read().supports;
+    let has_error = |field: InputField| errors.iter().any(|(e, _)| *e == field);
     rsx! {
         div { class: "overflow-hidden rounded-8 border border-line",
             table { class: "w-full table-fixed",
                 tbody {
-                    for (field , error) in InputField::ALL.map(|f| (f, errors.iter().any(|(e, _)| *e == f))) {
-                        SheetRow { label: field.label(), error,
-                            input {
-                                class: if error { "h-7 w-full bg-paper px-3 font-mono text-num text-right outline-2 -outline-offset-2 outline-ng" } else { "h-7 w-full bg-paper px-3 font-mono text-num text-right focus:outline-2 focus:-outline-offset-2 focus:outline-ink" },
-                                r#type: "text",
-                                inputmode: "decimal",
-                                "aria-label": field.label(),
-                                value: inputs.read().get(field).to_string(),
-                                oninput: move |e| inputs.write().set(field, e.value()),
+                    for pair in FIELD_PAIRS {
+                        tr { class: "border-b border-line",
+                            for field in pair {
+                                SheetHead { label: field.label(), error: has_error(field) }
+                                SheetCell {
+                                    input {
+                                        class: if has_error(field) { "h-6 w-full bg-paper px-2 font-mono text-num text-right outline-2 -outline-offset-2 outline-ng" } else { "h-6 w-full bg-paper px-2 font-mono text-num text-right focus:outline-2 focus:-outline-offset-2 focus:outline-ink" },
+                                        r#type: "text",
+                                        inputmode: "decimal",
+                                        "aria-label": field.label(),
+                                        value: inputs.read().get(field).to_string(),
+                                        oninput: move |e| inputs.write().set(field, e.value()),
+                                    }
+                                }
                             }
                         }
                     }
-                    for (edge , direction) in EDGES {
-                        SheetRow { label: format!("{edge}（{direction}）"), error: false,
-                            select {
-                                class: "h-7 w-full bg-paper px-3 text-body focus:outline-2 focus:-outline-offset-2 focus:outline-ink",
-                                "aria-label": format!("{edge} の辺の支持条件"),
-                                onchange: move |e| {
-                                    if let Some(support) = e.value().chars().next().and_then(Support::from_symbol) {
-                                        set_support(&mut inputs.write().supports, edge, support);
-                                    }
-                                },
-                                for (support , name) in SUPPORTS {
-                                    option {
-                                        value: "{support.symbol()}",
-                                        selected: supports.at(edge) == support,
-                                        {name}
+                    for pair in EDGE_PAIRS {
+                        tr { class: "border-b border-line last:border-b-0",
+                            for (edge , direction) in pair {
+                                SheetHead { label: format!("{edge}（{direction}）"), error: false }
+                                SheetCell {
+                                    select {
+                                        class: "h-6 w-full bg-paper px-2 text-body focus:outline-2 focus:-outline-offset-2 focus:outline-ink",
+                                        "aria-label": format!("{edge} の辺の支持条件"),
+                                        onchange: move |e| {
+                                            if let Some(support) = e.value().chars().next().and_then(Support::from_symbol) {
+                                                set_support(&mut inputs.write().supports, edge, support);
+                                            }
+                                        },
+                                        for (support , name) in SUPPORTS {
+                                            option {
+                                                value: "{support.symbol()}",
+                                                selected: supports.at(edge) == support,
+                                                {name}
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -573,17 +579,22 @@ fn InputSheet(inputs: Signal<PlateInputs>, errors: Vec<(InputField, &'static str
     }
 }
 
-/// Sheet の 1 行。行見出しと、書けるセル。行の下と見出しの右に `line`（最後の行の下は外枠に任せる）
+/// Sheet の行見出し。右に `line`
 #[component]
-fn SheetRow(label: String, error: bool, children: Element) -> Element {
+fn SheetHead(label: String, error: bool) -> Element {
     rsx! {
-        tr { class: "border-b border-line last:border-b-0",
-            th {
-                class: if error { "w-1/2 border-r border-line bg-fill px-3 py-1 text-center text-label text-ng font-normal" } else { "w-1/2 border-r border-line bg-fill px-3 py-1 text-center text-label text-muted font-normal" },
-                scope: "row",
-                {label}
-            }
-            td { class: "p-0", {children} }
+        th {
+            class: if error { "border-r border-line bg-fill px-1 text-center text-label text-ng font-normal whitespace-nowrap" } else { "border-r border-line bg-fill px-1 text-center text-label text-muted font-normal whitespace-nowrap" },
+            scope: "row",
+            {label}
         }
+    }
+}
+
+/// Sheet の書けるセル。右に `line`（行の最後のセルは外枠に任せる）
+#[component]
+fn SheetCell(children: Element) -> Element {
+    rsx! {
+        td { class: "border-r border-line p-0 last:border-r-0", {children} }
     }
 }

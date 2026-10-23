@@ -55,6 +55,10 @@ fn the_page_opens_with_the_initial_inputs_in_the_sheet() {
             "y = Ly（上）",
         ],
     );
+    assert!(
+        text_of(main).contains("ν は 0 を基本とする"),
+        "ν の注記が無い: {main}"
+    );
     for value in ["4.0", "5.0", "150", "22700", "0", "10"] {
         assert!(
             main.contains(&format!("value=\"{value}\"")),
@@ -75,16 +79,14 @@ fn the_page_shows_the_results_of_the_fixed_plate_in_order() {
             "w（mm）",
             "Mx（kN·m/m）",
             "My（kN·m/m）",
-            "辺の曲げモーメントの最大値",
+            "辺の最大値（位置は m）",
             "M（kN·m/m）",
-            "位置（m）",
+            "Q（kN/m）",
+            "V（kN/m）",
             "x = 0",
             "x = Lx",
             "y = 0",
             "y = Ly",
-            "辺のせん断力と辺の反力の最大値",
-            "せん断力",
-            "辺の反力",
             "隅反力",
             "x = 0・y = 0",
             "x = Lx・y = 0",
