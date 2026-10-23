@@ -1,7 +1,7 @@
 //! Kirchhoff 板の曲げ。言葉は `docs/tools/kirchhoff-plate/GLOSSARY.md`、判断は同じ所の ADR。
 //!
 //! 公開の入口は [`solve`] 一つ。入力（[`Plate`]）から [`Solution`] を得て、点の応答、等間隔グリッドの
-//! 応答、辺に沿った辺の反力の分布、辺の最大値、隅ごとの隅反力を取る。公開の座標は隅が原点
+//! 応答、辺に沿った辺の反力の分布とその合計、辺の最大値、隅ごとの隅反力を取る。公開の座標は隅が原点
 //! （x は 0 から Lx、y は 0 から Ly）。符号は ADR-0004。
 //!
 //! 内部では、支持条件の組を 21 種の型と写し方に分け（[`SupportType`]、ADR-0003）、代表の向きの板を
@@ -18,10 +18,10 @@ mod support_type;
 
 use std::fmt;
 
-use rustruct_types::kirchhoff_plate::{Corner, Edge, Supports};
-use rustruct_types::quantity::{
-    AreaLoad, Force, ForcePerLength, Length, MomentPerLength, PoissonRatio, Stress,
-};
+/// 入力は Kirchhoff 板 Model そのもの（`rustruct-types`）
+pub use rustruct_types::kirchhoff_plate::Plate;
+use rustruct_types::kirchhoff_plate::{Corner, Edge, Support};
+use rustruct_types::quantity::{Force, ForcePerLength, Length, MomentPerLength};
 
 pub use finite_element::mesh_divisions;
 use solver::{Derivatives, Solver};
@@ -31,25 +31,6 @@ pub use support_type::{Mapping, SupportType};
 /// 有限要素の短い辺の分割数。長い辺は辺長に合わせて増やす（[`mesh_divisions`]）。利用者の入力にも Model にも
 /// 持たない定数で、値は分割数を倍にしたときの変化が収まることで決めた（`docs/tools/kirchhoff-plate/adr/0006`）
 pub const DIVISIONS: usize = 24;
-
-/// 1 枚の板の入力。Model が持つ値と同じ（`docs/tools/kirchhoff-plate/adr/0001`）
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Plate {
-    /// x方向の辺長 Lx
-    pub lx: Length,
-    /// y方向の辺長 Ly
-    pub ly: Length,
-    /// 板厚 t
-    pub thickness: Length,
-    /// ヤング係数 E
-    pub young_modulus: Stress,
-    /// ポアソン比 ν
-    pub poisson_ratio: PoissonRatio,
-    /// 等分布荷重 p（下向き正）
-    pub load: AreaLoad,
-    /// 4 辺の支持条件の組
-    pub supports: Supports,
-}
 
 /// 入力が不正な理由。辺長・板厚・ヤング係数は正の有限値、荷重は有限値（0 と上向きも可）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,16 +106,17 @@ pub struct EdgeSample {
 
 /// 絶対値が最大の値と、辺の始点からのその位置
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Extreme {
-    pub value: ForcePerLength,
+pub struct Extreme<T> {
+    pub value: T,
     pub along: Length,
 }
 
-/// 辺の最大値（GLOSSARY）。せん断力と辺の反力それぞれの絶対値の最大と位置
+/// 辺の最大値（GLOSSARY）。辺に直交する方向の曲げモーメント、せん断力、辺の反力それぞれの絶対値の最大と位置
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EdgeMaximum {
-    pub shear: Extreme,
-    pub reaction: Extreme,
+    pub moment: Extreme<MomentPerLength>,
+    pub shear: Extreme<ForcePerLength>,
+    pub reaction: Extreme<ForcePerLength>,
 }
 
 /// 解。入力と、正規化で決まった型と写し方、代表の向きの板の解き方（係数を持つ）。
@@ -266,9 +248,14 @@ impl Solution {
         out
     }
 
-    /// 辺に沿った応答。辺を `divisions` 等分した divisions + 1 点を、始点（座標 0 の端）から順に
+    /// 辺に沿った応答。辺を `divisions` 等分した divisions + 1 点を、始点（座標 0 の端）から順に。
+    /// 境界条件で 0 の値（単純支持と自由の辺の曲げモーメント、自由の辺の反力）は、級数の打ち切りの屑を
+    /// 残さずちょうど 0 で返す
     pub fn edge(&self, edge: Edge, divisions: usize) -> Vec<EdgeSample> {
         let (lx, ly) = (self.plate.lx.as_mm(), self.plate.ly.as_mm());
+        let support = self.plate.supports.at(edge);
+        let moment_vanishes = matches!(support, Support::SimplySupported | Support::Free);
+        let reaction_vanishes = support == Support::Free;
         let length = match edge {
             Edge::X0 | Edge::XLx => ly,
             Edge::Y0 | Edge::YLy => lx,
@@ -287,11 +274,19 @@ impl Solution {
                 let r = self.edge_response(rep_edge, nd, d);
                 EdgeSample {
                     along: Length::mm(along),
-                    moment: MomentPerLength::nmm_per_mm(r.moment),
+                    moment: MomentPerLength::nmm_per_mm(if moment_vanishes {
+                        0.0
+                    } else {
+                        r.moment
+                    }),
                     shear: ForcePerLength::n_per_mm(
                         self.mapping.edge_shear_back(rep_edge, r.shear),
                     ),
-                    reaction: ForcePerLength::n_per_mm(r.reaction),
+                    reaction: ForcePerLength::n_per_mm(if reaction_vanishes {
+                        0.0
+                    } else {
+                        r.reaction
+                    }),
                 }
             })
             .collect()
@@ -313,27 +308,32 @@ impl Solution {
         Force::n(self.p() * a * a * v)
     }
 
-    /// 辺の最大値。`edge` と同じ評価点から、せん断力と辺の反力それぞれの絶対値の最大と位置
+    /// 辺の最大値。`edge` と同じ評価点から、曲げモーメント・せん断力・辺の反力それぞれの絶対値の最大と位置
     pub fn edge_maximum(&self, edge: Edge, divisions: usize) -> EdgeMaximum {
         let samples = self.edge(edge, divisions);
-        let extreme = |pick: fn(&EdgeSample) -> ForcePerLength| {
-            let s = samples
+        // 量の型を跨いで比べるので、内部の単位の数で比べる
+        let extreme = |magnitude: fn(&EdgeSample) -> f64| {
+            samples
                 .iter()
-                .max_by(|a, b| {
-                    pick(a)
-                        .as_n_per_mm()
-                        .abs()
-                        .total_cmp(&pick(b).as_n_per_mm().abs())
-                })
-                .expect("評価点は 1 つ以上");
-            Extreme {
-                value: pick(s),
-                along: s.along,
-            }
+                .max_by(|a, b| magnitude(a).abs().total_cmp(&magnitude(b).abs()))
+                .expect("評価点は 1 つ以上")
         };
+        let moment = extreme(|s| s.moment.as_nmm_per_mm());
+        let shear = extreme(|s| s.shear.as_n_per_mm());
+        let reaction = extreme(|s| s.reaction.as_n_per_mm());
         EdgeMaximum {
-            shear: extreme(|s| s.shear),
-            reaction: extreme(|s| s.reaction),
+            moment: Extreme {
+                value: moment.moment,
+                along: moment.along,
+            },
+            shear: Extreme {
+                value: shear.shear,
+                along: shear.along,
+            },
+            reaction: Extreme {
+                value: reaction.reaction,
+                along: reaction.along,
+            },
         }
     }
 
