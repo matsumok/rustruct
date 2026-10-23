@@ -11,7 +11,8 @@
 use rustruct_types::kirchhoff_plate::{Corner, Edge};
 
 use super::levy::{
-    Derivatives, Frame, Orientation, Series, alternating, load_edge_slope, moment_edge_slope,
+    Derivatives, Frame, Kind, Orientation, Series, Side, Wave, alternating, load_edge_slope,
+    moment_edge_slope,
 };
 use super::linear::Matrix;
 use super::solver::Solver;
@@ -66,14 +67,14 @@ pub fn solve(b: f64, terms: usize) -> Option<Fixed> {
     for (own_offset, own, other) in [(0, x_edges, y_edges), (n, y_edges, x_edges)] {
         let other_offset = n - own_offset;
         for i in 0..n {
-            let beta = own.frame.beta(i + 1);
+            let beta = own.frame.beta(Wave::Cos, i + 1);
             let k = beta * own.frame.half_across;
             a.set(own_offset + i, own_offset + i, moment_edge_slope(k) / beta);
             rhs.push(
                 2.0 / own.frame.half_along * alternating(i + 1) * load_edge_slope(k) / beta.powi(4),
             );
             for j in 0..n {
-                let alpha = other.frame.beta(j + 1);
+                let alpha = other.frame.beta(Wave::Cos, j + 1);
                 a.set(
                     own_offset + i,
                     other_offset + j,
@@ -88,9 +89,20 @@ pub fn solve(b: f64, terms: usize) -> Option<Fixed> {
         b,
         load_along_y: Series::load(x_edges.frame, x_edges.orientation, n),
         load_along_x: Series::load(y_edges.frame, y_edges.orientation, n),
-        moments_on_x_edges: Series::edge_moments(x_edges.frame, x_edges.orientation, m_x.to_vec()),
-        moments_on_y_edges: Series::edge_moments(y_edges.frame, y_edges.orientation, m_y.to_vec()),
+        moments_on_x_edges: edge_moments(x_edges, m_x.to_vec()),
+        moments_on_y_edges: edge_moments(y_edges, m_y.to_vec()),
     })
+}
+
+/// 辺の組の両方の辺に同じ曲げモーメントを受ける同次解
+fn edge_moments(pair: EdgePair, coefficients: Vec<f64>) -> Series {
+    Series::homogeneous(
+        pair.frame,
+        Wave::Cos,
+        Kind::EdgeMoment(Side::Both),
+        pair.orientation,
+        coefficients,
+    )
 }
 
 /// 片方の辺の組の同次解の傾きを、もう片方の辺に沿って展開したときの係数:

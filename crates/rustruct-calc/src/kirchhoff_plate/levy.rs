@@ -2,13 +2,16 @@
 //! t は双曲線関数の向き（|t| ≤ half_across）。型ごとの解き方はこの部品を向きを変えて組み合わせ、無次元の
 //! たわみの導関数（p = 1、D = 1）だけを返す（ADR-0002）。
 //!
-//! 項 n の波数は β = (2n − 1)π/(2 half_along)。cos βs は s = ±half_along で 0 になる（s についてたわみ 0 の辺）。
-//! 双曲線関数は比の形（`hyperbolic`）だけで、k = β·half_across に対する C = cosh βt / cosh k、S = sinh βt / cosh k。
+//! s 方向の形（`Wave`）は cos βs（β = (2n − 1)π/(2 half_along)、s = ±half_along で 0）か、1/4 波の
+//! sin β(s + half_along)（β = (2n − 1)π/(4 half_along)、s = −half_along で 0、s = +half_along で傾き 0）。
+//! t 方向の形（`Kind`）は双曲線関数の比の形（`hyperbolic`）だけで書く。k = β·half_across。
 
 use std::f64::consts::PI;
 use std::ops::Add;
 
-use super::hyperbolic::{cosh_ratio, sech2, sinh_ratio, tanh};
+use super::hyperbolic::{
+    cosh_over_sinh, cosh_ratio, coth, sech2, sinh_over_sinh, sinh_ratio, tanh,
+};
 
 /// 級数の局所の枠。級数に沿う向き s の半辺長と、横切る向き t の半辺長
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -19,9 +22,22 @@ pub struct Frame {
 
 impl Frame {
     /// 項 n（1 から）の波数
-    pub fn beta(self, n: usize) -> f64 {
-        (2 * n - 1) as f64 * PI / (2.0 * self.half_along)
+    pub fn beta(self, wave: Wave, n: usize) -> f64 {
+        match wave {
+            Wave::Cos => (2 * n - 1) as f64 * PI / (2.0 * self.half_along),
+            Wave::Quarter => (2 * n - 1) as f64 * PI / (4.0 * self.half_along),
+        }
     }
+}
+
+/// 項の s 方向の形 g。どれも g'' = −β² g
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Wave {
+    /// cos βs、β = (2n − 1)π/(2 half_along)。s について対称で、s = ±half_along で 0
+    Cos,
+    /// sin β(s + half_along)、β = (2n − 1)π/(4 half_along)。s = −half_along で 0、s = +half_along で傾き 0。
+    /// 片方の端だけが支えられた向きの展開に使う
+    Quarter,
 }
 
 /// 局所座標での無次元のたわみとその導関数。1 階は境界条件の組み立てにしか要らないので持たない
@@ -116,36 +132,102 @@ pub enum Kind {
     /// 等分布荷重 1 を受け、t = ±ht で単純支持の板の解。各項の係数は荷重の展開で決まり、
     /// 特解 w_p(s) = (h² − s²)(5h² − s²)/24（h は s の半辺長）は閉じた形で足す
     Load,
-    /// t = ±half_across の辺に曲げモーメント m_n cos βs を受ける同次解。その辺でたわみ 0、w_tt = −m_n cos βs。
-    /// 係数 m_n は型ごとの境界条件の連立で決まる
-    EdgeMoment,
+    /// t = ±half_across の辺（`Side` で選ぶ）に曲げモーメント m_n·(s の形) を受ける同次解。両方の辺でたわみ 0、
+    /// 選んだ辺で w_tt = −m_n·(s の形)、選ばない辺で w_tt = 0。係数 m_n は型ごとの境界条件の連立で決まる
+    EdgeMoment(Side),
+    /// t = ±half_across の辺（`Side` で選ぶ）がたわみ δ_n·(s の形) を持つ同次解。選んだ辺で w = δ_n·(s の形)、
+    /// 選ばない辺で w = 0、両方の辺で w_tt = 0。係数 δ_n は型ごとの境界条件の連立で決まる
+    EdgeDeflection(Side),
+}
+
+/// 同次解が値を持つ辺
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    /// t = ±half_across の両方（同じ値。t について対称）
+    Both,
+    /// t = −half_across だけ
+    Lower,
+    /// t = +half_across だけ
+    Upper,
+}
+
+/// 同次解の t 方向の基底。t について対称（u = cosh βt / cosh k、w = sinh βt / cosh k、κ = k·tanh k）か
+/// 反対称（u = sinh βt / sinh k、w = cosh βt / sinh k、κ = k·coth k）。どちらも t = k で u = 1、w = κ/k で、
+/// βt で微分すると u と w が入れ替わる
+#[derive(Clone, Copy)]
+struct Basis {
+    u: f64,
+    w: f64,
+    kappa: f64,
+}
+
+impl Basis {
+    fn even(bt: f64, k: f64) -> Self {
+        Self {
+            u: cosh_ratio(bt, k),
+            w: sinh_ratio(bt, k),
+            kappa: k * tanh(k),
+        }
+    }
+
+    fn odd(bt: f64, k: f64) -> Self {
+        Self {
+            u: sinh_over_sinh(bt, k),
+            w: cosh_over_sinh(bt, k),
+            kappa: k * coth(k),
+        }
+    }
+
+    /// 辺の曲げモーメントの形 f = (κu − βt·w) / (2β²) とその 1〜3 階の t 導関数。
+    /// t = k で f = 0、f'' = −1。t = −k で f = 0、f'' は対称なら −1、反対称なら +1
+    fn moment(self, beta: f64, bt: f64) -> [f64; 4] {
+        let Self { u, w, kappa } = self;
+        [
+            (kappa * u - bt * w) / (2.0 * beta * beta),
+            ((kappa - 1.0) * w - bt * u) / (2.0 * beta),
+            ((kappa - 2.0) * u - bt * w) / 2.0,
+            beta * ((kappa - 3.0) * w - bt * u) / 2.0,
+        ]
+    }
+
+    /// 辺のたわみの形 d = (1 + κ/2)u − (βt/2)w とその 1〜3 階の t 導関数。
+    /// t = k で d = 1、d'' = 0。t = −k で d は対称なら 1、反対称なら −1、d'' = 0
+    fn deflection(self, beta: f64, bt: f64) -> [f64; 4] {
+        let Self { u, w, kappa } = self;
+        [
+            (1.0 + kappa / 2.0) * u - bt / 2.0 * w,
+            beta * ((1.0 + kappa) / 2.0 * w - bt / 2.0 * u),
+            beta * beta * (kappa / 2.0 * u - bt / 2.0 * w),
+            beta * beta * beta * ((kappa - 1.0) / 2.0 * w - bt / 2.0 * u),
+        ]
+    }
+}
+
+/// 片方の辺だけの形を、対称な形と反対称な形の和と差の半分で作る
+fn on_side(
+    side: Side,
+    beta: f64,
+    bt: f64,
+    k: f64,
+    shape: fn(Basis, f64, f64) -> [f64; 4],
+) -> [f64; 4] {
+    let even = shape(Basis::even(bt, k), beta, bt);
+    let sign = match side {
+        Side::Both => return even,
+        Side::Upper => 1.0,
+        Side::Lower => -1.0,
+    };
+    let odd = shape(Basis::odd(bt, k), beta, bt);
+    std::array::from_fn(|i| (even[i] + sign * odd[i]) / 2.0)
 }
 
 /// 項の t 方向の形 h とその 1〜3 階の t 導関数。bt = β t、k = β half_across
-fn profile(kind: Kind, beta: f64, bt: f64, k: f64) -> [f64; 4] {
-    let c = cosh_ratio(bt, k);
-    let s = sinh_ratio(bt, k);
-    let kt = k * tanh(k);
+pub fn profile(kind: Kind, beta: f64, bt: f64, k: f64) -> [f64; 4] {
     match kind {
-        Kind::Load => {
-            // h = A·C + (βt/2)·S、A = −1 − k·tanh k / 2。t = ±half_across で h = −1（特解と打ち消してたわみ 0）、h'' = 0
-            let a = -1.0 - kt / 2.0;
-            [
-                a * c + bt / 2.0 * s,
-                beta * ((a + 0.5) * s + bt / 2.0 * c),
-                beta * beta * ((a + 1.0) * c + bt / 2.0 * s),
-                beta * beta * beta * ((a + 1.5) * s + bt / 2.0 * c),
-            ]
-        }
-        Kind::EdgeMoment => {
-            // f = (k·tanh k·C − βt·S) / (2β²)。t = ±half_across で f = 0、f'' = −1
-            [
-                (kt * c - bt * s) / (2.0 * beta * beta),
-                ((kt - 1.0) * s - bt * c) / (2.0 * beta),
-                ((kt - 2.0) * c - bt * s) / 2.0,
-                beta * ((kt - 3.0) * s - bt * c) / 2.0,
-            ]
-        }
+        // 両方の辺のたわみ −1 の形。特解と打ち消してたわみ 0、h'' = 0
+        Kind::Load => Basis::even(bt, k).deflection(beta, bt).map(|v| -v),
+        Kind::EdgeMoment(side) => on_side(side, beta, bt, k, Basis::moment),
+        Kind::EdgeDeflection(side) => on_side(side, beta, bt, k, Basis::deflection),
     }
 }
 
@@ -168,6 +250,7 @@ pub fn alternating(n: usize) -> f64 {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Series {
     pub frame: Frame,
+    pub wave: Wave,
     pub kind: Kind,
     pub orientation: Orientation,
     /// 項 1 から順の係数（荷重の項は c_n、辺の曲げモーメントの項は m_n）
@@ -179,22 +262,31 @@ impl Series {
     pub fn load(frame: Frame, orientation: Orientation, terms: usize) -> Self {
         let coefficients = (1..=terms)
             .map(|n| {
-                let beta = frame.beta(n);
+                let beta = frame.beta(Wave::Cos, n);
                 2.0 / frame.half_along * alternating(n - 1) / beta.powi(5)
             })
             .collect();
         Self {
             frame,
+            wave: Wave::Cos,
             kind: Kind::Load,
             orientation,
             coefficients,
         }
     }
 
-    pub fn edge_moments(frame: Frame, orientation: Orientation, coefficients: Vec<f64>) -> Self {
+    /// 同次解（`Kind::EdgeMoment`・`Kind::EdgeDeflection`）の級数
+    pub fn homogeneous(
+        frame: Frame,
+        wave: Wave,
+        kind: Kind,
+        orientation: Orientation,
+        coefficients: Vec<f64>,
+    ) -> Self {
         Self {
             frame,
-            kind: Kind::EdgeMoment,
+            wave,
+            kind,
             orientation,
             coefficients,
         }
@@ -215,19 +307,25 @@ impl Series {
             l.w_sss = s;
         }
         for (i, &coef) in self.coefficients.iter().enumerate() {
-            let beta = self.frame.beta(i + 1);
+            let beta = self.frame.beta(self.wave, i + 1);
             let k = beta * self.frame.half_across;
             let [h, h1, h2, h3] = profile(self.kind, beta, beta * t, k);
-            let cos = (beta * s).cos();
-            let sin = (beta * s).sin();
-            l.w += coef * h * cos;
-            l.w_ss -= coef * h * beta * beta * cos;
-            l.w_tt += coef * h2 * cos;
-            l.w_st -= coef * h1 * beta * sin;
-            l.w_sss += coef * h * beta * beta * beta * sin;
-            l.w_sst -= coef * h1 * beta * beta * cos;
-            l.w_stt -= coef * h2 * beta * sin;
-            l.w_ttt += coef * h3 * cos;
+            // s の形 g とその s 微分 / β
+            let (g, g1) = match self.wave {
+                Wave::Cos => ((beta * s).cos(), -(beta * s).sin()),
+                Wave::Quarter => {
+                    let phase = beta * (s + self.frame.half_along);
+                    (phase.sin(), phase.cos())
+                }
+            };
+            l.w += coef * h * g;
+            l.w_ss -= coef * h * beta * beta * g;
+            l.w_tt += coef * h2 * g;
+            l.w_st += coef * h1 * beta * g1;
+            l.w_sss -= coef * h * beta * beta * beta * g1;
+            l.w_sst -= coef * h1 * beta * beta * g;
+            l.w_stt += coef * h2 * beta * g1;
+            l.w_ttt += coef * h3 * g;
         }
         l
     }

@@ -15,6 +15,7 @@ mod linear;
 mod simply_supported;
 mod solver;
 mod support_type;
+mod three_fixed_one_free;
 
 use std::fmt;
 
@@ -162,9 +163,12 @@ pub fn solve_with_terms(plate: &Plate, terms: usize) -> Result<Solution, PlateEr
     let solver: Box<dyn Solver> = match support_type {
         SupportType::FFFF => Box::new(fixed::solve(b, terms).ok_or(PlateError::Singular)?),
         SupportType::SSSS => Box::new(simply_supported::solve(b, terms)),
+        SupportType::FFFR => Box::new(
+            three_fixed_one_free::solve(b, plate.poisson_ratio.value(), terms)
+                .ok_or(PlateError::Singular)?,
+        ),
         SupportType::RRRR | SupportType::RRRS => return Err(PlateError::Unstable(support_type)),
-        SupportType::FFFR
-        | SupportType::FFFS
+        SupportType::FFFS
         | SupportType::FFRR
         | SupportType::FFRS
         | SupportType::FFSS
