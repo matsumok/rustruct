@@ -2,7 +2,8 @@
 //! 決め事は `docs/adr/0006` と `docs/ui-decisions.md`「列の単位と表」で、部品がそれを守るので使う側は書かない:
 //!
 //! - 表は横罫だけ。見出しの行と本体の各行の下に `line`。縦罫・塗り・交互の背景は使わない（入力の Sheet と分ける）
-//! - 単位は表の名前（`Caption`）か列の見出し（`HeadCell`）に括弧で書き、数字の後には付けない
+//! - 単位は表の名前（`Caption`）か列の見出し（`HeadCell`）に括弧で書き、数字の後には付けない。列が場所で行が量の表は行の見出し（`RowHeadCell`）に書く
+//! - 入力で値が変わる表は `Table` の `fixed` で列の幅を固定する
 //! - 小数の桁数が行で違う列は `DecimalCell` で小数点を揃える。4桁以上の数は `thousands` で3桁ごとに「,」
 //! - 本文は1単位（`width-column`）の列（`Column`）を `Columns` で並べ、「入力＋結果」と根拠の間に `Divider`
 //! - 表や式は `Block` に、見出し（`Caption`）、表や式、注記（`Notes`）の順で置く。出典は画面に出さない
@@ -73,10 +74,12 @@ pub(crate) fn Notes(children: Element) -> Element {
 /// 縦罫と塗りは使わない。幅は列いっぱい（1単位）。入りきらない表は外側を `overflow-x-auto` で包む。
 /// セルは左に `space-3` を取り、最初の列だけ左を詰めて右に `space-3`（表の端の列を端に寄せる）。
 /// 位置で変わる形は CSS の `first:` で決め、セルに「最初かどうか」を渡さない。
+/// `fixed` の表は列の幅を中身で変えない（入力で値が変わっても列が動かない）。行の見出しの列は
+/// 最初の行の先頭の `HeadCell`（`row_heads`）が `space-9` の幅に決め、残りの列は等分する（`row_heads` が無ければすべて等分）。
 #[component]
-pub(crate) fn Table(children: Element) -> Element {
+pub(crate) fn Table(#[props(default)] fixed: bool, children: Element) -> Element {
     rsx! {
-        table { class: "w-full", {children} }
+        table { class: if fixed { "w-full table-fixed" } else { "w-full" }, {children} }
     }
 }
 
@@ -120,10 +123,11 @@ pub(crate) fn GroupCell(span: u32, children: Element) -> Element {
 /// 列見出し。`label` の muted で、上下は中央（2行の見出しと並ぶ1行の見出しも）、折り返さない（改行は `br` で決める）。数値の列の見出しは、
 /// 改行した行どうしを左で揃え、そのまとまりを列の右に寄せる。揃えは列の中身に合わせる: `left` の列（名前・区分の
 /// `TextCell`、式の `FormulaCell`）は左、数値の列（`NumCell`）は右。`span` は列のまたぎ、`rows` は
-/// 行のまたぎ（まとまりの見出しの行と並ぶ先頭の列）。
+/// 行のまたぎ（まとまりの見出しの行と並ぶ先頭の列）。`row_heads` は `fixed` の表で、行の見出しの列の幅を決める。
 #[component]
 pub(crate) fn HeadCell(
     #[props(default)] left: bool,
+    #[props(default)] row_heads: bool,
     span: Option<u32>,
     rows: Option<u32>,
     children: Element,
@@ -132,12 +136,24 @@ pub(crate) fn HeadCell(
         th {
             colspan: span,
             rowspan: rows,
-            class: if left { "py-2 pl-3 first:pl-0 first:pr-3 text-left text-label text-muted font-normal whitespace-nowrap" } else { "py-2 pl-3 first:pl-0 first:pr-3 text-right text-label text-muted font-normal whitespace-nowrap" },
+            class: if row_heads { "w-9 py-2 pl-3 first:pl-0 first:pr-3 text-left text-label text-muted font-normal whitespace-nowrap" } else if left { "py-2 pl-3 first:pl-0 first:pr-3 text-left text-label text-muted font-normal whitespace-nowrap" } else { "py-2 pl-3 first:pl-0 first:pr-3 text-right text-label text-muted font-normal whitespace-nowrap" },
             if left {
                 {children}
             } else {
                 span { class: "inline-block text-left", {children} }
             }
+        }
+    }
+}
+
+/// 行の見出し。列見出しと同じ `label` の muted で左揃え。行が量で、列が場所の表に使う（単位はここに書く）。
+#[component]
+pub(crate) fn RowHeadCell(children: Element) -> Element {
+    rsx! {
+        th {
+            scope: "row",
+            class: "py-2 pl-3 first:pl-0 first:pr-3 text-left text-label text-muted font-normal whitespace-nowrap",
+            {children}
         }
     }
 }
