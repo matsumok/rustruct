@@ -17,6 +17,7 @@
 //! 辺の反力は拘束した w の自由度の釣り合いの力（節点の反力）から作る。節点の反力を受け持ち区間に載る分布の
 //! 積分と見て、節点の間で線形な分布に直す。隅の節点は隅反力（隅の w_xy から求める）の分を足し戻してから
 //! 会う辺に振り分ける。こうすると辺の反力の積分から隅反力を引いたものが荷重の合計に丸め誤差で一致する。
+//! 丸めを抑えるため、節点力は要素ごとに剛体の動きを引いてから求め、連立は反復改良を 1 回する（ADR-0009）。
 //! たわみの導関数は形状関数から解析的に取る。w と w_xy は要素の間で連続なのでそのまま。要素の間で跳ぶ
 //! 2 階・3 階の導関数は要素の中央の値（2 階は補間の誤差を差分で補正したもの）を多項式で結び、辺の上へは
 //! 端の要素の中央から外挿する。
@@ -296,12 +297,27 @@ pub fn solve(b: f64, nu: f64, supports: Supports, divisions: usize) -> Option<Fi
             }
         }
     }
-    let x = k.solve(f)?;
-    for (i, &r) in reduced.iter().enumerate() {
-        if let Some(r) = r {
-            fe.u[i] = x[r];
+    // 連立を解き、反復改良を 1 回する。自由辺のある板はたわみの大部分が要素ごとには剛体の動きで、K u の
+    // 大きな項どうしが打ち消し合い、残差の丸めが連立の条件数で大きくなる（ADR-0009）。残差は要素ごとに剛体の
+    // 動きを引いた ke · u から組み、同じ分解で補正を解く
+    let cholesky = k.factor()?;
+    let mut x = cholesky.solve(f.clone());
+    fe.set_free(&reduced, &x);
+    let mut residual = f;
+    for &(i, j) in &elements {
+        let (ke, _) = integrals.element(fe.hx(i), fe.hy(j), nu);
+        let dofs = fe.element_dofs(i, j);
+        let ku = fe.element_force(&ke, &dofs, i, j);
+        for (r, &dr) in dofs.iter().enumerate() {
+            if let Some(gr) = reduced[dr] {
+                residual[gr] -= ku[r];
+            }
         }
     }
+    for (x, dx) in x.iter_mut().zip(cholesky.solve(residual)) {
+        *x += dx;
+    }
+    fe.set_free(&reduced, &x);
     // 拘束した自由度の反力（支える向き、つまり荷重と逆向きが正）: 節点荷重 − 剛性 × 変位
     let mut reaction = vec![0.0; fixed.len()];
     for &(i, j) in &elements {
@@ -310,16 +326,11 @@ pub fn solve(b: f64, nu: f64, supports: Supports, divisions: usize) -> Option<Fi
             continue;
         }
         let (ke, fe_load) = integrals.element(fe.hx(i), fe.hy(j), nu);
+        let ku = fe.element_force(&ke, &dofs, i, j);
         for (r, &dr) in dofs.iter().enumerate() {
-            if !fixed[dr] {
-                continue;
+            if fixed[dr] {
+                reaction[dr] += fe_load[r] - ku[r];
             }
-            let ku: f64 = dofs
-                .iter()
-                .enumerate()
-                .map(|(c, &dc)| ke[r][c] * fe.u[dc])
-                .sum();
-            reaction[dr] += fe_load[r] - ku;
         }
     }
     fe.distribute_reactions(&reaction);
@@ -327,6 +338,59 @@ pub fn solve(b: f64, nu: f64, supports: Supports, divisions: usize) -> Option<Fi
 }
 
 impl FiniteElement {
+    /// 拘束しない自由度に、振り直した番号の解の値を入れる
+    fn set_free(&mut self, reduced: &[Option<usize>], x: &[f64]) {
+        for (u, &r) in self.u.iter_mut().zip(reduced) {
+            if let Some(r) = r {
+                *u = x[r];
+            }
+        }
+    }
+
+    /// 要素 (i, j) の節点力 ke · u。先に要素の節点の値から剛体の動き（w = a + b x + c y）を引いてから掛ける。
+    /// 剛体の動きはひずみエネルギーを持たず ke に掛けると 0 なので値は変わらないが、大きな項どうしの打ち消し
+    /// 合いが減り、丸めが小さくなる（ADR-0009）。b・c は 4 節点の傾きの平均、a は残りの w の平均
+    fn element_force(
+        &self,
+        ke: &[[f64; ELEMENT_DOFS]; ELEMENT_DOFS],
+        dofs: &[usize; ELEMENT_DOFS],
+        i: usize,
+        j: usize,
+    ) -> [f64; ELEMENT_DOFS] {
+        let mut local = [0.0; ELEMENT_DOFS];
+        for (l, &d) in local.iter_mut().zip(dofs) {
+            *l = self.u[d];
+        }
+        // 局所の節点 (a, b) の、要素の中央からの座標
+        let (hx, hy) = (self.hx(i), self.hy(j));
+        let position = |node: usize| {
+            (
+                (2.0 * (node % 2) as f64 - 1.0) * hx,
+                (2.0 * (node / 2) as f64 - 1.0) * hy,
+            )
+        };
+        let b = (0..4).map(|n| local[4 * n + 1]).sum::<f64>() / 4.0;
+        let c = (0..4).map(|n| local[4 * n + 2]).sum::<f64>() / 4.0;
+        let a = (0..4)
+            .map(|n| {
+                let (x, y) = position(n);
+                local[4 * n] - b * x - c * y
+            })
+            .sum::<f64>()
+            / 4.0;
+        for n in 0..4 {
+            let (x, y) = position(n);
+            local[4 * n] -= a + b * x + c * y;
+            local[4 * n + 1] -= b;
+            local[4 * n + 2] -= c;
+        }
+        let mut force = [0.0; ELEMENT_DOFS];
+        for (f, row) in force.iter_mut().zip(ke) {
+            *f = row.iter().zip(&local).map(|(k, u)| k * u).sum();
+        }
+        force
+    }
+
     fn nx(&self) -> usize {
         self.xs.len() - 1
     }

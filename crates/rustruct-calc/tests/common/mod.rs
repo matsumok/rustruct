@@ -4,7 +4,7 @@
 
 use std::f64::consts::PI;
 
-use rustruct_calc::kirchhoff_plate::{EdgeSample, Plate, PointResponse, Solution};
+use rustruct_calc::kirchhoff_plate::{EdgeSample, Plate, PointResponse, Solution, SupportType};
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Supports};
 use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
 
@@ -112,6 +112,38 @@ pub fn navier(plate: &Plate, x: f64, y: f64, max: usize) -> Navier {
 /// 隅から辺長の 5 % 以内の点か（x・y ともに辺長の 5 % より端に寄っている）。ADR-0008 で除く範囲
 pub fn near_corner(x: f64, y: f64, lx: f64, ly: f64) -> bool {
     !(0.05 * lx..=0.95 * lx).contains(&x) && !(0.05 * ly..=0.95 * ly).contains(&y)
+}
+
+/// 解ける 19 型。21 型から不安定な 2 型（四辺自由、単純支持 1 辺と自由 3 辺）を除いたもの
+pub fn stable_types() -> impl Iterator<Item = SupportType> {
+    SupportType::ALL
+        .into_iter()
+        .filter(|t| !matches!(t, SupportType::RRRR | SupportType::RRRS))
+}
+
+/// 比較の分母。たわみ・曲げモーメント・せん断力それぞれの、21 × 21 のグリッドでの絶対値の最大。隅から辺長の
+/// 5 % 以内の点は除く（固定辺と自由辺の隅ではせん断力が発散し、分母にすると比が小さく出る。ADR-0008）
+pub struct Scale {
+    pub w: f64,
+    pub m: f64,
+    pub q: f64,
+}
+
+impl Scale {
+    pub fn of(s: &Solution) -> Self {
+        let (lx, ly) = (s.plate().lx.as_mm(), s.plate().ly.as_mm());
+        let g: Vec<PointResponse> = s
+            .grid(20, 20)
+            .into_iter()
+            .filter(|p| !near_corner(p.x.as_mm(), p.y.as_mm(), lx, ly))
+            .collect();
+        let max = |f: Pick| g.iter().map(|p| f(p).abs()).fold(0.0, f64::max);
+        Scale {
+            w: max(|p| p.w.as_mm()),
+            m: max(|p| p.mx.as_nmm_per_mm()).max(max(|p| p.my.as_nmm_per_mm())),
+            q: max(|p| p.qx.as_n_per_mm()).max(max(|p| p.qy.as_n_per_mm())),
+        }
+    }
 }
 
 /// 点の応答から 1 つの量を取り出す
