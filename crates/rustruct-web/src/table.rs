@@ -2,7 +2,7 @@
 //! 決め事は `docs/adr/0006` と `docs/ui-decisions.md`「列の単位と表」で、部品がそれを守るので使う側は書かない:
 //!
 //! - 表は横罫だけ。見出しの行と本体の各行の下に `line`。縦罫・塗り・交互の背景は使わない（入力の Sheet と分ける）
-//! - 単位は表の名前（`Caption`）か列の見出し（`HeadCell`）に括弧で書き、数字の後には付けない。列が場所で行が量の表は行の見出し（`RowHeadCell`）に書く
+//! - 単位は表の名前（`Caption`）か列の見出し（`HeadCell`）に括弧で書き、数字の後には付けない
 //! - 入力で値が変わる表は `Table` の `fixed` で列の幅を固定する
 //! - 小数の桁数が行で違う列は `DecimalCell` で小数点を揃える。4桁以上の数は `thousands` で3桁ごとに「,」
 //! - 本文は1単位（`width-column`）の列（`Column`）を `Columns` で並べ、「入力＋結果」と根拠の間に `Divider`
@@ -74,8 +74,7 @@ pub(crate) fn Notes(children: Element) -> Element {
 /// 縦罫と塗りは使わない。幅は列いっぱい（1単位）。入りきらない表は外側を `overflow-x-auto` で包む。
 /// セルは左に `space-3` を取り、最初の列だけ左を詰めて右に `space-3`（表の端の列を端に寄せる）。
 /// 位置で変わる形は CSS の `first:` で決め、セルに「最初かどうか」を渡さない。
-/// `fixed` の表は列の幅を中身で変えない（入力で値が変わっても列が動かない）。行の見出しの列は
-/// 最初の行の先頭の `HeadCell`（`row_heads`）が `space-9` の幅に決め、残りの列は等分する（`row_heads` が無ければすべて等分）。
+/// `fixed` の表は列の幅を中身で変えず、すべての列を等分する（入力で値が変わっても列が動かない）。
 #[component]
 pub(crate) fn Table(#[props(default)] fixed: bool, children: Element) -> Element {
     rsx! {
@@ -123,11 +122,10 @@ pub(crate) fn GroupCell(span: u32, children: Element) -> Element {
 /// 列見出し。`label` の muted で、上下は中央（2行の見出しと並ぶ1行の見出しも）、折り返さない（改行は `br` で決める）。数値の列の見出しは、
 /// 改行した行どうしを左で揃え、そのまとまりを列の右に寄せる。揃えは列の中身に合わせる: `left` の列（名前・区分の
 /// `TextCell`、式の `FormulaCell`）は左、数値の列（`NumCell`）は右。`span` は列のまたぎ、`rows` は
-/// 行のまたぎ（まとまりの見出しの行と並ぶ先頭の列）。`row_heads` は `fixed` の表で、行の見出しの列の幅を決める。
+/// 行のまたぎ（まとまりの見出しの行と並ぶ先頭の列）。
 #[component]
 pub(crate) fn HeadCell(
     #[props(default)] left: bool,
-    #[props(default)] row_heads: bool,
     span: Option<u32>,
     rows: Option<u32>,
     children: Element,
@@ -136,24 +134,12 @@ pub(crate) fn HeadCell(
         th {
             colspan: span,
             rowspan: rows,
-            class: if row_heads { "w-9 py-2 pl-3 first:pl-0 first:pr-3 text-left text-label text-muted font-normal whitespace-nowrap" } else if left { "py-2 pl-3 first:pl-0 first:pr-3 text-left text-label text-muted font-normal whitespace-nowrap" } else { "py-2 pl-3 first:pl-0 first:pr-3 text-right text-label text-muted font-normal whitespace-nowrap" },
+            class: if left { "py-2 pl-3 first:pl-0 first:pr-3 text-left text-label text-muted font-normal whitespace-nowrap" } else { "py-2 pl-3 first:pl-0 first:pr-3 text-right text-label text-muted font-normal whitespace-nowrap" },
             if left {
                 {children}
             } else {
                 span { class: "inline-block text-left", {children} }
             }
-        }
-    }
-}
-
-/// 行の見出し。列見出しと同じ `label` の muted で左揃え。行が量で、列が場所の表に使う（単位はここに書く）。
-#[component]
-pub(crate) fn RowHeadCell(children: Element) -> Element {
-    rsx! {
-        th {
-            scope: "row",
-            class: "py-2 pl-3 first:pl-0 first:pr-3 text-left text-label text-muted font-normal whitespace-nowrap",
-            {children}
         }
     }
 }
@@ -176,12 +162,20 @@ pub(crate) fn NumCell(children: Element) -> Element {
 
 /// 小数点の位置を列で揃える数値のセル。`decimals` はその列の小数の最大の桁数。足りない桁（と小数点）を
 /// 数字幅の空白（U+2007）で右に埋める。等幅なので小数点が縦に揃う。埋めた空白は読み上げから外す。
+/// 指数で書いた数（「1.52×10⁻⁶」）は、累乗を `sup` の小さい文字にして幅を詰める（上付きの文字は数字と同じ幅になるため）。
 #[component]
 pub(crate) fn DecimalCell(value: String, decimals: usize) -> Element {
     let pad = "\u{2007}".repeat(decimal_pad(&value, decimals));
+    let (mantissa, power) = match value.split_once(TIMES_TEN) {
+        Some((mantissa, power)) => (format!("{mantissa}{TIMES_TEN}"), Some(normal_digits(power))),
+        None => (value.clone(), None),
+    };
     rsx! {
         td { class: "py-2 pl-3 first:pl-0 first:pr-3 font-mono text-num text-right whitespace-nowrap",
-            {value}
+            {mantissa}
+            if let Some(power) = power {
+                sup { {power} }
+            }
             if !pad.is_empty() {
                 span { aria_hidden: "true", {pad} }
             }
@@ -223,6 +217,7 @@ pub(crate) enum Formula {
 }
 
 /// 有効数字 `figures` 桁の文字列。末尾の 0 も桁として残す（0.560）。整数部が桁を超えるときは整数で（1140）。
+/// 絶対値が 0.001 未満なら「1.52×10⁻⁶」と指数で書く（小数の 0 が並ばないように）。0 は「0」のまま。
 /// 規格の丸め（JIS の丸めなど）は型の側で済ませ、ここは表示の桁をそろえて書くだけにする
 pub(crate) fn significant(x: f64, figures: i32) -> String {
     if x == 0.0 {
@@ -236,8 +231,45 @@ pub(crate) fn significant(x: f64, figures: i32) -> String {
         // 9.996 → 10.0 のように丸めで桁が上がった
         exponent += 1;
     }
+    if rounded.abs() < EXPONENT_BELOW {
+        let mantissa = rounded / 10_f64.powi(exponent);
+        let decimals = (figures - 1).max(0) as usize;
+        return format!("{mantissa:.decimals$}{TIMES_TEN}{}", superscript(exponent));
+    }
     let decimals = (figures - 1 - exponent).max(0) as usize;
     format!("{rounded:.decimals$}")
+}
+
+/// これより絶対値の小さい数は指数で書く
+const EXPONENT_BELOW: f64 = 1e-3;
+
+/// 指数で書く数の、仮数と累乗の間
+const TIMES_TEN: &str = "×10";
+
+/// 上付きの数字。並びは 0〜9 で、前に「⁻」
+const SUPERSCRIPTS: [char; 11] = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹', '⁻'];
+
+/// 整数を上付きの数字で（-6 → ⁻⁶）
+fn superscript(n: i32) -> String {
+    n.to_string()
+        .chars()
+        .map(|c| match c {
+            '-' => SUPERSCRIPTS[10],
+            digit => SUPERSCRIPTS[digit as usize - '0' as usize],
+        })
+        .collect()
+}
+
+/// 上付きの数字を並の数字に戻す（⁻⁶ → -6）。`sup` に入れて描くため
+fn normal_digits(power: &str) -> String {
+    power
+        .chars()
+        .map(|c| match SUPERSCRIPTS.iter().position(|&s| s == c) {
+            Some(10) => '-',
+            Some(digit) => char::from(b'0' + digit as u8),
+            None => c,
+        })
+        .collect()
 }
 
 /// 列ごとの小数の最大の桁数
@@ -252,14 +284,19 @@ pub(crate) fn max_decimals<'a>(values: impl Iterator<Item = &'a str>) -> usize {
     values.map(decimals_of).max().unwrap_or(0)
 }
 
-/// 小数の桁数（「12.7」は 1、「1,140」は 0）
+/// 小数の桁数（「12.7」は 1、「1,140」は 0）。指数で書いた数（「1.52×10⁻⁶」）は小数点で揃えないので 0
 fn decimals_of(value: &str) -> usize {
+    if value.contains(TIMES_TEN) {
+        return 0;
+    }
     value.find('.').map_or(0, |point| value.len() - point - 1)
 }
 
-/// 小数点を列で揃えるのに右に足す数字幅の数。小数点の無い値は小数点の分も足す
+/// 小数点を列で揃えるのに右に足す数字幅の数。小数点の無い値は小数点の分も足す。
+/// 指数で書いた数は埋めず、列の右に寄せる
 fn decimal_pad(value: &str, decimals: usize) -> usize {
     match (value.contains('.'), decimals) {
+        _ if value.contains(TIMES_TEN) => 0,
         (_, 0) => 0,
         (true, _) => decimals - decimals_of(value),
         (false, _) => decimals + 1,
@@ -281,4 +318,37 @@ pub(crate) fn thousands(number: String) -> String {
         grouped.push(digit);
     }
     format!("{sign}{grouped}{fraction}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn numbers_below_a_thousandth_are_written_with_a_power_of_ten() {
+        assert_eq!(significant(-0.00000152, 3), "-1.52×10⁻⁶");
+        assert_eq!(significant(0.000152, 3), "1.52×10⁻⁴");
+        assert_eq!(significant(0.00152, 3), "0.00152");
+        assert_eq!(significant(0.0, 3), "0");
+    }
+
+    #[test]
+    fn a_number_rounding_up_to_a_thousandth_is_written_as_a_decimal() {
+        assert_eq!(significant(0.00099996, 3), "0.00100");
+        assert_eq!(significant(0.0000099996, 3), "1.00×10⁻⁵");
+    }
+
+    #[test]
+    fn numbers_with_a_power_of_ten_are_not_padded_to_line_up_the_points() {
+        let values = ["6.11", "-1.52×10⁻⁶"];
+        assert_eq!(max_decimals(values.into_iter()), 2);
+        assert_eq!(decimal_pad("-1.52×10⁻⁶", 2), 0);
+        assert_eq!(thousands(significant(-0.00000152, 3)), "-1.52×10⁻⁶");
+    }
+
+    #[test]
+    fn a_superscript_power_turns_back_into_normal_digits_for_sup() {
+        assert_eq!(normal_digits("⁻¹²"), "-12");
+        assert_eq!(normal_digits(&superscript(-6)), "-6");
+    }
 }

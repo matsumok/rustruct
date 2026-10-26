@@ -288,9 +288,6 @@
   .h-auto {
     height: auto;
   }
-  .w-9 {
-    width: var(--spacing-9);
-  }
   .w-column {
     width: var(--container-column);
   }

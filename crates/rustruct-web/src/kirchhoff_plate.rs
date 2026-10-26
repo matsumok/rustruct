@@ -11,8 +11,8 @@ use rustruct_types::kirchhoff_plate::{Corner, Edge, Plate, Support, Supports};
 use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
 
 use crate::table::{
-    Block, Caption, Column, Columns, DecimalCell, HeadCell, HeadRow, Notes, NumCell, Row,
-    RowHeadCell, Table, TextCell, max_decimals, significant, thousands,
+    Block, Caption, Column, Columns, DecimalCell, HeadCell, HeadRow, Notes, Row, Table, TextCell,
+    max_decimals, significant, thousands,
 };
 use crate::{Page, Route};
 
@@ -21,19 +21,6 @@ const NOT_COMPUTED: &str = "—";
 
 /// 辺の最大値を取る評価点の分け方。辺を等分する数
 const EDGE_DIVISIONS: usize = 100;
-
-/// 辺の最大値の表の 1 行の取り出し方
-type EdgeValue = fn(&EdgeRow) -> &str;
-
-/// 辺の最大値の表の行。列は辺で、行は量ごとに値と位置。行の見出しに単位を書く
-const EDGE_ROWS: [(&str, EdgeValue); 6] = [
-    ("M（kN·m/m）", |r| &r.max_moment.value),
-    ("位置（m）", |r| &r.max_moment.along),
-    ("Q（kN/m）", |r| &r.max_shear.value),
-    ("位置（m）", |r| &r.max_shear.along),
-    ("V（kN/m）", |r| &r.max_reaction.value),
-    ("位置（m）", |r| &r.max_reaction.along),
-];
 
 /// 入力の Sheet の欄。並びは Sheet の行の順
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -428,9 +415,9 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                                 }
                                 tbody {
                                     Row {
-                                        NumCell { {w} }
-                                        NumCell { {mx} }
-                                        NumCell { {my} }
+                                        DecimalCell { value: w, decimals: 0 }
+                                        DecimalCell { value: mx, decimals: 0 }
+                                        DecimalCell { value: my, decimals: 0 }
                                     }
                                 }
                             }
@@ -442,33 +429,20 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                     }
                     Block {
                         Caption { "辺の最大値" }
-                        Table { fixed: true,
-                            thead {
-                                HeadRow {
-                                    HeadCell { left: true, row_heads: true }
-                                    for row in readout.edges.iter() {
-                                        HeadCell { "{row.name}" }
-                                    }
-                                }
-                            }
-                            tbody {
-                                for (label , pick) in EDGE_ROWS {
-                                    Row {
-                                        RowHeadCell { "{label}" }
-                                        for row in readout.edges.iter() {
-                                            NumCell { "{pick(row)}" }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        EdgeTable { edges: readout.edges.clone(), positions: false }
                         Notes {
-                            li { "辺上の絶対値の最大値と、その位置" }
-                            li { "位置は座標 0 の端からの距離" }
+                            li { "辺上の絶対値の最大値" }
                             li { "M は曲げモーメント、Q はせん断力、V は辺の反力" }
                             li { "左右の辺の M・Q は Mx・Qx、上下の辺は My・Qy" }
                             li { "単純支持辺と自由辺では M は 0" }
                             li { "辺の反力は支える向きを正とする" }
+                        }
+                    }
+                    Block {
+                        Caption { "辺の最大値の位置（m）" }
+                        EdgeTable { edges: readout.edges.clone(), positions: true }
+                        Notes {
+                            li { "位置は座標 0 の端からの距離" }
                         }
                     }
                     Block {
@@ -504,8 +478,8 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                             }
                             tbody {
                                 Row {
-                                    NumCell { {reactions} }
-                                    NumCell { {load} }
+                                    DecimalCell { value: reactions, decimals: 0 }
+                                    DecimalCell { value: load, decimals: 0 }
                                 }
                             }
                         }
@@ -596,5 +570,46 @@ fn SheetHead(label: String, error: bool) -> Element {
 fn SheetCell(children: Element) -> Element {
     rsx! {
         td { class: "border-r border-line p-0 last:border-r-0", {children} }
+    }
+}
+
+/// 辺の最大値の表。行は辺、列は M・Q・V。`positions` なら値でなくその位置を並べる。単位は、値の表は
+/// 列の見出しに、位置の表は表の名前に書く
+#[component]
+fn EdgeTable(edges: Vec<EdgeRow>, positions: bool) -> Element {
+    let pick: fn(&Maximum) -> &str = if positions {
+        |m| &m.along
+    } else {
+        |m| &m.value
+    };
+    let columns: [fn(&EdgeRow) -> &Maximum; 3] =
+        [|r| &r.max_moment, |r| &r.max_shear, |r| &r.max_reaction];
+    let decimals = columns.map(|column| max_decimals(edges.iter().map(|r| pick(column(r)))));
+    let heads = if positions {
+        ["M", "Q", "V"]
+    } else {
+        ["M（kN·m/m）", "Q（kN/m）", "V（kN/m）"]
+    };
+    rsx! {
+        Table { fixed: true,
+            thead {
+                HeadRow {
+                    HeadCell { left: true, "辺" }
+                    for head in heads {
+                        HeadCell { "{head}" }
+                    }
+                }
+            }
+            tbody {
+                for row in edges.iter() {
+                    Row {
+                        TextCell { "{row.name}" }
+                        for (column , decimals) in columns.into_iter().zip(decimals) {
+                            DecimalCell { value: pick(column(row)).to_string(), decimals }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
