@@ -162,20 +162,12 @@ pub(crate) fn NumCell(children: Element) -> Element {
 
 /// 小数点の位置を列で揃える数値のセル。`decimals` はその列の小数の最大の桁数。足りない桁（と小数点）を
 /// 数字幅の空白（U+2007）で右に埋める。等幅なので小数点が縦に揃う。埋めた空白は読み上げから外す。
-/// 指数で書いた数（「1.52×10⁻⁶」）は、累乗を `sup` の小さい文字にして幅を詰める（上付きの文字は数字と同じ幅になるため）。
 #[component]
 pub(crate) fn DecimalCell(value: String, decimals: usize) -> Element {
     let pad = "\u{2007}".repeat(decimal_pad(&value, decimals));
-    let (mantissa, power) = match value.split_once(TIMES_TEN) {
-        Some((mantissa, power)) => (format!("{mantissa}{TIMES_TEN}"), Some(normal_digits(power))),
-        None => (value.clone(), None),
-    };
     rsx! {
         td { class: "py-2 pl-3 first:pl-0 first:pr-3 font-mono text-num text-right whitespace-nowrap",
-            {mantissa}
-            if let Some(power) = power {
-                sup { {power} }
-            }
+            {value}
             if !pad.is_empty() {
                 span { aria_hidden: "true", {pad} }
             }
@@ -217,7 +209,7 @@ pub(crate) enum Formula {
 }
 
 /// 有効数字 `figures` 桁の文字列。末尾の 0 も桁として残す（0.560）。整数部が桁を超えるときは整数で（1140）。
-/// 絶対値が 0.001 未満なら「1.52×10⁻⁶」と指数で書く（小数の 0 が並ばないように）。0 は「0」のまま。
+/// 絶対値が 0.001 未満なら「1.52E-06」と指数で書く（小数の 0 が並ばないように）。指数は表計算と同じ 2 桁。0 は「0」のまま。
 /// 規格の丸め（JIS の丸めなど）は型の側で済ませ、ここは表示の桁をそろえて書くだけにする
 pub(crate) fn significant(x: f64, figures: i32) -> String {
     if x == 0.0 {
@@ -234,7 +226,7 @@ pub(crate) fn significant(x: f64, figures: i32) -> String {
     if rounded.abs() < EXPONENT_BELOW {
         let mantissa = rounded / 10_f64.powi(exponent);
         let decimals = (figures - 1).max(0) as usize;
-        return format!("{mantissa:.decimals$}{TIMES_TEN}{}", superscript(exponent));
+        return format!("{mantissa:.decimals$}{EXPONENT}-{:02}", -exponent);
     }
     let decimals = (figures - 1 - exponent).max(0) as usize;
     format!("{rounded:.decimals$}")
@@ -243,34 +235,8 @@ pub(crate) fn significant(x: f64, figures: i32) -> String {
 /// これより絶対値の小さい数は指数で書く
 const EXPONENT_BELOW: f64 = 1e-3;
 
-/// 指数で書く数の、仮数と累乗の間
-const TIMES_TEN: &str = "×10";
-
-/// 上付きの数字。並びは 0〜9 で、前に「⁻」
-const SUPERSCRIPTS: [char; 11] = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹', '⁻'];
-
-/// 整数を上付きの数字で（-6 → ⁻⁶）
-fn superscript(n: i32) -> String {
-    n.to_string()
-        .chars()
-        .map(|c| match c {
-            '-' => SUPERSCRIPTS[10],
-            digit => SUPERSCRIPTS[digit as usize - '0' as usize],
-        })
-        .collect()
-}
-
-/// 上付きの数字を並の数字に戻す（⁻⁶ → -6）。`sup` に入れて描くため
-fn normal_digits(power: &str) -> String {
-    power
-        .chars()
-        .map(|c| match SUPERSCRIPTS.iter().position(|&s| s == c) {
-            Some(10) => '-',
-            Some(digit) => char::from(b'0' + digit as u8),
-            None => c,
-        })
-        .collect()
-}
+/// 指数で書く数の、仮数と指数の間（1.52E-06）
+const EXPONENT: char = 'E';
 
 /// 列ごとの小数の最大の桁数
 pub(crate) fn column_decimals<const N: usize>(rows: &[(&str, [String; N])]) -> [usize; N] {
@@ -284,9 +250,9 @@ pub(crate) fn max_decimals<'a>(values: impl Iterator<Item = &'a str>) -> usize {
     values.map(decimals_of).max().unwrap_or(0)
 }
 
-/// 小数の桁数（「12.7」は 1、「1,140」は 0）。指数で書いた数（「1.52×10⁻⁶」）は小数点で揃えないので 0
+/// 小数の桁数（「12.7」は 1、「1,140」は 0）。指数で書いた数（「1.52E-06」）は小数点で揃えないので 0
 fn decimals_of(value: &str) -> usize {
-    if value.contains(TIMES_TEN) {
+    if value.contains(EXPONENT) {
         return 0;
     }
     value.find('.').map_or(0, |point| value.len() - point - 1)
@@ -296,7 +262,7 @@ fn decimals_of(value: &str) -> usize {
 /// 指数で書いた数は埋めず、列の右に寄せる
 fn decimal_pad(value: &str, decimals: usize) -> usize {
     match (value.contains('.'), decimals) {
-        _ if value.contains(TIMES_TEN) => 0,
+        _ if value.contains(EXPONENT) => 0,
         (_, 0) => 0,
         (true, _) => decimals - decimals_of(value),
         (false, _) => decimals + 1,
@@ -325,30 +291,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn numbers_below_a_thousandth_are_written_with_a_power_of_ten() {
-        assert_eq!(significant(-0.00000152, 3), "-1.52×10⁻⁶");
-        assert_eq!(significant(0.000152, 3), "1.52×10⁻⁴");
+    fn numbers_below_a_thousandth_are_written_in_e_notation() {
+        assert_eq!(significant(-0.00000152, 3), "-1.52E-06");
+        assert_eq!(significant(0.000152, 3), "1.52E-04");
         assert_eq!(significant(0.00152, 3), "0.00152");
         assert_eq!(significant(0.0, 3), "0");
+        assert_eq!(significant(1.52e-12, 3), "1.52E-12");
     }
 
     #[test]
     fn a_number_rounding_up_to_a_thousandth_is_written_as_a_decimal() {
         assert_eq!(significant(0.00099996, 3), "0.00100");
-        assert_eq!(significant(0.0000099996, 3), "1.00×10⁻⁵");
+        assert_eq!(significant(0.0000099996, 3), "1.00E-05");
     }
 
     #[test]
-    fn numbers_with_a_power_of_ten_are_not_padded_to_line_up_the_points() {
-        let values = ["6.11", "-1.52×10⁻⁶"];
+    fn numbers_in_e_notation_are_not_padded_to_line_up_the_points() {
+        let values = ["6.11", "-1.52E-06"];
         assert_eq!(max_decimals(values.into_iter()), 2);
-        assert_eq!(decimal_pad("-1.52×10⁻⁶", 2), 0);
-        assert_eq!(thousands(significant(-0.00000152, 3)), "-1.52×10⁻⁶");
-    }
-
-    #[test]
-    fn a_superscript_power_turns_back_into_normal_digits_for_sup() {
-        assert_eq!(normal_digits("⁻¹²"), "-12");
-        assert_eq!(normal_digits(&superscript(-6)), "-6");
+        assert_eq!(decimal_pad("-1.52E-06", 2), 0);
+        assert_eq!(thousands(significant(-0.00000152, 3)), "-1.52E-06");
     }
 }
