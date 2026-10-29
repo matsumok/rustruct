@@ -3,6 +3,7 @@
 //!
 //! - 表は横罫だけ。見出しの行と本体の各行の下に `line`。縦罫・塗り・交互の背景は使わない（入力の Sheet と分ける）
 //! - 単位は表の名前（`Caption`）か列の見出し（`HeadCell`）に括弧で書き、数字の後には付けない
+//! - 入力で値が変わる表は `Table` の `fixed` で列の幅を固定する
 //! - 小数の桁数が行で違う列は `DecimalCell` で小数点を揃える。4桁以上の数は `thousands` で3桁ごとに「,」
 //! - 本文は1単位（`width-column`）の列（`Column`）を `Columns` で並べ、「入力＋結果」と根拠の間に `Divider`
 //! - 表や式は `Block` に、見出し（`Caption`）、表や式、注記（`Notes`）の順で置く。出典は画面に出さない
@@ -73,10 +74,11 @@ pub(crate) fn Notes(children: Element) -> Element {
 /// 縦罫と塗りは使わない。幅は列いっぱい（1単位）。入りきらない表は外側を `overflow-x-auto` で包む。
 /// セルは左に `space-3` を取り、最初の列だけ左を詰めて右に `space-3`（表の端の列を端に寄せる）。
 /// 位置で変わる形は CSS の `first:` で決め、セルに「最初かどうか」を渡さない。
+/// `fixed` の表は列の幅を中身で変えず、すべての列を等分する（入力で値が変わっても列が動かない）。
 #[component]
-pub(crate) fn Table(children: Element) -> Element {
+pub(crate) fn Table(#[props(default)] fixed: bool, children: Element) -> Element {
     rsx! {
-        table { class: "w-full", {children} }
+        table { class: if fixed { "w-full table-fixed" } else { "w-full" }, {children} }
     }
 }
 
@@ -207,6 +209,7 @@ pub(crate) enum Formula {
 }
 
 /// 有効数字 `figures` 桁の文字列。末尾の 0 も桁として残す（0.560）。整数部が桁を超えるときは整数で（1140）。
+/// 絶対値が 0.001 未満なら「1.52E-06」と指数で書く（小数の 0 が並ばないように）。指数は表計算と同じ 2 桁。0 は「0」のまま。
 /// 規格の丸め（JIS の丸めなど）は型の側で済ませ、ここは表示の桁をそろえて書くだけにする
 pub(crate) fn significant(x: f64, figures: i32) -> String {
     if x == 0.0 {
@@ -220,9 +223,20 @@ pub(crate) fn significant(x: f64, figures: i32) -> String {
         // 9.996 → 10.0 のように丸めで桁が上がった
         exponent += 1;
     }
+    if rounded.abs() < EXPONENT_BELOW {
+        let mantissa = rounded / 10_f64.powi(exponent);
+        let decimals = (figures - 1).max(0) as usize;
+        return format!("{mantissa:.decimals$}{EXPONENT}-{:02}", -exponent);
+    }
     let decimals = (figures - 1 - exponent).max(0) as usize;
     format!("{rounded:.decimals$}")
 }
+
+/// これより絶対値の小さい数は指数で書く
+const EXPONENT_BELOW: f64 = 1e-3;
+
+/// 指数で書く数の、仮数と指数の間（1.52E-06）
+const EXPONENT: char = 'E';
 
 /// 列ごとの小数の最大の桁数
 pub(crate) fn column_decimals<const N: usize>(rows: &[(&str, [String; N])]) -> [usize; N] {
@@ -236,14 +250,19 @@ pub(crate) fn max_decimals<'a>(values: impl Iterator<Item = &'a str>) -> usize {
     values.map(decimals_of).max().unwrap_or(0)
 }
 
-/// 小数の桁数（「12.7」は 1、「1,140」は 0）
+/// 小数の桁数（「12.7」は 1、「1,140」は 0）。指数で書いた数（「1.52E-06」）は小数点で揃えないので 0
 fn decimals_of(value: &str) -> usize {
+    if value.contains(EXPONENT) {
+        return 0;
+    }
     value.find('.').map_or(0, |point| value.len() - point - 1)
 }
 
-/// 小数点を列で揃えるのに右に足す数字幅の数。小数点の無い値は小数点の分も足す
+/// 小数点を列で揃えるのに右に足す数字幅の数。小数点の無い値は小数点の分も足す。
+/// 指数で書いた数は埋めず、列の右に寄せる
 fn decimal_pad(value: &str, decimals: usize) -> usize {
     match (value.contains('.'), decimals) {
+        _ if value.contains(EXPONENT) => 0,
         (_, 0) => 0,
         (true, _) => decimals - decimals_of(value),
         (false, _) => decimals + 1,
@@ -265,4 +284,32 @@ pub(crate) fn thousands(number: String) -> String {
         grouped.push(digit);
     }
     format!("{sign}{grouped}{fraction}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn numbers_below_a_thousandth_are_written_in_e_notation() {
+        assert_eq!(significant(-0.00000152, 3), "-1.52E-06");
+        assert_eq!(significant(0.000152, 3), "1.52E-04");
+        assert_eq!(significant(0.00152, 3), "0.00152");
+        assert_eq!(significant(0.0, 3), "0");
+        assert_eq!(significant(1.52e-12, 3), "1.52E-12");
+    }
+
+    #[test]
+    fn a_number_rounding_up_to_a_thousandth_is_written_as_a_decimal() {
+        assert_eq!(significant(0.00099996, 3), "0.00100");
+        assert_eq!(significant(0.0000099996, 3), "1.00E-05");
+    }
+
+    #[test]
+    fn numbers_in_e_notation_are_not_padded_to_line_up_the_points() {
+        let values = ["6.11", "-1.52E-06"];
+        assert_eq!(max_decimals(values.into_iter()), 2);
+        assert_eq!(decimal_pad("-1.52E-06", 2), 0);
+        assert_eq!(thousands(significant(-0.00000152, 3)), "-1.52E-06");
+    }
 }
