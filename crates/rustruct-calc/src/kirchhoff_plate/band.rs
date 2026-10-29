@@ -33,11 +33,11 @@ impl BandMatrix {
         self.values[i] += value;
     }
 
-    /// A x = b を解く。A は正定値でなければならず、分解の途中で対角が正でなくなれば `None`
-    /// （支持の足りない板は手前で弾くので、ここに来るのは拘束の組み立ての誤り）
-    pub fn solve(mut self, mut b: Vec<f64>) -> Option<Vec<f64>> {
+    /// Cholesky 分解 A = L Lᵀ。A は正定値でなければならず、分解の途中で対角が正でなくなれば `None`
+    /// （支持の足りない板は手前で弾くので、ここに来るのは拘束の組み立ての誤り）。分解は右辺に依らないので、
+    /// 反復改良（有限要素の `solve`）で同じ分解を 2 度使う
+    pub fn factor(mut self) -> Option<Cholesky> {
         let n = self.n;
-        assert_eq!(b.len(), n, "右辺の長さが行列の大きさと違う");
         let bw = self.bw;
         // A = L Lᵀ。L を A と同じ帯に上書きする。行の帯は列について連続に並ぶので、内側の和は 2 つの
         // 並びの内積
@@ -63,22 +63,37 @@ impl BandMatrix {
                 self.values[idx] = s / ljj;
             }
         }
+        Some(Cholesky(self))
+    }
+}
+
+/// 帯行列の Cholesky 分解。L を元の行列と同じ帯に持つ
+#[derive(Debug, Clone, PartialEq)]
+pub struct Cholesky(BandMatrix);
+
+impl Cholesky {
+    /// L Lᵀ x = b を解く
+    pub fn solve(&self, mut b: Vec<f64>) -> Vec<f64> {
+        let l = &self.0;
+        let n = l.n;
+        assert_eq!(b.len(), n, "右辺の長さが行列の大きさと違う");
+        let bw = l.bw;
         // L y = b
         for i in 0..n {
             let first = i.saturating_sub(bw);
-            let row_i = self.index(i, first)..self.index(i, i);
-            let s = b[i] - dot(&self.values[row_i], &b[first..i]);
-            b[i] = s / self.values[self.index(i, i)];
+            let row_i = l.index(i, first)..l.index(i, i);
+            let s = b[i] - dot(&l.values[row_i], &b[first..i]);
+            b[i] = s / l.values[l.index(i, i)];
         }
         // Lᵀ x = y。列 i は下の行に散らばるので、こちらは一つずつ
         for i in (0..n).rev() {
             let s = b[i]
                 - ((i + 1)..n.min(i + bw + 1))
-                    .map(|k| self.values[self.index(k, i)] * b[k])
+                    .map(|k| l.values[l.index(k, i)] * b[k])
                     .sum::<f64>();
-            b[i] = s / self.values[self.index(i, i)];
+            b[i] = s / l.values[l.index(i, i)];
         }
-        Some(b)
+        b
     }
 }
 
@@ -120,7 +135,7 @@ mod tests {
             }
         }
         assert_vec(
-            &a.solve(vec![0.0, 0.0, 0.0, 5.0]).unwrap(),
+            &a.factor().unwrap().solve(vec![0.0, 0.0, 0.0, 5.0]),
             &[1.0, 2.0, 3.0, 4.0],
         );
     }
@@ -151,7 +166,7 @@ mod tests {
             }
         }
         assert_eq!(lower, upper);
-        assert_vec(&lower.solve(b).unwrap(), &x);
+        assert_vec(&lower.factor().unwrap().solve(b), &x);
     }
 
     #[test]
@@ -160,6 +175,6 @@ mod tests {
         a.add(0, 0, 1.0);
         a.add(1, 0, 2.0);
         a.add(1, 1, 1.0);
-        assert_eq!(a.solve(vec![1.0, 1.0]), None);
+        assert_eq!(a.factor(), None);
     }
 }

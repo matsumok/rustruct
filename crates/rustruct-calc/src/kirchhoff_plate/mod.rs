@@ -30,7 +30,7 @@ pub use support_type::{Mapping, SupportType};
 
 /// 有限要素の短い辺の分割数。長い辺は辺長に合わせて増やす（[`mesh_divisions`]）。利用者の入力にも Model にも
 /// 持たない定数で、値は分割数を倍にしたときの変化が収まることで決めた（`docs/tools/kirchhoff-plate/adr/0006`）
-pub const DIVISIONS: usize = 24;
+pub const DIVISIONS: usize = 40;
 
 /// 入力が不正な理由。辺長・板厚・ヤング係数は正の有限値、荷重は有限値（0 と上向きも可）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
