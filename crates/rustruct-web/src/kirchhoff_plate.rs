@@ -80,19 +80,15 @@ const FIELD_PAIRS: [[InputField; 2]; 3] = [
 const EDGE_PAIRS: [[(Edge, &str); 2]; 2] = [[EDGES[0], EDGES[1]], [EDGES[2], EDGES[3]]];
 
 /// 支持条件の選び方。並びは選択肢の順
-const SUPPORTS: [(Support, &str); 3] = [
-    (Support::Fixed, "固定"),
-    (Support::SimplySupported, "単純支持"),
-    (Support::Free, "自由"),
-];
+const SUPPORTS: [Support; 3] = [Support::Fixed, Support::SimplySupported, Support::Free];
 
 /// 支持条件の画面での名前
 fn support_name(support: Support) -> &'static str {
-    SUPPORTS
-        .iter()
-        .find(|(s, _)| *s == support)
-        .map(|(_, name)| *name)
-        .expect("SUPPORTS は 3 つの支持条件をすべて持つ")
+    match support {
+        Support::Fixed => "固定",
+        Support::SimplySupported => "単純支持",
+        Support::Free => "自由",
+    }
 }
 
 /// 入力の Sheet の中身。数値の欄は打ったままの文字で持ち、読めるかは `PlateReadout` が決める
@@ -276,31 +272,7 @@ pub struct Balance {
 
 impl PlateReadout {
     pub fn from_inputs(inputs: &PlateInputs) -> Self {
-        Self::with_field(inputs).0
-    }
-
-    /// 結果の表と、分布図の評価点の応答。1 回解いて両方を作る。解けなければ評価点は無い
-    fn with_field(inputs: &PlateInputs) -> (Self, Option<PlateField>) {
-        match inputs.plate() {
-            Err(errors) => (
-                Self {
-                    errors,
-                    ..Self::not_computed(None)
-                },
-                None,
-            ),
-            Ok(plate) => match solve(&plate) {
-                Ok(solution) => (Self::computed(&solution), Some(PlateField::new(&solution))),
-                Err(PlateError::Unstable(_)) => (
-                    Self::not_computed(Some("この支持条件の組では板を支えられない")),
-                    None,
-                ),
-                // 入力は手前で読んだので来ない。来たら解けないことだけを言う
-                Err(PlateError::InvalidInput(_) | PlateError::Singular) => {
-                    (Self::not_computed(Some("この入力では解けない")), None)
-                }
-            },
-        }
+        PlateOutcome::from_inputs(inputs).readout
     }
 
     fn not_computed(notice: Option<&'static str>) -> Self {
@@ -378,6 +350,44 @@ impl PlateReadout {
     }
 }
 
+/// 入力を 1 回解いて得る、結果の表と分布図の評価点の応答。解けなければ評価点は無い
+#[derive(Debug, Clone, PartialEq)]
+struct PlateOutcome {
+    readout: PlateReadout,
+    field: Option<PlateField>,
+}
+
+impl PlateOutcome {
+    fn from_inputs(inputs: &PlateInputs) -> Self {
+        let not_computed = |notice| Self {
+            readout: PlateReadout::not_computed(Some(notice)),
+            field: None,
+        };
+        match inputs.plate() {
+            Err(errors) => Self {
+                readout: PlateReadout {
+                    errors,
+                    ..PlateReadout::not_computed(None)
+                },
+                field: None,
+            },
+            Ok(plate) => match solve(&plate) {
+                Ok(solution) => Self {
+                    readout: PlateReadout::computed(&solution),
+                    field: Some(PlateField::new(&solution)),
+                },
+                Err(PlateError::Unstable(_)) => {
+                    not_computed("この支持条件の組では板を支えられない")
+                }
+                // 入力は手前で読んだので来ない。来たら解けないことだけを言う
+                Err(PlateError::InvalidInput(_) | PlateError::Singular) => {
+                    not_computed("この入力では解けない")
+                }
+            },
+        }
+    }
+}
+
 /// 1 つの辺の支持条件を選び直す
 fn set_support(supports: &mut Supports, edge: Edge, support: Support) {
     *match edge {
@@ -406,15 +416,15 @@ fn figures(value: f64) -> String {
 pub(crate) fn KirchhoffPlatePage() -> Element {
     let inputs = use_signal(PlateInputs::default);
     let quantity = use_signal(|| Quantity::W);
-    let outcome = use_memo(move || PlateReadout::with_field(&inputs.read()));
+    let outcome = use_memo(move || PlateOutcome::from_inputs(&inputs.read()));
     let figure = use_memo(move || {
         outcome
             .read()
-            .1
+            .field
             .as_ref()
             .map(|field| PlateFigure::new(field, quantity()))
     });
-    let readout = outcome.read().0.clone();
+    let readout = outcome.read().readout.clone();
     let CenterRow { w, mx, my } = readout.center.clone();
     let corner_decimals = max_decimals(readout.corners.iter().map(|(_, r)| r.as_str()));
     let Balance { reactions, load } = readout.balance.clone();
@@ -523,21 +533,17 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                     }
                 }
                 Column {
-                    FigureBlock { quantity, figure: figure(), notice: readout.notice }
+                    FigureBlock { quantity, figure: figure() }
                 }
             }
         }
     }
 }
 
-/// 分布図の一まとまり。図の名前、量の切替、図、支持条件の読み方の注記。解けないときは図の代わりに
-/// 解けない理由（無ければ「—」）
+/// 分布図の一まとまり。図の名前、量の切替、図、支持条件の読み方の注記。解けないときは図と読み方の
+/// 代わりに「—」だけを置く（解けない理由は入力の下の注記が言う）
 #[component]
-fn FigureBlock(
-    quantity: Signal<Quantity>,
-    figure: Option<PlateFigure>,
-    notice: Option<&'static str>,
-) -> Element {
+fn FigureBlock(quantity: Signal<Quantity>, figure: Option<PlateFigure>) -> Element {
     rsx! {
         Block {
             Caption { {quantity().caption()} }
@@ -548,17 +554,15 @@ fn FigureBlock(
                         div { class: "dark:hidden", dangerous_inner_html: figure.light_svg }
                         div { class: "hidden dark:block", dangerous_inner_html: figure.dark_svg }
                     }
-                },
-                None => rsx! {
-                    p { class: "text-label",
-                        {notice.map_or(NOT_COMPUTED.to_string(), |n| format!("! {n}"))}
+                    Notes {
+                        li { "斜線の付いた辺は固定" }
+                        li { "線だけの辺は単純支持" }
+                        li { "線の無い辺は自由" }
                     }
                 },
-            }
-            Notes {
-                li { "斜線の付いた辺は固定" }
-                li { "線だけの辺は単純支持" }
-                li { "線の無い辺は自由" }
+                None => rsx! {
+                    p { {NOT_COMPUTED} }
+                },
             }
         }
     }
@@ -627,11 +631,11 @@ fn InputSheet(inputs: Signal<PlateInputs>, errors: Vec<(InputField, &'static str
                                                 set_support(&mut inputs.write().supports, edge, support);
                                             }
                                         },
-                                        for (support , name) in SUPPORTS {
+                                        for support in SUPPORTS {
                                             option {
                                                 value: "{support.symbol()}",
                                                 selected: supports.at(edge) == support,
-                                                {name}
+                                                {support_name(support)}
                                             }
                                         }
                                     }

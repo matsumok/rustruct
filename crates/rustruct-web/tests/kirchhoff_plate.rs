@@ -323,11 +323,13 @@ fn the_figure_follows_the_aspect_of_the_plate_within_one_column_and_names_each_s
     inputs.supports.y0 = Support::SimplySupported;
     let wide = PlateFigure::from_inputs(&inputs, Quantity::W).unwrap();
     let ((tw, th), (ww, wh)) = (size(&tall.light_svg), size(&wide.light_svg));
-    assert!(tw < th && th <= 335.0, "{tw}×{th}");
-    assert!(ww > wh && ww <= 335.0, "{ww}×{wh}");
-    // 4:5 の板と 8:2 の板。図の縁の分を除いて縦横比どおり
+    // 長い辺の向きが 1 単位（335）いっぱい
+    assert_eq!((th, ww), (335.0, 335.0), "{tw}×{th} {ww}×{wh}");
+    // 4:5 の板の大きさから縁の幅 m を読む（tw − 2m = 0.8 (th − 2m)）。8:2 の板も、その縁を除いて 4:1
+    let m = (tw - 0.8 * th) / 0.4;
+    assert!((0.0..20.0).contains(&m), "縁 {m}");
     assert!(
-        (th - tw) > 0.15 * th && (ww - wh) > 0.6 * ww,
+        ((ww - 2.0 * m) / (wh - 2.0 * m) - 4.0).abs() < 1e-3,
         "{tw}×{th} {ww}×{wh}"
     );
     assert_eq!(

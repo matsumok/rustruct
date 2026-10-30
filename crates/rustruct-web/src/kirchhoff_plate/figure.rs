@@ -6,10 +6,10 @@
 //! 作り、ページがテーマで片方を見せる。
 
 use charta::{Grid, Item, Palette, Pt, Scene, Stroke, Theme, distribution, to_svg};
-use rustruct_calc::kirchhoff_plate::{PointResponse, Solution, solve};
+use rustruct_calc::kirchhoff_plate::{PointResponse, Solution};
 use rustruct_types::kirchhoff_plate::{Edge, Support, Supports};
 
-use super::{EDGES, PlateInputs, support_name};
+use super::{EDGES, PlateInputs, PlateOutcome, support_name};
 use crate::COLUMN_WIDTH;
 
 /// 長い辺を等分する評価点の間の数。短い辺は辺長の比で決め、評価点の間はほぼ正方形になる
@@ -106,13 +106,14 @@ impl PlateField {
     pub(crate) fn new(solution: &Solution) -> Self {
         let plate = solution.plate();
         let (lx, ly) = (plate.lx.as_mm() / 1000.0, plate.ly.as_mm() / 1000.0);
-        let short = |a: f64, b: f64| {
-            ((GRID_DIVISIONS as f64 * a / b).round() as usize).clamp(MIN_DIVISIONS, GRID_DIVISIONS)
+        let shorter_divisions = |shorter: f64, longer: f64| {
+            ((GRID_DIVISIONS as f64 * shorter / longer).round() as usize)
+                .clamp(MIN_DIVISIONS, GRID_DIVISIONS)
         };
         let (nx, ny) = if lx >= ly {
-            (GRID_DIVISIONS, short(ly, lx))
+            (GRID_DIVISIONS, shorter_divisions(ly, lx))
         } else {
-            (short(lx, ly), GRID_DIVISIONS)
+            (shorter_divisions(lx, ly), GRID_DIVISIONS)
         };
         Self {
             lx,
@@ -125,11 +126,9 @@ impl PlateField {
     }
 }
 
-/// 1 つの量の分布図
+/// 1 つの量の分布図。図の名前は `Quantity::caption`
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlateFigure {
-    /// 図の名前（単位を括弧で）
-    pub caption: &'static str,
     /// 読み上げの文言。量と 4 辺の支持条件
     pub label: String,
     pub light_svg: String,
@@ -137,10 +136,10 @@ pub struct PlateFigure {
 }
 
 impl PlateFigure {
-    /// 入力から。入力が読めないか、板を支えられない組なら図は無い
+    /// 入力から、ページと同じ経路で。入力が読めないか、板を支えられない組なら図は無い
     pub fn from_inputs(inputs: &PlateInputs, quantity: Quantity) -> Option<Self> {
-        let solution = solve(&inputs.plate().ok()?).ok()?;
-        Some(Self::new(&PlateField::new(&solution), quantity))
+        let field = PlateOutcome::from_inputs(inputs).field?;
+        Some(Self::new(&field, quantity))
     }
 
     pub(crate) fn new(field: &PlateField, quantity: Quantity) -> Self {
@@ -150,7 +149,6 @@ impl PlateFigure {
             .map(|(edge, _)| format!("{edge} の辺は{}", support_name(field.supports.at(edge))))
             .join("、");
         Self {
-            caption: quantity.caption(),
             label: format!(
                 "{} {} の分布図。{supports}",
                 quantity.name(),
