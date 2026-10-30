@@ -12,7 +12,6 @@ fn tools_lists_kirchhoff_plate_under_the_mechanics_heading() {
     assert_in_order(
         &text_of(element(&html, "main")),
         &[
-            "/tools",
             "Tools",
             "Mechanics",
             "/tools/kirchhoff-plate",
@@ -27,13 +26,11 @@ fn tools_lists_kirchhoff_plate_under_the_mechanics_heading() {
 }
 
 #[test]
-fn the_tool_page_is_headed_with_its_name_under_its_flat_address() {
+fn the_tool_page_is_headed_with_its_name() {
+    // 住所（/tools/kirchhoff-plate）はヘッダーのパンくずで示す（render.rs）
     let html = render_path("/tools/kirchhoff-plate");
     assert!(html.contains("<title>Kirchhoff 板の曲げ · rustruct.matsumok.com</title>"));
-    assert_in_order(
-        &text_of(element(&html, "main")),
-        &["/tools/kirchhoff-plate", "Kirchhoff 板の曲げ"],
-    );
+    assert!(text_of(element(&html, "main")).starts_with("Kirchhoff 板の曲げ"));
 }
 
 #[test]

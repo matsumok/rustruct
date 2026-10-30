@@ -67,7 +67,7 @@ fn section_page_has_path_title_and_the_empty_sentence_only() {
     for (path, title) in [("/studies", "Studies"), ("/notes", "Notes")] {
         let html = render_path(path);
         let text = text_of(&html);
-        // 枠の wordmark の後に、伸びた住所、見出し、一文の順
+        // 枠の wordmark とパンくずの住所の後に、見出し、一文の順
         assert_in_order(
             &text,
             &["rustruct.matsumok.com", path, title, "まだ何もない。"],
@@ -287,13 +287,13 @@ fn head_links_the_fonts_and_the_stylesheet() {
 }
 
 #[test]
-fn header_has_the_wordmark_the_theme_and_the_account_only() {
+fn header_has_the_wordmark_the_address_the_theme_and_the_account_only() {
     let html = render_path("/data/concrete");
     let header = element(&html, "header");
     let text = text_of(header);
     assert_eq!(
-        text, "rustruct.matsumok.com",
-        "ヘッダーの文字はサイト名だけ: {header}"
+        text, "rustruct.matsumok.com/data/concrete",
+        "ヘッダーの文字はサイト名と住所だけ: {header}"
     );
     assert!(
         header.contains("href=\"/\""),
@@ -326,5 +326,78 @@ fn head_applies_the_remembered_theme_before_the_page_is_drawn() {
             script.contains(part),
             "head の script に {part} が無い: {script}"
         );
+    }
+}
+
+/// ヘッダーのパンくず（`<nav>`）の各段: (href か None, 文字)。
+fn breadcrumb(html: &str) -> Vec<(Option<String>, String)> {
+    let nav = element(element(html, "header"), "nav");
+    let mut crumbs = Vec::new();
+    let mut rest = nav;
+    while let Some(at) = rest.find("<li") {
+        let li = &rest[at..];
+        let close = li.find("</li>").expect("li が閉じていない");
+        let item = &li[..close];
+        let href = item.find("href=\"").map(|h| {
+            let h = h + "href=\"".len();
+            item[h..h + item[h..].find('"').expect("href が閉じていない")].to_string()
+        });
+        crumbs.push((href, text_of(item)));
+        rest = &li[close..];
+    }
+    crumbs
+}
+
+#[test]
+fn breadcrumb_links_each_parent_and_leaves_the_current_page_unlinked() {
+    let html = render_path("/data/concrete");
+    assert_eq!(
+        breadcrumb(&html),
+        vec![
+            (Some("/data".to_string()), "/data".to_string()),
+            (None, "/concrete".to_string()),
+        ]
+    );
+    assert!(
+        element(element(&html, "header"), "nav").contains("aria-current=\"page\""),
+        "今いる段に aria-current が無い"
+    );
+    assert_eq!(
+        breadcrumb(&render_path("/tools")),
+        vec![(None, "/tools".to_string())]
+    );
+    assert_eq!(
+        breadcrumb(&render_path("/tools/kirchhoff-plate")),
+        vec![
+            (Some("/tools".to_string()), "/tools".to_string()),
+            (None, "/kirchhoff-plate".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn home_and_not_found_have_no_breadcrumb() {
+    // not-found はどの住所でも同じ 1 ファイルなので、住所を出せない（ADR-0001）
+    for path in ["/", "/tools/nothing"] {
+        let html = render_path(path);
+        assert!(
+            !element(&html, "header").contains("<nav"),
+            "{path} にパンくずがある"
+        );
+    }
+}
+
+#[test]
+fn page_body_does_not_repeat_the_address() {
+    // 住所はヘッダーのパンくず（iPad・PC）とメニューの木（スマホ）で示す。本文には出さない（#28）
+    // 一覧のページ（/tools、/data）は下のページの住所を並べるので、ここでは見ない
+    for path in [
+        "/studies",
+        "/tools/kirchhoff-plate",
+        "/data/concrete",
+        "/root",
+    ] {
+        let body = text_of(element(&render_path(path), "main"));
+        assert!(!body.contains(path), "{path} の本文に住所がある: {body}");
     }
 }

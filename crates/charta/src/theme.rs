@@ -73,6 +73,12 @@ mod tests {
         s.len() == 7 && s.starts_with('#') && s[1..].chars().all(|c| c.is_ascii_hexdigit())
     }
 
+    /// `#rrggbb` か、透けのある `#rrggbbaa`（scrim）。
+    fn is_hex_or_alpha(s: &str) -> bool {
+        is_hex(s)
+            || (s.len() == 9 && is_hex(&s[..7]) && s[7..].chars().all(|c| c.is_ascii_hexdigit()))
+    }
+
     #[test]
     fn roles_are_read_from_tokens_json() {
         let light = Theme::light();
@@ -95,7 +101,7 @@ mod tests {
         // chart-3 は `{ink}` の参照。値になって引ける
         let t = Theme::light();
         assert_eq!(t.color("chart-3"), t.color("ink"));
-        assert!(Theme::roles().all(|r| is_hex(t.color(r).unwrap())));
+        assert!(Theme::roles().all(|r| is_hex_or_alpha(t.color(r).unwrap())));
     }
 
     #[test]

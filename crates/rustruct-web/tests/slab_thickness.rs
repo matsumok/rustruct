@@ -25,13 +25,11 @@ fn tools_lists_slab_thickness_under_the_rc_heading_before_mechanics() {
 }
 
 #[test]
-fn the_tool_page_is_headed_with_its_name_under_its_flat_address() {
+fn the_tool_page_is_headed_with_its_name() {
+    // 住所（/tools/slab-thickness）はヘッダーのパンくずで示す（render.rs）
     let html = render_path("/tools/slab-thickness");
     assert!(html.contains("<title>必要スラブ厚さ · rustruct.matsumok.com</title>"));
-    assert_in_order(
-        &text_of(element(&html, "main")),
-        &["/tools/slab-thickness", "必要スラブ厚さ"],
-    );
+    assert!(text_of(element(&html, "main")).starts_with("必要スラブ厚さ"));
 }
 
 #[test]
