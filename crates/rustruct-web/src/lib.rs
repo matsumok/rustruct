@@ -455,7 +455,7 @@ fn MenuNode(node: Route, here: Route, depth: usize, on_close: EventHandler<()>) 
                     div { class: "flex items-center",
                         {link}
                         CollapsibleTrigger {
-                            class: "p-3 text-muted",
+                            class: "px-3 py-2 text-muted",
                             "aria-label": if open() { "{heading}を閉じる" } else { "{heading}を開く" },
                             ChevronIcon { class: chevron }
                         }
