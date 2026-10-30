@@ -3,7 +3,8 @@
 //! 条件の既定は Fc 24、仕上げ荷重 1000 N/m²、積載荷重 1800 N/m²、変形増大係数 8、変形角 1/400。
 
 use rustruct_calc::slab_thickness::{
-    Conditions, CriteriaSet, Criterion, Evaluation, InvalidInput, Spans, evaluate,
+    Conditions, CriteriaSet, Criterion, Evaluation, InvalidInput, SharedValues, Spans, evaluate,
+    shared_values,
 };
 use rustruct_types::concrete::{Concrete, ConcreteKind};
 use rustruct_types::quantity::{AreaLoad, Length, Stress};
@@ -67,6 +68,15 @@ fn with(criteria: CriteriaSet) -> Conditions {
     Conditions { criteria, ..base() }
 }
 
+/// 条件の共有値
+fn shared(conditions: &Conditions) -> Result<SharedValues, InvalidInput> {
+    shared_values(
+        conditions.concrete,
+        conditions.finish_load,
+        conditions.live_load,
+    )
+}
+
 /// スパンは m
 fn spans(x: f64, y: f64) -> Spans {
     Spans {
@@ -93,7 +103,7 @@ fn t_req(conditions: &Conditions, x: f64, y: f64) -> f64 {
 /// 増大後たわみ = 許容たわみ = lx·c = 4000/400 = 10.0 mm
 #[test]
 fn known_case_matches_hand_calculation() {
-    let shared = rustruct_calc::slab_thickness::shared_values(&base()).unwrap();
+    let shared = shared(&base()).unwrap();
     assert!(
         (shared.young_modulus.as_n_per_mm2() - 22668.9).abs() < 1.0,
         "E = {:?}",
@@ -606,15 +616,15 @@ fn governing_criterion_tracks_the_max_across_three_criteria() {
 }
 
 mod shared_values {
-    use rustruct_calc::slab_thickness::{Conditions, InvalidInput, shared_values};
+    use rustruct_calc::slab_thickness::{Conditions, InvalidInput};
     use rustruct_types::quantity::AreaLoad;
 
-    use super::{at, base, concrete};
+    use super::{at, base, concrete, shared};
 
     /// 共有値は検討点の評価が使う値と同じ（表示だけ別の経路で求めて食い違う、を防ぐ）
     #[test]
     fn matches_the_values_used_by_point_evaluation() {
-        let v = shared_values(&base()).unwrap();
+        let v = shared(&base()).unwrap();
         let ev = at(&base(), 4.0, 5.0);
         // 全荷重 = γ₁·t_req + wp
         let w = v.rc_unit_weight.as_kn_per_m3() * 1e3 * (ev.required_thickness.as_mm() / 1000.0)
@@ -625,7 +635,7 @@ mod shared_values {
     /// wp は仕上げ荷重と積載荷重の和。γ₁ と E はコンクリートの値
     #[test]
     fn wp_is_the_sum_of_finish_and_live_load() {
-        let v = shared_values(&base()).unwrap();
+        let v = shared(&base()).unwrap();
         assert!(
             (v.wp.as_n_per_m2() - 2800.0).abs() < 1e-9,
             "wp = {:?}",
@@ -639,13 +649,13 @@ mod shared_values {
             live_load: AreaLoad::n_per_m2(0.0),
             ..base()
         };
-        assert_eq!(shared_values(&zero).unwrap().wp.as_n_per_m2(), 0.0);
+        assert_eq!(shared(&zero).unwrap().wp.as_n_per_m2(), 0.0);
     }
 
     /// γ₁ と E は Fc の区分で変わる。Fc 42 は γ₁ = 24.5 kN/m³
     #[test]
     fn rc_unit_weight_follows_the_fc_class() {
-        let v = shared_values(&Conditions {
+        let v = shared(&Conditions {
             concrete: concrete(42.0),
             ..base()
         })
@@ -663,7 +673,7 @@ mod shared_values {
     fn young_modulus_grows_with_fc_and_ignores_loads() {
         let mut prev = 0.0;
         for fc in [18.0_f64, 21.0, 24.0, 30.0, 36.0, 42.0] {
-            let e = shared_values(&Conditions {
+            let e = shared(&Conditions {
                 concrete: concrete(fc),
                 ..base()
             })
@@ -679,8 +689,8 @@ mod shared_values {
             ..base()
         };
         assert_eq!(
-            shared_values(&base()).unwrap().young_modulus,
-            shared_values(&heavy).unwrap().young_modulus
+            shared(&base()).unwrap().young_modulus,
+            shared(&heavy).unwrap().young_modulus
         );
     }
 
@@ -691,24 +701,24 @@ mod shared_values {
             finish_load: AreaLoad::n_per_m2(-1.0),
             ..base()
         };
-        assert_eq!(shared_values(&finish), Err(InvalidInput::FinishLoad));
+        assert_eq!(shared(&finish), Err(InvalidInput::FinishLoad));
         let live = Conditions {
             live_load: AreaLoad::n_per_m2(f64::NAN),
             ..base()
         };
-        assert_eq!(shared_values(&live), Err(InvalidInput::LiveLoad));
+        assert_eq!(shared(&live), Err(InvalidInput::LiveLoad));
         let no_criteria = Conditions {
             amplification: 0.0,
             criteria: Default::default(),
             ..base()
         };
-        assert!(shared_values(&no_criteria).is_ok());
+        assert!(shared(&no_criteria).is_ok());
     }
 
     /// 共有値は検討点のスパンに依らない（すべての検討点に共通する）
     #[test]
     fn does_not_depend_on_spans() {
-        let v = shared_values(&base()).unwrap();
+        let v = shared(&base()).unwrap();
         for (x, y) in [(2.0, 2.0), (4.0, 5.0), (12.0, 3.0)] {
             let ev = at(&base(), x, y);
             let w = v.rc_unit_weight.as_kn_per_m3() * ev.required_thickness.as_mm()

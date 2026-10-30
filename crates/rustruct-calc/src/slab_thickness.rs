@@ -3,12 +3,13 @@
 //!
 //! 公開の入口は 3 つ。条件だけで決まる共有値（[`shared_values`]）、1 つの検討点の評価（[`evaluate`]）、
 //! 等厚曲線群（[`iso_curves`]）。3 つとも同じ検査と同じ土台（[`Basis`]）を通るので、画面に出す E・γ₁・wp は
-//! 算定に使った値と食い違わない。E・γ₁ は条件のコンクリート（`rustruct_types::concrete::Concrete`）が Fc から導く。
+//! 算定に使った値と食い違わない。E・γ₁ は [`Concrete`] が Fc から導く。
 //!
 //! 内部の計算は長さ mm、力 N（荷重は N/mm²、単位体積重量は N/mm³）の数で行い、入口と出口で量の型に直す。
 
 use std::fmt;
 
+use rustruct_types::concrete::Concrete;
 use rustruct_types::quantity::{AreaLoad, Length, Stress, UnitWeight};
 pub use rustruct_types::slab_thickness::{Conditions, CriteriaSet, Criterion, Spans};
 
@@ -55,17 +56,21 @@ pub struct SharedValues {
     pub wp: AreaLoad,
 }
 
-/// 共有値。荷重が 0 以上の有限値でなければ求めない。変形増大係数とクライテリアは共有値に効かないので見ない
-pub fn shared_values(conditions: &Conditions) -> Result<SharedValues, InvalidInput> {
-    let finish = conditions.finish_load.as_n_per_mm2();
-    let live = conditions.live_load.as_n_per_mm2();
+/// 共有値。コンクリートと荷重だけで決まるので、変形増大係数とクライテリアは受け取らない
+/// （それらが読めない途中でも共有値は出せる）。荷重が 0 以上の有限値でなければ求めない
+pub fn shared_values(
+    concrete: Concrete,
+    finish_load: AreaLoad,
+    live_load: AreaLoad,
+) -> Result<SharedValues, InvalidInput> {
+    let finish = finish_load.as_n_per_mm2();
+    let live = live_load.as_n_per_mm2();
     if !is_non_negative(finish) {
         return Err(InvalidInput::FinishLoad);
     }
     if !is_non_negative(live) {
         return Err(InvalidInput::LiveLoad);
     }
-    let concrete = conditions.concrete;
     Ok(SharedValues {
         young_modulus: concrete.young_modulus(),
         rc_unit_weight: concrete.rc_unit_weight(),
@@ -173,7 +178,11 @@ struct Basis {
 
 /// 条件を検査し、土台と有効なクライテリアをそろえる。評価も等厚曲線群もここを通る
 fn checked_basis(conditions: &Conditions) -> Result<(Basis, Vec<ActiveCriterion>), InvalidInput> {
-    let shared = shared_values(conditions)?;
+    let shared = shared_values(
+        conditions.concrete,
+        conditions.finish_load,
+        conditions.live_load,
+    )?;
     if !is_positive(conditions.amplification) {
         return Err(InvalidInput::Amplification);
     }
@@ -449,7 +458,7 @@ fn solve_thickness(p: f64, q: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustruct_types::concrete::{Concrete, ConcreteKind};
+    use rustruct_types::concrete::ConcreteKind;
 
     /// Fc 24、wp 2800 N/m²、K 8 の土台
     fn basis() -> Basis {

@@ -13,7 +13,7 @@ use rustruct_types::quantity::{AreaLoad, Length, Stress};
 
 use crate::sheet::{Sheet, SheetCell, SheetHead, SheetHeadRow, SheetInput, SheetRow};
 use crate::table::{
-    Block, Caption, Column, Columns, DecimalCell, HeadCell, HeadRow, Notes, Row, Table, TextCell,
+    Block, Caption, Column, Columns, HeadCell, HeadRow, Notes, NumCell, Row, Table, TextCell,
     thousands,
 };
 use crate::{Page, Route};
@@ -238,33 +238,39 @@ impl SlabReadout {
                 .expect("Fc は read_value で正の有限値と見た")
         });
         let warning = concrete.and_then(|c| c.warning()).map(|w| w.to_string());
+        let loads = finish
+            .zip(live)
+            .map(|(finish, live)| (AreaLoad::n_per_m2(finish), AreaLoad::n_per_m2(live)));
         // 共有値は Fc と荷重だけで決まる。ほかの欄が読めなくても出す
-        let conditions = match (concrete, finish, live) {
-            (Some(concrete), Some(finish), Some(live)) => Some(Conditions {
-                concrete,
-                finish_load: AreaLoad::n_per_m2(finish),
-                live_load: AreaLoad::n_per_m2(live),
-                // 共有値に効かない値は、読めなければ後で評価をやめる
-                amplification: amplification.unwrap_or(f64::NAN),
-                criteria: CriteriaSet {
-                    deflection_ratio: ratio.map(|n| 1.0 / n),
-                    deflection_absolute: absolute.map(Length::mm),
-                    min_thickness: inputs.min_thickness,
-                },
-            }),
-            _ => None,
-        };
-        let shared = conditions.as_ref().and_then(|c| shared_values(c).ok());
+        let shared = concrete
+            .zip(loads)
+            .and_then(|(concrete, (finish, live))| shared_values(concrete, finish, live).ok());
 
-        let evaluation = match (&conditions, span_x, span_y) {
-            (Some(conditions), Some(x), Some(y)) if errors.is_empty() && !no_criteria => evaluate(
-                conditions,
-                Spans {
+        let evaluation = match (concrete, loads, amplification, span_x, span_y) {
+            (
+                Some(concrete),
+                Some((finish_load, live_load)),
+                Some(amplification),
+                Some(x),
+                Some(y),
+            ) if errors.is_empty() && !no_criteria => {
+                let conditions = Conditions {
+                    concrete,
+                    finish_load,
+                    live_load,
+                    amplification,
+                    criteria: CriteriaSet {
+                        deflection_ratio: ratio.map(|n| 1.0 / n),
+                        deflection_absolute: absolute.map(Length::mm),
+                        min_thickness: inputs.min_thickness,
+                    },
+                };
+                let spans = Spans {
                     x: Length::mm(x * 1000.0),
                     y: Length::mm(y * 1000.0),
-                },
-            )
-            .ok(),
+                };
+                evaluate(&conditions, spans).ok()
+            }
             _ => None,
         };
 
@@ -391,9 +397,9 @@ pub(crate) fn SlabThicknessPage() -> Element {
                                 }
                                 tbody {
                                     Row {
-                                        DecimalCell { value: young_modulus, decimals: 0 }
-                                        DecimalCell { value: rc_unit_weight, decimals: 0 }
-                                        DecimalCell { value: wp, decimals: 0 }
+                                        NumCell { {young_modulus} }
+                                        NumCell { {rc_unit_weight} }
+                                        NumCell { {wp} }
                                     }
                                 }
                             }
@@ -424,7 +430,7 @@ pub(crate) fn SlabThicknessPage() -> Element {
                                 }
                                 tbody {
                                     Row {
-                                        DecimalCell { value: point.required_thickness, decimals: 0 }
+                                        NumCell { {point.required_thickness} }
                                         TextCell { {point.governing} }
                                     }
                                 }
@@ -442,8 +448,8 @@ pub(crate) fn SlabThicknessPage() -> Element {
                             }
                             tbody {
                                 Row {
-                                    DecimalCell { value: point.short_span, decimals: 0 }
-                                    DecimalCell { value: point.aspect_ratio, decimals: 0 }
+                                    NumCell { {point.short_span} }
+                                    NumCell { {point.aspect_ratio} }
                                 }
                             }
                         }
@@ -464,9 +470,9 @@ pub(crate) fn SlabThicknessPage() -> Element {
                             }
                             tbody {
                                 Row {
-                                    DecimalCell { value: point.elastic_deflection, decimals: 0 }
-                                    DecimalCell { value: point.amplified_deflection, decimals: 0 }
-                                    DecimalCell { value: point.allowable_deflection, decimals: 0 }
+                                    NumCell { {point.elastic_deflection} }
+                                    NumCell { {point.amplified_deflection} }
+                                    NumCell { {point.allowable_deflection} }
                                 }
                             }
                         }
@@ -491,14 +497,7 @@ fn ConditionSheet(
 ) -> Element {
     let has_error = |field: SlabField| errors.iter().any(|(e, _)| *e == field);
     // クライテリアが 1 つも無いときは、クライテリアの欄の見出しを `ng` にする
-    let head_error = |field: SlabField| {
-        has_error(field)
-            || (no_criteria
-                && matches!(
-                    field,
-                    SlabField::DeflectionRatio | SlabField::DeflectionAbsolute
-                ))
-    };
+    let head_error = |field: SlabField| has_error(field) || (no_criteria && field.may_be_blank());
     rsx! {
         Sheet {
             tbody {
