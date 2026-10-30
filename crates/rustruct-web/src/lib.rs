@@ -44,7 +44,8 @@ use data::{ConcretePage, DataIndex, RebarPage};
 use icons::{CloseIcon, DarkIcon, LightIcon, MenuIcon, UserIcon};
 use kirchhoff_plate::KirchhoffPlatePage;
 pub use kirchhoff_plate::{
-    Balance, CenterRow, EdgeRow, InputField, Maximum, PlateInputs, PlateReadout,
+    Balance, CenterRow, EdgeRow, InputField, Maximum, PlateFigure, PlateInputs, PlateReadout,
+    Quantity,
 };
 use slab_thickness::SlabThicknessPage;
 pub use slab_thickness::{PointRow, SharedRow, SlabField, SlabInputs, SlabReadout};

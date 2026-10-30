@@ -104,4 +104,126 @@ impl Scene {
             items: Vec::new(),
         }
     }
+
+    /// `other` の中身を、その原点が `at` に来るようにずらして足す（図の周りに縁を取るときなど）。
+    /// `other` の大きさは使わない。
+    pub fn place(&mut self, other: Scene, at: Pt) {
+        let shift = |p: Pt| [p[0] + at[0], p[1] + at[1]];
+        self.items.extend(other.items.into_iter().map(|item| {
+            match item {
+                Item::Path {
+                    subpaths,
+                    closed,
+                    fill,
+                    stroke,
+                } => Item::Path {
+                    subpaths: subpaths
+                        .into_iter()
+                        .map(|s| s.into_iter().map(shift).collect())
+                        .collect(),
+                    closed,
+                    fill,
+                    stroke,
+                },
+                Item::Rect {
+                    x,
+                    y,
+                    width,
+                    height,
+                    fill,
+                    stroke,
+                } => Item::Rect {
+                    x: x + at[0],
+                    y: y + at[1],
+                    width,
+                    height,
+                    fill,
+                    stroke,
+                },
+                Item::Text {
+                    x,
+                    y,
+                    text,
+                    size,
+                    font,
+                    fill,
+                    anchor,
+                    rotate,
+                    halo,
+                } => Item::Text {
+                    x: x + at[0],
+                    y: y + at[1],
+                    text,
+                    size,
+                    font,
+                    fill,
+                    anchor,
+                    rotate,
+                    halo,
+                },
+            }
+        }));
+    }
+}
+
+/// 継ぎ目: シーンを別のシーンに置くと、形は変わらず位置だけずれる。
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn placed_items_keep_their_shape_and_move_by_the_offset() {
+        let mut inner = Scene::new(10.0, 10.0);
+        inner.items.push(Item::Path {
+            subpaths: vec![vec![[0.0, 0.0], [10.0, 5.0]]],
+            closed: false,
+            fill: None,
+            stroke: Some(Stroke::new("ink", 1.0)),
+        });
+        inner.items.push(Item::Rect {
+            x: 1.0,
+            y: 2.0,
+            width: 3.0,
+            height: 4.0,
+            fill: None,
+            stroke: None,
+        });
+        inner.items.push(Item::Text {
+            x: 5.0,
+            y: 5.0,
+            text: "1".into(),
+            size: 9.0,
+            font: Font::Mono,
+            fill: Paint::role("ink"),
+            anchor: Anchor::Middle,
+            rotate: 30.0,
+            halo: None,
+        });
+        let mut outer = Scene::new(30.0, 30.0);
+        outer.place(inner, [8.0, 6.0]);
+        assert_eq!((outer.width, outer.height), (30.0, 30.0));
+        let Item::Path { subpaths, .. } = &outer.items[0] else {
+            panic!("{:?}", outer.items[0])
+        };
+        assert_eq!(subpaths, &vec![vec![[8.0, 6.0], [18.0, 11.0]]]);
+        assert!(matches!(
+            outer.items[1],
+            Item::Rect {
+                x: 9.0,
+                y: 8.0,
+                width: 3.0,
+                height: 4.0,
+                ..
+            }
+        ));
+        assert!(matches!(
+            outer.items[2],
+            Item::Text {
+                x: 13.0,
+                y: 11.0,
+                rotate: 30.0,
+                ..
+            }
+        ));
+    }
 }

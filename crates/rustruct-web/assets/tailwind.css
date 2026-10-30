@@ -307,6 +307,9 @@
   .min-w-0 {
     min-width: var(--spacing-0);
   }
+  .flex-1 {
+    flex: 1;
+  }
   .table-fixed {
     table-layout: fixed;
   }
@@ -416,6 +419,9 @@
   }
   .bg-fill {
     background-color: var(--color-fill);
+  }
+  .bg-ink {
+    background-color: var(--color-ink);
   }
   .bg-paper {
     background-color: var(--color-paper);
@@ -545,6 +551,9 @@
   }
   .text-ng {
     color: var(--color-ng);
+  }
+  .text-paper {
+    color: var(--color-paper);
   }
   .underline {
     text-decoration-line: underline;

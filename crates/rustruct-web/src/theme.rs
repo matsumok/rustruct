@@ -162,6 +162,17 @@ pub fn theme_css(tokens_json: &str) -> Result<String, Error> {
     Ok(out)
 }
 
+/// 本文の1単位（`width-column`）の px の数。図を描くとき、1単位の幅の座標で組むのに使う。
+pub fn column_width(tokens_json: &str) -> Result<u32, Error> {
+    let tokens = Tokens::parse(tokens_json)?;
+    tokens
+        .widths
+        .iter()
+        .find(|(n, _)| n == "column")
+        .and_then(|(_, v)| v.strip_suffix("px")?.parse().ok())
+        .ok_or_else(|| Error::Shape("width-column が px の整数でない".into()))
+}
+
 /// tokens.json の文字列から、Google Fonts CSS の URL を作る。
 ///
 /// 書体は families の先頭の名前（引用符つきの最初の一つ）、太さは各書体を使う文字スタイルの
@@ -409,7 +420,7 @@ fn str_at<'a>(v: &'a Value, pointer: &str) -> Result<&'a str, Error> {
 /// `docs/design/tokens.json` そのものを固定資料として読む。期待値は tokens.json に書いてある値。
 #[cfg(test)]
 mod tests {
-    use super::{google_fonts_url, theme_css};
+    use super::{column_width, google_fonts_url, theme_css};
     use serde_json::Value;
 
     const TOKENS: &str = include_str!("../../../docs/design/tokens.json");
@@ -629,6 +640,8 @@ mod tests {
         // 本文の箱の最大幅は tokens に無く、1単位と区切りの左右の空きから導く。max-w-page / lg:max-w-page-lg で使う
         assert!(css().contains("--container-page: 703px;"), "{}", css()); // 2 × 335 + 2 × 16 + 1
         assert!(css().contains("--container-page-lg: 831px;"), "{}", css()); // 2 × 335 + 2 × 80 + 1
+        // 図の座標の幅も同じ1単位
+        assert_eq!(column_width(TOKENS).unwrap(), 335);
     }
 
     #[test]
