@@ -194,6 +194,7 @@ fn ssg_paths_are_the_static_routes_and_the_not_found_page() {
             "/",
             "/tools",
             "/tools/kirchhoff-plate",
+            "/tools/slab-thickness",
             "/data",
             "/data/concrete",
             "/data/rebar",
@@ -226,6 +227,10 @@ fn title_is_page_name_then_site_name() {
         (
             "/tools/kirchhoff-plate",
             "Kirchhoff 板の曲げ · rustruct.matsumok.com",
+        ),
+        (
+            "/tools/slab-thickness",
+            "必要スラブ厚さ · rustruct.matsumok.com",
         ),
         ("/data", "Data · rustruct.matsumok.com"),
         ("/data/concrete", "コンクリート · rustruct.matsumok.com"),

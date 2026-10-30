@@ -10,6 +10,7 @@ use rustruct_calc::kirchhoff_plate::{PlateError, Solution, solve};
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Plate, Support, Supports};
 use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
 
+use crate::sheet::{Sheet, SheetCell, SheetHead, SheetInput, SheetRow};
 use crate::table::{
     Block, Caption, Column, Columns, DecimalCell, HeadCell, HeadRow, Notes, Row, Table, TextCell,
     max_decimals, significant, thousands,
@@ -494,53 +495,48 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
     }
 }
 
-/// 入力の Sheet（デザインシステムの Sheet）。対になる欄を 1 行に 2 組ずつ並べる（スマホで縦に長くしないため）。
-/// 行見出し（欄の名前）は書けないので `fill`、値のセルは `paper` に `line` の格子。選んだセルは `ink`、
-/// 読めないセルは `ng` の太い内枠（`outline-2`）で、行見出しも `ng`。外の角だけ `radius-8`（ツールの入力カード）。
+/// 入力の Sheet。対になる欄を 1 行に 2 組ずつ並べる（スマホで縦に長くしないため）。
+/// 枠・格子・誤りの印は `sheet` の部品が持つ
 #[component]
 fn InputSheet(inputs: Signal<PlateInputs>, errors: Vec<(InputField, &'static str)>) -> Element {
     let supports = inputs.read().supports;
     let has_error = |field: InputField| errors.iter().any(|(e, _)| *e == field);
     rsx! {
-        div { class: "overflow-hidden rounded-8 border border-line",
-            table { class: "w-full table-fixed",
-                tbody {
-                    for pair in FIELD_PAIRS {
-                        tr { class: "border-b border-line",
-                            for field in pair {
-                                SheetHead { label: field.label(), error: has_error(field) }
-                                SheetCell {
-                                    input {
-                                        class: if has_error(field) { "h-6 w-full bg-paper px-2 font-mono text-num text-right outline-2 -outline-offset-2 outline-ng" } else { "h-6 w-full bg-paper px-2 font-mono text-num text-right focus:outline-2 focus:-outline-offset-2 focus:outline-ink" },
-                                        r#type: "text",
-                                        inputmode: "decimal",
-                                        "aria-label": field.label(),
-                                        value: inputs.read().get(field).to_string(),
-                                        oninput: move |e| inputs.write().set(field, e.value()),
-                                    }
+        Sheet {
+            tbody {
+                for pair in FIELD_PAIRS {
+                    SheetRow {
+                        for field in pair {
+                            SheetHead { label: field.label(), error: has_error(field) }
+                            SheetCell {
+                                SheetInput {
+                                    label: field.label(),
+                                    value: inputs.read().get(field).to_string(),
+                                    error: has_error(field),
+                                    oninput: move |e: FormEvent| inputs.write().set(field, e.value()),
                                 }
                             }
                         }
                     }
-                    for pair in EDGE_PAIRS {
-                        tr { class: "border-b border-line last:border-b-0",
-                            for (edge , direction) in pair {
-                                SheetHead { label: format!("{edge}（{direction}）"), error: false }
-                                SheetCell {
-                                    select {
-                                        class: "h-6 w-full bg-paper px-2 text-body focus:outline-2 focus:-outline-offset-2 focus:outline-ink",
-                                        "aria-label": format!("{edge} の辺の支持条件"),
-                                        onchange: move |e| {
-                                            if let Some(support) = e.value().chars().next().and_then(Support::from_symbol) {
-                                                set_support(&mut inputs.write().supports, edge, support);
-                                            }
-                                        },
-                                        for (support , name) in SUPPORTS {
-                                            option {
-                                                value: "{support.symbol()}",
-                                                selected: supports.at(edge) == support,
-                                                {name}
-                                            }
+                }
+                for pair in EDGE_PAIRS {
+                    SheetRow {
+                        for (edge , direction) in pair {
+                            SheetHead { label: format!("{edge}（{direction}）"), error: false }
+                            SheetCell {
+                                select {
+                                    class: "h-6 w-full bg-paper px-2 text-body focus:outline-2 focus:-outline-offset-2 focus:outline-ink",
+                                    "aria-label": format!("{edge} の辺の支持条件"),
+                                    onchange: move |e| {
+                                        if let Some(support) = e.value().chars().next().and_then(Support::from_symbol) {
+                                            set_support(&mut inputs.write().supports, edge, support);
+                                        }
+                                    },
+                                    for (support , name) in SUPPORTS {
+                                        option {
+                                            value: "{support.symbol()}",
+                                            selected: supports.at(edge) == support,
+                                            {name}
                                         }
                                     }
                                 }
@@ -550,26 +546,6 @@ fn InputSheet(inputs: Signal<PlateInputs>, errors: Vec<(InputField, &'static str
                 }
             }
         }
-    }
-}
-
-/// Sheet の行見出し。右に `line`
-#[component]
-fn SheetHead(label: String, error: bool) -> Element {
-    rsx! {
-        th {
-            class: if error { "border-r border-line bg-fill px-1 text-center text-label text-ng font-normal whitespace-nowrap" } else { "border-r border-line bg-fill px-1 text-center text-label text-muted font-normal whitespace-nowrap" },
-            scope: "row",
-            {label}
-        }
-    }
-}
-
-/// Sheet の書けるセル。右に `line`（行の最後のセルは外枠に任せる）
-#[component]
-fn SheetCell(children: Element) -> Element {
-    rsx! {
-        td { class: "border-r border-line p-0 last:border-r-0", {children} }
     }
 }
 
