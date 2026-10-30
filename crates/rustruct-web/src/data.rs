@@ -2,6 +2,7 @@
 //! 数値はすべて `rustruct-types` から引き、ここでは表示の桁だけを決める（Issue #19）。
 
 use dioxus::prelude::*;
+use numerus::{fixed, point_pads, significant};
 use rustruct_types::allowable_stress::AllowableStress;
 use rustruct_types::concrete::{BarPosition, Concrete, ConcreteKind};
 use rustruct_types::quantity::Stress;
@@ -9,8 +10,7 @@ use rustruct_types::rebar::{BarDesignation, RebarKind};
 
 use crate::table::{
     Block, Caption, Column, Columns, DecimalCell, Divider, Formula, FormulaCell, GroupCell,
-    GroupRow, HeadCell, HeadRow, Notes, NumCell, ParenCell, Row, Table, TextCell, column_decimals,
-    max_decimals, significant, thousands,
+    GroupRow, HeadCell, HeadRow, Notes, NumCell, ParenCell, Row, Table, TextCell, column_pads,
 };
 use crate::{Page, Route, RouteList};
 
@@ -48,7 +48,7 @@ impl ConcreteReadout {
     pub fn from_fc_input(input: &str) -> Self {
         match Self::concrete(input) {
             Ok(c) => Self::Computed {
-                unit_weight: format!("{:.1}", c.unit_weight().as_kn_per_m3()),
+                unit_weight: fixed(c.unit_weight().as_kn_per_m3(), 1),
                 young_modulus: format!(
                     "{}×10⁴",
                     significant(c.young_modulus().as_n_per_mm2() / 1e4, 3)
@@ -181,8 +181,8 @@ fn designation_rows() -> Vec<(&'static str, [String; 4])> {
                 designation.name(),
                 [
                     significant(designation.nominal_diameter().as_mm(), 3),
-                    format!("{:.1}", designation.nominal_perimeter().as_mm()),
-                    thousands(significant(designation.nominal_area().as_mm2(), 4)),
+                    fixed(designation.nominal_perimeter().as_mm(), 1),
+                    significant(designation.nominal_area().as_mm2(), 4),
                     significant(designation.unit_mass().as_kg_per_m(), 3),
                 ],
             )
@@ -203,7 +203,7 @@ fn unit_weight_rows() -> Vec<(String, String)> {
                 Some(lower) => format!("{lower} < Fc ≦ {upper}"),
             };
             lower = Some(upper);
-            (range, format!("{:.1}", row.unit_weight.as_kn_per_m3()))
+            (range, fixed(row.unit_weight.as_kn_per_m3(), 1))
         })
         .collect()
 }
@@ -216,9 +216,18 @@ pub(crate) fn ConcretePage() -> Element {
     let readout = ConcreteReadout::from_fc_input(&fc.read());
     let [unit_weight, young_modulus] = readout.values().map(str::to_string);
     let allowable_rows = readout.allowable_rows();
-    let long_term_decimals = max_decimals(allowable_rows.iter().map(|row| row.long_term.as_str()));
-    let short_term_decimals =
-        max_decimals(allowable_rows.iter().map(|row| row.short_term.as_str()));
+    let long_term_pads = point_pads(
+        &allowable_rows
+            .iter()
+            .map(|row| &row.long_term)
+            .collect::<Vec<_>>(),
+    );
+    let short_term_pads = point_pads(
+        &allowable_rows
+            .iter()
+            .map(|row| &row.short_term)
+            .collect::<Vec<_>>(),
+    );
     let (error, warning) = match &readout {
         ConcreteReadout::Computed { warning, .. } => (None, warning.clone()),
         ConcreteReadout::Unusable { error } => (Some(error.clone()), None),
@@ -285,11 +294,11 @@ pub(crate) fn ConcretePage() -> Element {
                                 }
                             }
                             tbody {
-                                for row in allowable_rows {
+                                for ((row , long_term_pad) , short_term_pad) in allowable_rows.into_iter().zip(long_term_pads).zip(short_term_pads) {
                                     Row {
                                         TextCell { {row.name} }
-                                        DecimalCell { value: row.long_term, decimals: long_term_decimals }
-                                        DecimalCell { value: row.short_term, decimals: short_term_decimals }
+                                        DecimalCell { value: row.long_term, pad: long_term_pad }
+                                        DecimalCell { value: row.short_term, pad: short_term_pad }
                                     }
                                 }
                             }
@@ -368,7 +377,7 @@ pub(crate) fn ConcretePage() -> Element {
 #[component]
 pub(crate) fn RebarPage() -> Element {
     let rows = designation_rows();
-    let decimals = column_decimals(&rows);
+    let pads = column_pads(&rows);
     rsx! {
         Page { route: Route::DataRebar {},
             Columns {
@@ -386,11 +395,11 @@ pub(crate) fn RebarPage() -> Element {
                                 }
                             }
                             tbody {
-                                for (name , values) in rows {
+                                for ((name , values) , pads) in rows.into_iter().zip(pads) {
                                     Row {
                                         TextCell { {name} }
-                                        for (value , decimals) in values.into_iter().zip(decimals) {
-                                            DecimalCell { value, decimals }
+                                        for (value , pad) in values.into_iter().zip(pads) {
+                                            DecimalCell { value, pad }
                                         }
                                     }
                                 }
@@ -470,5 +479,5 @@ fn long_term_tension_compression_d29_and_up(kind: RebarKind) -> String {
 
 /// 表 6.2 の値は整数で書かれているので、そのまま整数で出す
 fn integer(stress: Stress) -> String {
-    format!("{:.0}", stress.as_n_per_mm2())
+    fixed(stress.as_n_per_mm2(), 0)
 }

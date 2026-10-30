@@ -6,6 +6,7 @@
 //! Sheet の行見出しに添えて対応を示す。
 
 use dioxus::prelude::*;
+use numerus::{point_pads, significant};
 use rustruct_calc::kirchhoff_plate::{PlateError, Solution, solve};
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Plate, Support, Supports};
 use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
@@ -18,7 +19,6 @@ pub use figure::{PlateFigure, Quantity};
 use crate::sheet::{Sheet, SheetCell, SheetHead, SheetInput, SheetRow};
 use crate::table::{
     Block, Caption, Column, Columns, DecimalCell, HeadCell, HeadRow, Notes, Row, Table, TextCell,
-    max_decimals, significant, thousands,
 };
 use crate::{Page, Route};
 
@@ -405,9 +405,9 @@ fn corner_name(corner: Corner) -> String {
     format!("{x}・{y}")
 }
 
-/// 有効数字 3 桁、4 桁以上は 3 桁区切り（Data と同じ）
+/// 有効数字 3 桁（Data と同じ）
 fn figures(value: f64) -> String {
-    thousands(significant(value, 3))
+    significant(value, 3)
 }
 
 /// `/tools/kirchhoff-plate`。入力の Sheet のすぐ下に結果の表を続けた列と、分布図の列（ADR-0006）。
@@ -427,7 +427,7 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
     });
     let readout = outcome.read().readout.clone();
     let CenterRow { w, mx, my } = readout.center.clone();
-    let corner_decimals = max_decimals(readout.corners.iter().map(|(_, r)| r.as_str()));
+    let corner_pads = point_pads(&readout.corners.iter().map(|(_, r)| r).collect::<Vec<_>>());
     let Balance { reactions, load } = readout.balance.clone();
     rsx! {
         Page { route: Route::ToolsKirchhoffPlate {},
@@ -459,9 +459,9 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                                 }
                                 tbody {
                                     Row {
-                                        DecimalCell { value: w, decimals: 0 }
-                                        DecimalCell { value: mx, decimals: 0 }
-                                        DecimalCell { value: my, decimals: 0 }
+                                        DecimalCell { value: w, pad: 0 }
+                                        DecimalCell { value: mx, pad: 0 }
+                                        DecimalCell { value: my, pad: 0 }
                                     }
                                 }
                             }
@@ -499,10 +499,10 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                                 }
                             }
                             tbody {
-                                for (name , reaction) in readout.corners.iter().cloned() {
+                                for ((name , reaction) , pad) in readout.corners.iter().cloned().zip(corner_pads) {
                                     Row {
                                         TextCell { {name} }
-                                        DecimalCell { value: reaction, decimals: corner_decimals }
+                                        DecimalCell { value: reaction, pad }
                                     }
                                 }
                             }
@@ -522,8 +522,8 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                             }
                             tbody {
                                 Row {
-                                    DecimalCell { value: reactions, decimals: 0 }
-                                    DecimalCell { value: load, decimals: 0 }
+                                    DecimalCell { value: reactions, pad: 0 }
+                                    DecimalCell { value: load, pad: 0 }
                                 }
                             }
                         }
@@ -656,7 +656,8 @@ fn EdgeTable(edges: Vec<EdgeRow>, positions: bool) -> Element {
     };
     let columns: [fn(&EdgeRow) -> &Maximum; 3] =
         [|r| &r.max_moment, |r| &r.max_shear, |r| &r.max_reaction];
-    let decimals = columns.map(|column| max_decimals(edges.iter().map(|r| pick(column(r)))));
+    let pads = columns
+        .map(|column| point_pads(&edges.iter().map(|r| pick(column(r))).collect::<Vec<_>>()));
     let heads = if positions {
         ["M", "Q", "V"]
     } else {
@@ -673,11 +674,11 @@ fn EdgeTable(edges: Vec<EdgeRow>, positions: bool) -> Element {
                 }
             }
             tbody {
-                for row in edges.iter() {
+                for (i , row) in edges.iter().enumerate() {
                     Row {
                         TextCell { "{row.name}" }
-                        for (column , decimals) in columns.into_iter().zip(decimals) {
-                            DecimalCell { value: pick(column(row)).to_string(), decimals }
+                        for (column , pads) in columns.into_iter().zip(&pads) {
+                            DecimalCell { value: pick(column(row)).to_string(), pad: pads[i] }
                         }
                     }
                 }
