@@ -10,6 +10,11 @@ use rustruct_calc::kirchhoff_plate::{PlateError, Solution, solve};
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Plate, Support, Supports};
 use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
 
+mod figure;
+
+use figure::PlateField;
+pub use figure::{PlateFigure, Quantity};
+
 use crate::table::{
     Block, Caption, Column, Columns, DecimalCell, HeadCell, HeadRow, Notes, Row, Table, TextCell,
     max_decimals, significant, thousands,
@@ -80,6 +85,15 @@ const SUPPORTS: [(Support, &str); 3] = [
     (Support::SimplySupported, "単純支持"),
     (Support::Free, "自由"),
 ];
+
+/// 支持条件の画面での名前
+fn support_name(support: Support) -> &'static str {
+    SUPPORTS
+        .iter()
+        .find(|(s, _)| *s == support)
+        .map(|(_, name)| *name)
+        .expect("SUPPORTS は 3 つの支持条件をすべて持つ")
+}
 
 /// 入力の Sheet の中身。数値の欄は打ったままの文字で持ち、読めるかは `PlateReadout` が決める
 #[derive(Debug, Clone, PartialEq)]
@@ -262,19 +276,28 @@ pub struct Balance {
 
 impl PlateReadout {
     pub fn from_inputs(inputs: &PlateInputs) -> Self {
+        Self::with_field(inputs).0
+    }
+
+    /// 結果の表と、分布図の評価点の応答。1 回解いて両方を作る。解けなければ評価点は無い
+    fn with_field(inputs: &PlateInputs) -> (Self, Option<PlateField>) {
         match inputs.plate() {
-            Err(errors) => Self {
-                errors,
-                ..Self::not_computed(None)
-            },
+            Err(errors) => (
+                Self {
+                    errors,
+                    ..Self::not_computed(None)
+                },
+                None,
+            ),
             Ok(plate) => match solve(&plate) {
-                Ok(solution) => Self::computed(&solution),
-                Err(PlateError::Unstable(_)) => {
-                    Self::not_computed(Some("この支持条件の組では板を支えられない"))
-                }
+                Ok(solution) => (Self::computed(&solution), Some(PlateField::new(&solution))),
+                Err(PlateError::Unstable(_)) => (
+                    Self::not_computed(Some("この支持条件の組では板を支えられない")),
+                    None,
+                ),
                 // 入力は手前で読んだので来ない。来たら解けないことだけを言う
                 Err(PlateError::InvalidInput(_) | PlateError::Singular) => {
-                    Self::not_computed(Some("この入力では解けない"))
+                    (Self::not_computed(Some("この入力では解けない")), None)
                 }
             },
         }
@@ -376,12 +399,22 @@ fn figures(value: f64) -> String {
     thousands(significant(value, 3))
 }
 
-/// `/tools/kirchhoff-plate`。入力の Sheet のすぐ下に結果の表を続け、1 つの列に置く（ADR-0006）。
-/// 「入力」「結果」の部の見出しは置かず、表の見出しで区切る。
+/// `/tools/kirchhoff-plate`。入力の Sheet のすぐ下に結果の表を続けた列と、分布図の列（ADR-0006）。
+/// 「入力」「結果」の部の見出しは置かず、表の見出しで区切る。解くのは入力が変わったときだけで、
+/// 分布図の量を切り替えても解き直さない。
 #[component]
 pub(crate) fn KirchhoffPlatePage() -> Element {
     let inputs = use_signal(PlateInputs::default);
-    let readout = PlateReadout::from_inputs(&inputs.read());
+    let quantity = use_signal(|| Quantity::W);
+    let outcome = use_memo(move || PlateReadout::with_field(&inputs.read()));
+    let figure = use_memo(move || {
+        outcome
+            .read()
+            .1
+            .as_ref()
+            .map(|field| PlateFigure::new(field, quantity()))
+    });
+    let readout = outcome.read().0.clone();
     let CenterRow { w, mx, my } = readout.center.clone();
     let corner_decimals = max_decimals(readout.corners.iter().map(|(_, r)| r.as_str()));
     let Balance { reactions, load } = readout.balance.clone();
@@ -488,6 +521,65 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                             li { "ΣR は隅反力の合計" }
                         }
                     }
+                }
+                Column {
+                    FigureBlock { quantity, figure: figure(), notice: readout.notice }
+                }
+            }
+        }
+    }
+}
+
+/// 分布図の一まとまり。図の名前、量の切替、図、支持条件の読み方の注記。解けないときは図の代わりに
+/// 解けない理由（無ければ「—」）
+#[component]
+fn FigureBlock(
+    quantity: Signal<Quantity>,
+    figure: Option<PlateFigure>,
+    notice: Option<&'static str>,
+) -> Element {
+    rsx! {
+        Block {
+            Caption { {quantity().caption()} }
+            QuantitySwitch { quantity }
+            match figure {
+                Some(figure) => rsx! {
+                    figure { role: "img", "aria-label": figure.label,
+                        div { class: "dark:hidden", dangerous_inner_html: figure.light_svg }
+                        div { class: "hidden dark:block", dangerous_inner_html: figure.dark_svg }
+                    }
+                },
+                None => rsx! {
+                    p { class: "text-label",
+                        {notice.map_or(NOT_COMPUTED.to_string(), |n| format!("! {n}"))}
+                    }
+                },
+            }
+            Notes {
+                li { "斜線の付いた辺は固定" }
+                li { "線だけの辺は単純支持" }
+                li { "線の無い辺は自由" }
+            }
+        }
+    }
+}
+
+/// 分布図の量の切替。5 つのボタンを 1 行に並べ、押されているものを `ink` で塗る（選択は墨）。
+/// 器は入力と同じ `line` の枠で、外の角だけ `radius-8`（ボタン）
+#[component]
+fn QuantitySwitch(quantity: Signal<Quantity>) -> Element {
+    rsx! {
+        div {
+            class: "flex overflow-hidden rounded-8 border border-line",
+            role: "group",
+            "aria-label": "分布図の量",
+            for q in Quantity::ALL {
+                button {
+                    class: if quantity() == q { "h-6 flex-1 border-r border-line bg-ink font-mono text-num text-paper last:border-r-0" } else { "h-6 flex-1 border-r border-line bg-paper font-mono text-num last:border-r-0" },
+                    r#type: "button",
+                    "aria-pressed": if quantity() == q { "true" } else { "false" },
+                    onclick: move |_| quantity.set(q),
+                    {q.symbol()}
                 }
             }
         }
