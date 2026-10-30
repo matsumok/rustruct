@@ -20,6 +20,7 @@ opt-level = 2
 rustruct-types = { path = "crates/rustruct-types" }
 rustruct-calc = { path = "crates/rustruct-calc" }
 charta = { path = "crates/charta" }
+numerus = { path = "crates/numerus" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }

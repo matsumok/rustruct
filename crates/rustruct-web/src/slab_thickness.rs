@@ -5,6 +5,7 @@
 //! 今は検討点を 1 つだけ入れる。検討点のシートと等厚曲線の図は後の Issue。
 
 use dioxus::prelude::*;
+use numerus::fixed;
 use rustruct_calc::slab_thickness::{
     Conditions, CriteriaSet, Criterion, Evaluation, SharedValues, Spans, evaluate, shared_values,
 };
@@ -14,7 +15,6 @@ use rustruct_types::quantity::{AreaLoad, Length, Stress};
 use crate::sheet::{Sheet, SheetCell, SheetHead, SheetHeadRow, SheetInput, SheetRow};
 use crate::table::{
     Block, Caption, Column, Columns, HeadCell, HeadRow, Notes, NumCell, Row, Table, TextCell,
-    thousands,
 };
 use crate::{Page, Route};
 
@@ -293,9 +293,9 @@ impl SharedRow {
                 wp: NOT_COMPUTED.into(),
             },
             Some(v) => Self {
-                young_modulus: thousands(format!("{:.0}", v.young_modulus.as_n_per_mm2())),
-                rc_unit_weight: format!("{:.1}", v.rc_unit_weight.as_kn_per_m3()),
-                wp: thousands(format!("{:.0}", v.wp.as_n_per_m2())),
+                young_modulus: fixed(v.young_modulus.as_n_per_mm2(), 0),
+                rc_unit_weight: fixed(v.rc_unit_weight.as_kn_per_m3(), 1),
+                wp: fixed(v.wp.as_n_per_m2(), 0),
             },
         }
     }
@@ -315,12 +315,12 @@ impl PointRow {
                 allowable_deflection: dash(),
             };
         };
-        let mm = |l: Length| format!("{:.2}", l.as_mm());
+        let mm = |l: Length| fixed(l.as_mm(), 2);
         Self {
-            required_thickness: format!("{:.1}", ev.required_thickness.as_mm()),
+            required_thickness: fixed(ev.required_thickness.as_mm(), 1),
             governing: criterion_name(ev.governing).into(),
-            short_span: format!("{:.2}", ev.short_span.as_mm() / 1000.0),
-            aspect_ratio: format!("{:.2}", ev.aspect_ratio),
+            short_span: fixed(ev.short_span.as_mm() / 1000.0, 2),
+            aspect_ratio: fixed(ev.aspect_ratio, 2),
             elastic_deflection: mm(ev.elastic_deflection),
             amplified_deflection: mm(ev.amplified_deflection),
             allowable_deflection: ev

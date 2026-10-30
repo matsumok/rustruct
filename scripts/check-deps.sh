@@ -30,5 +30,17 @@ if tree charta | grep -q '^rustruct-types '; then
   echo "NG: charta が rustruct-types に依存している"; tree charta; fail=1
 fi
 
+# charta の直接依存は numerus だけ
+got=$(direct_deps charta)
+if [ "$got" != "numerus" ]; then
+  echo "NG: charta の直接依存が docs/stack.md（numerus のみ）と違う:"; echo "$got"; fail=1
+fi
+
+# numerus は依存を持たない
+got=$(direct_deps numerus)
+if [ -n "$got" ]; then
+  echo "NG: numerus の直接依存が docs/stack.md（なし）と違う:"; echo "$got"; fail=1
+fi
+
 [ "$fail" -eq 0 ] && echo "OK: 依存の向きは docs/stack.md どおり"
 exit "$fail"
