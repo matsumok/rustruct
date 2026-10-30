@@ -216,18 +216,8 @@ pub(crate) fn ConcretePage() -> Element {
     let readout = ConcreteReadout::from_fc_input(&fc.read());
     let [unit_weight, young_modulus] = readout.values().map(str::to_string);
     let allowable_rows = readout.allowable_rows();
-    let long_term_pads = point_pads(
-        &allowable_rows
-            .iter()
-            .map(|row| &row.long_term)
-            .collect::<Vec<_>>(),
-    );
-    let short_term_pads = point_pads(
-        &allowable_rows
-            .iter()
-            .map(|row| &row.short_term)
-            .collect::<Vec<_>>(),
-    );
+    let long_term_pads = point_pads(allowable_rows.iter().map(|row| &row.long_term));
+    let short_term_pads = point_pads(allowable_rows.iter().map(|row| &row.short_term));
     let (error, warning) = match &readout {
         ConcreteReadout::Computed { warning, .. } => (None, warning.clone()),
         ConcreteReadout::Unusable { error } => (Some(error.clone()), None),

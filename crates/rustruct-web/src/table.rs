@@ -211,14 +211,8 @@ pub(crate) enum Formula {
 
 /// 列ごとに小数点を揃える埋め（`numerus::point_pads`）を、行ごとに並べ直す。`rows` は（行の名前, 値の並び）
 pub(crate) fn column_pads<const N: usize>(rows: &[(&str, [String; N])]) -> Vec<[usize; N]> {
-    let columns: [Vec<usize>; N] = std::array::from_fn(|column| {
-        point_pads(
-            &rows
-                .iter()
-                .map(|(_, values)| &values[column])
-                .collect::<Vec<_>>(),
-        )
-    });
+    let columns: [Vec<usize>; N] =
+        std::array::from_fn(|column| point_pads(rows.iter().map(|(_, values)| &values[column])));
     (0..rows.len())
         .map(|row| std::array::from_fn(|column| columns[column][row]))
         .collect()

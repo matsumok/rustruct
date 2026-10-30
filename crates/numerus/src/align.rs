@@ -6,8 +6,15 @@ pub const FIGURE_SPACE: char = '\u{2007}';
 /// 列の値ごとの、小数点の位置を揃えるのに右に足す数字幅の空白の数。等幅で右に揃えると、小数点
 /// （小数点の無い数は整数部の右）が縦に揃う。E の数（-1.52E-06）は仮数の小数点で揃え、
 /// 指数の部分（E-06）は小数部と同じく右に伸びる。数でない値（「—」）は小数点の無い数として扱う
-pub fn point_pads<S: AsRef<str>>(column: &[S]) -> Vec<usize> {
-    let rights: Vec<usize> = column.iter().map(|v| right_of_whole(v.as_ref())).collect();
+pub fn point_pads<I>(column: I) -> Vec<usize>
+where
+    I: IntoIterator,
+    I::Item: AsRef<str>,
+{
+    let rights: Vec<usize> = column
+        .into_iter()
+        .map(|v| right_of_whole(v.as_ref()))
+        .collect();
     let widest = rights.iter().copied().max().unwrap_or(0);
     rights.into_iter().map(|right| widest - right).collect()
 }
@@ -35,24 +42,7 @@ mod tests {
     #[test]
     fn points_line_up_in_a_column_with_e() {
         let column = ["6.11", "-1.52E-06", "-15,500", "2E-04"];
-        let pads = point_pads(&column);
-        assert_eq!(pads, [4, 0, 7, 3]);
-        // 等幅で右に揃えると、小数点（無い数は整数部の右）が同じ桁に来る
-        let width = column
-            .iter()
-            .zip(&pads)
-            .map(|(v, p)| v.chars().count() + p)
-            .max()
-            .unwrap();
-        let points: Vec<usize> = column
-            .iter()
-            .zip(&pads)
-            .map(|(v, p)| {
-                let left = width - v.chars().count() - p;
-                let whole = v.find(['.', 'E']).unwrap_or(v.len());
-                left + v[..whole].chars().count()
-            })
-            .collect();
-        assert!(points.windows(2).all(|w| w[0] == w[1]), "{points:?}");
+        // 小数点（無い数は整数部の右）の右の字数が 3・7・0・4 なので、最も長い 7 にそろえる
+        assert_eq!(point_pads(column), [4, 0, 7, 3]);
     }
 }

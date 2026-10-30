@@ -427,7 +427,7 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
     });
     let readout = outcome.read().readout.clone();
     let CenterRow { w, mx, my } = readout.center.clone();
-    let corner_pads = point_pads(&readout.corners.iter().map(|(_, r)| r).collect::<Vec<_>>());
+    let corner_pads = point_pads(readout.corners.iter().map(|(_, r)| r));
     let Balance { reactions, load } = readout.balance.clone();
     rsx! {
         Page { route: Route::ToolsKirchhoffPlate {},
@@ -656,8 +656,7 @@ fn EdgeTable(edges: Vec<EdgeRow>, positions: bool) -> Element {
     };
     let columns: [fn(&EdgeRow) -> &Maximum; 3] =
         [|r| &r.max_moment, |r| &r.max_shear, |r| &r.max_reaction];
-    let pads = columns
-        .map(|column| point_pads(&edges.iter().map(|r| pick(column(r))).collect::<Vec<_>>()));
+    let pads = columns.map(|column| point_pads(edges.iter().map(|r| pick(column(r)))));
     let heads = if positions {
         ["M", "Q", "V"]
     } else {
