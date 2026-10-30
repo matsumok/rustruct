@@ -90,5 +90,5 @@ rustruct は、構造計算のツール（Tools）、数学やかたちの可視
 ## 図とアイコン
 
 - Studies の図版は計算で描いた SVG。線は `ink` の細線（0.25〜0.5px 相当）、下地は `fill`。塗るときは藍（`accent`）と青碧（`chart-2`）の組だけを使う。
-- アイコンは基本使わない。状態は `radius-full` の小さな点と文言で示す。ヘッダーのボタン（メニュー、ライトとダークの切り替え、アカウント）とメニューの枝の開け閉めだけはアイコンを使う。IBM の Carbon（`@carbon/icons`、Apache-2.0）の `menu`・`close`・`light`・`asleep`・`user`・`chevron--down` を、`size-5` で文字の色のまま置く。
+- アイコンは基本使わない。状態は `radius-full` の小さな点と文言で示す。ヘッダーのボタン（メニュー、ライトとダークの切り替え、アカウント）とメニューの枝の開け閉めだけはアイコンを使う。IBM の Carbon（`@carbon/icons`、Apache-2.0）の `menu`・`close`・`light`・`asleep`・`user` を、`size-5` で文字の色のまま置く。メニューの枝の開け閉めは `chevron--down` を `size-4` の `muted` で置き、閉じた枝は右に回す。
 - ロゴはない。サイト名はいつも `wordmark` の文字で組む。
