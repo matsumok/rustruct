@@ -4,7 +4,7 @@
 mod common;
 use common::{assert_in_order, element, text_of};
 use rustruct_types::kirchhoff_plate::{Support, Supports};
-use rustruct_web::{InputField, PlateInputs, PlateReadout, render_path};
+use rustruct_web::{InputField, PlateFigure, PlateInputs, PlateReadout, Quantity, render_path};
 
 #[test]
 fn tools_lists_kirchhoff_plate_under_the_mechanics_heading() {
@@ -236,4 +236,115 @@ fn the_edge_moment_of_a_simply_supported_edge_is_zero_with_no_position() {
             row.name
         );
     }
+}
+
+/// 分布図の SVG の、等値線の上の数値（負は U+2212）
+fn figure_numbers(svg: &str) -> Vec<f64> {
+    svg.split("<text")
+        .skip(1)
+        .map(|t| {
+            let text = &t[t.find('>').unwrap() + 1..t.find("</text>").unwrap()];
+            text.replace('\u{2212}', "-")
+                .parse()
+                .unwrap_or_else(|_| panic!("数値でない: {text}"))
+        })
+        .collect()
+}
+
+#[test]
+fn the_page_shows_the_deflection_figure_after_the_results_with_five_switches() {
+    let main = element(&render_path("/tools/kirchhoff-plate"), "main").to_string();
+    assert_in_order(
+        &text_of(&main),
+        &["釣り合い", "たわみ w（mm）", "w", "Mx", "My", "Qx", "Qy"],
+    );
+    // 既定はたわみ。押されている切替は 1 つ
+    assert_eq!(main.matches("aria-pressed=\"true\"").count(), 1, "{main}");
+    assert_eq!(main.matches("aria-pressed=\"false\"").count(), 4, "{main}");
+    // ライトとダークの 2 枚。等値線の数値が読め、下向きの荷重でたわみは負にならない
+    assert_eq!(main.matches("<svg xmlns").count(), 2, "{main}");
+    let numbers = figure_numbers(&main);
+    assert!(!numbers.is_empty(), "等値線の数値が無い: {main}");
+    assert!(numbers.iter().all(|v| *v >= 0.0), "{numbers:?}");
+    // 4 辺の支持条件を、図の名前と注記で言う
+    assert!(
+        main.contains(
+            "aria-label=\"たわみ w の分布図。x = 0 の辺は固定、x = Lx の辺は固定、y = 0 の辺は固定、y = Ly の辺は固定\""
+        ),
+        "{main}"
+    );
+    assert_in_order(&text_of(&main), &["Qy", "固定", "単純支持", "自由"]);
+}
+
+#[test]
+fn each_switch_names_its_figure_with_the_unit() {
+    let names: Vec<(&str, &str)> = Quantity::ALL
+        .iter()
+        .map(|q| (q.symbol(), q.caption()))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("w", "たわみ w（mm）"),
+            ("Mx", "曲げモーメント Mx（kN·m/m）"),
+            ("My", "曲げモーメント My（kN·m/m）"),
+            ("Qx", "せん断力 Qx（kN/m）"),
+            ("Qy", "せん断力 Qy（kN/m）"),
+        ]
+    );
+}
+
+#[test]
+fn a_moment_figure_of_the_fixed_plate_reads_both_signs() {
+    // 四辺固定の Mx は中央で正、x = 0 と x = Lx の辺の近くで負
+    let figure = PlateFigure::from_inputs(&PlateInputs::default(), Quantity::Mx).unwrap();
+    let numbers = figure_numbers(&figure.light_svg);
+    assert!(numbers.iter().any(|v| *v > 0.0), "{numbers:?}");
+    assert!(numbers.iter().any(|v| *v < 0.0), "{numbers:?}");
+    assert_eq!(figure_numbers(&figure.dark_svg), numbers);
+}
+
+#[test]
+fn the_figure_follows_the_aspect_of_the_plate_within_one_column_and_names_each_support() {
+    let size = |svg: &str| -> (f64, f64) {
+        let attr = |name: &str| -> f64 {
+            let at = svg.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+            svg[at..at + svg[at..].find('"').unwrap()].parse().unwrap()
+        };
+        (attr("width"), attr("height"))
+    };
+    let tall = PlateFigure::from_inputs(&PlateInputs::default(), Quantity::W).unwrap();
+    let mut inputs = PlateInputs::default();
+    (inputs.lx, inputs.ly) = ("8.0".into(), "2.0".into());
+    inputs.supports.x_lx = Support::Free;
+    inputs.supports.y0 = Support::SimplySupported;
+    let wide = PlateFigure::from_inputs(&inputs, Quantity::W).unwrap();
+    let ((tw, th), (ww, wh)) = (size(&tall.light_svg), size(&wide.light_svg));
+    // 長い辺の向きが 1 単位（335）いっぱい
+    assert_eq!((th, ww), (335.0, 335.0), "{tw}×{th} {ww}×{wh}");
+    // 4:5 の板の大きさから縁の幅 m を読む（tw − 2m = 0.8 (th − 2m)）。8:2 の板も、その縁を除いて 4:1
+    let m = (tw - 0.8 * th) / 0.4;
+    assert!((0.0..20.0).contains(&m), "縁 {m}");
+    assert!(
+        ((ww - 2.0 * m) / (wh - 2.0 * m) - 4.0).abs() < 1e-3,
+        "{tw}×{th} {ww}×{wh}"
+    );
+    assert_eq!(
+        wide.label,
+        "たわみ w の分布図。x = 0 の辺は固定、x = Lx の辺は自由、y = 0 の辺は単純支持、y = Ly の辺は固定"
+    );
+}
+
+#[test]
+fn a_plate_that_cannot_be_solved_has_no_figure() {
+    let unstable = PlateInputs {
+        supports: Supports::all(Support::Free),
+        ..PlateInputs::default()
+    };
+    assert_eq!(PlateFigure::from_inputs(&unstable, Quantity::W), None);
+    let unreadable = PlateInputs {
+        lx: "0".into(),
+        ..PlateInputs::default()
+    };
+    assert_eq!(PlateFigure::from_inputs(&unreadable, Quantity::W), None);
 }
