@@ -579,6 +579,9 @@
   .underline-offset-4 {
     text-underline-offset: 4px;
   }
+  .accent-ink {
+    accent-color: var(--color-ink);
+  }
   .outline-2 {
     outline-style: var(--tw-outline-style);
     outline-width: 2px;

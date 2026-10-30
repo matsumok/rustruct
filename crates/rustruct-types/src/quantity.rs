@@ -83,7 +83,7 @@ impl UnitWeight {
 }
 
 quantity!(
-    /// 単位面積あたりの荷重（Kirchhoff 板の等分布荷重）。次元は [`Stress`] と同じだが意味が違うので型を分ける。
+    /// 単位面積あたりの荷重（Kirchhoff 板の等分布荷重、スラブの仕上げ荷重と積載荷重）。次元は [`Stress`] と同じだが意味が違うので型を分ける。
     AreaLoad, "N/mm²"
 );
 
@@ -100,6 +100,13 @@ impl AreaLoad {
     }
     pub fn as_n_per_mm2(self) -> f64 {
         self.0
+    }
+    /// 1 N/m² = 1 N / 10⁶ mm²
+    pub const fn n_per_m2(value: f64) -> Self {
+        Self(value * 1e-6)
+    }
+    pub fn as_n_per_m2(self) -> f64 {
+        self.0 * 1e6
     }
 }
 

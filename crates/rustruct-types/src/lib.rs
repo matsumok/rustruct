@@ -6,3 +6,4 @@ pub mod concrete;
 pub mod kirchhoff_plate;
 pub mod quantity;
 pub mod rebar;
+pub mod slab_thickness;

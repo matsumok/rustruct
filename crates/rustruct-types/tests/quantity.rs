@@ -15,6 +15,13 @@ fn area_load_converts_between_kn_per_m2_and_n_per_mm2() {
 }
 
 #[test]
+fn area_load_converts_from_n_per_m2() {
+    // 必要スラブ厚さの荷重は N/m² で入れる。1 N/m² = 1 N / 10⁶ mm²
+    assert_close(AreaLoad::n_per_m2(2800.0).as_kn_per_m2(), 2.8, "2800 N/m²");
+    assert_close(AreaLoad::kn_per_m2(2.8).as_n_per_m2(), 2800.0, "2.8 kN/m²");
+}
+
+#[test]
 fn moment_per_length_converts_between_knm_per_m_and_nmm_per_mm() {
     // 1 kN·m/m = 10³ N × 10³ mm / 10³ mm = 10³ N·mm/mm
     assert_close(
