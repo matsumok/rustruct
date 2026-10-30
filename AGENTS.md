@@ -1,7 +1,7 @@
 # rustruct
 
 構造設計者向けの計算ツールと、数学的な可視化・書きものを置く個人サイト（rustruct.matsumok.com）。
-思想と経緯は `docs/philosophy.md`、UI の決め事は `docs/ui-decisions.md`（デザインシステムの写しは `docs/design/README.md`。見た目を提案する前に両方を読む）、骨格と技術スタックは `docs/stack.md`、Dioxus 0.7 でコードから読めない挙動は `docs/dioxus-0.7.md`（無いことは vendored ソースを grep する）を参照。
+思想と経緯は `docs/philosophy.md`、UI の決め事は `docs/ui-decisions.md`（デザインシステムの正本は `docs/design/README.md` と `tokens.json`。見た目を提案する前に両方を読む）、骨格と技術スタックは `docs/stack.md`、Dioxus 0.7 でコードから読めない挙動は `docs/dioxus-0.7.md`（無いことは vendored ソースを grep する）を参照。
 
 ## Commands
 
@@ -17,7 +17,7 @@ Rust は stable。`rust-toolchain.toml` が channel と wasm ターゲットを�
 
 ## 公開リポジトリに書かないもの
 
-このリポジトリは公開。本人の claude.ai のアーティファクト（デザインシステム、4画面のモック）の URL と ID は、リポジトリのファイル、コミットメッセージ、PR と Issue の本文・コメントのどこにも書かない。指すときは「本人の claude.ai のデザインシステム」と書く。URL はエージェントの手元の memory に置く（無ければ本人に聞く）。2026-10-13 から 10-16 まで `docs/ui-decisions.md` に ID が載っていた（履歴には残る。本人の判断で書き換えない）。
+このリポジトリは公開。本人の claude.ai のアーティファクト（9月のデザインシステムと4画面のモック。2026-10-23 から更新しない、`docs/adr/0012`）の URL と ID は、リポジトリのファイル、コミットメッセージ、PR と Issue の本文・コメントのどこにも書かない。指すときは「本人の claude.ai のデザインシステム」と書く。URL はエージェントの手元の memory に置く（無ければ本人に聞く）。2026-10-13 から 10-16 まで `docs/ui-decisions.md` に ID が載っていた（履歴には残る。本人の判断で書き換えない）。
 
 ## Agent skills
 

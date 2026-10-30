@@ -29,7 +29,7 @@ fn home_lists_the_four_sections_in_order_with_name_blurb_and_path() {
             "構造計算の入力・計算・判定。",
             "/data",
             "Data",
-            "構造設計で参照する材料や規格の値。",
+            "構造設計で参照する材料と規格の値。",
             "/studies",
             "Studies",
             "数学やかたちを眺めて考えるための可視化。",
@@ -64,11 +64,7 @@ fn home_shows_the_site_address_in_display_above_the_list() {
 
 #[test]
 fn section_page_has_path_title_and_the_empty_sentence_only() {
-    for (path, title) in [
-        ("/tools", "Tools"),
-        ("/studies", "Studies"),
-        ("/notes", "Notes"),
-    ] {
+    for (path, title) in [("/studies", "Studies"), ("/notes", "Notes")] {
         let html = render_path(path);
         let text = text_of(&html);
         // 枠の wordmark とパンくずの住所の後に、見出し、一文の順
@@ -158,7 +154,7 @@ fn unknown_path_is_not_found_inside_the_same_frame() {
         &[
             "rustruct.matsumok.com",
             "Not found",
-            "この住所には何もない。",
+            "ページが見つからない。",
         ],
     );
     assert_eq!(h1_text(&html), "Not found");
@@ -197,6 +193,7 @@ fn ssg_paths_are_the_static_routes_and_the_not_found_page() {
         [
             "/",
             "/tools",
+            "/tools/kirchhoff-plate",
             "/data",
             "/data/concrete",
             "/data/rebar",
@@ -226,6 +223,10 @@ fn title_is_page_name_then_site_name() {
     for (path, title) in [
         ("/", "Home · rustruct.matsumok.com"),
         ("/tools", "Tools · rustruct.matsumok.com"),
+        (
+            "/tools/kirchhoff-plate",
+            "Kirchhoff 板の曲げ · rustruct.matsumok.com",
+        ),
         ("/data", "Data · rustruct.matsumok.com"),
         ("/data/concrete", "コンクリート · rustruct.matsumok.com"),
         ("/data/rebar", "鉄筋 · rustruct.matsumok.com"),
@@ -253,7 +254,7 @@ fn every_page_has_a_description_meta_derived_from_the_route() {
         ("/studies", "数学やかたちを眺めて考えるための可視化。"),
         ("/notes", "構造や数学についての書きもの。"),
         ("/root", "root のための場所。"),
-        ("/no/such/page", "この住所には何もない。"),
+        ("/no/such/page", "ページが見つからない。"),
     ] {
         let html = render_path(path);
         let head = head_of(&html);
@@ -360,6 +361,13 @@ fn breadcrumb_links_each_parent_and_leaves_the_current_page_unlinked() {
         breadcrumb(&render_path("/tools")),
         vec![(None, "/tools".to_string())]
     );
+    assert_eq!(
+        breadcrumb(&render_path("/tools/kirchhoff-plate")),
+        vec![
+            (Some("/tools".to_string()), "/tools".to_string()),
+            (None, "/kirchhoff-plate".to_string()),
+        ]
+    );
 }
 
 #[test]
@@ -377,7 +385,13 @@ fn home_and_not_found_have_no_breadcrumb() {
 #[test]
 fn page_body_does_not_repeat_the_address() {
     // 住所はヘッダーのパンくず（iPad・PC）とメニューの木（スマホ）で示す。本文には出さない（#28）
-    for path in ["/tools", "/data/concrete", "/root"] {
+    // 一覧のページ（/tools、/data）は下のページの住所を並べるので、ここでは見ない
+    for path in [
+        "/studies",
+        "/tools/kirchhoff-plate",
+        "/data/concrete",
+        "/root",
+    ] {
         let body = text_of(element(&render_path(path), "main"));
         assert!(!body.contains(path), "{path} の本文に住所がある: {body}");
     }

@@ -9,6 +9,7 @@
     --default-font-family: var(--font-sans);
     --default-mono-font-family: var(--font-mono);
     --color-paper: #ffffff;
+    --color-fill: #f0f0f3;
     --color-line: #e0e1e6;
     --color-line-strong: #8b8d98;
     --color-ink: #1c2024;
@@ -294,6 +295,9 @@
     width: var(--spacing-5);
     height: var(--spacing-5);
   }
+  .h-6 {
+    height: var(--spacing-6);
+  }
   .h-8 {
     height: var(--spacing-8);
   }
@@ -314,6 +318,9 @@
   }
   .min-w-0 {
     min-width: var(--spacing-0);
+  }
+  .table-fixed {
+    table-layout: fixed;
   }
   .-rotate-90 {
     rotate: calc(90deg * -1);
@@ -345,6 +352,9 @@
   .gap-2 {
     gap: var(--spacing-2);
   }
+  .gap-3 {
+    gap: var(--spacing-3);
+  }
   .gap-4 {
     gap: var(--spacing-4);
   }
@@ -365,6 +375,9 @@
   }
   .self-start {
     align-self: flex-start;
+  }
+  .overflow-hidden {
+    overflow: hidden;
   }
   .overflow-x-auto {
     overflow-x: auto;
@@ -392,6 +405,10 @@
     border-style: var(--tw-border-style);
     border-width: 2px;
   }
+  .border-t {
+    border-top-style: var(--tw-border-style);
+    border-top-width: 1px;
+  }
   .border-r {
     border-right-style: var(--tw-border-style);
     border-right-width: 1px;
@@ -399,6 +416,9 @@
   .border-b {
     border-bottom-style: var(--tw-border-style);
     border-bottom-width: 1px;
+  }
+  .border-ink {
+    border-color: var(--color-ink);
   }
   .border-line {
     border-color: var(--color-line);
@@ -409,17 +429,29 @@
   .border-ng {
     border-color: var(--color-ng);
   }
+  .bg-fill {
+    background-color: var(--color-fill);
+  }
   .bg-paper {
     background-color: var(--color-paper);
   }
   .bg-scrim {
     background-color: var(--color-scrim);
   }
+  .p-0 {
+    padding: var(--spacing-0);
+  }
   .p-3 {
     padding: var(--spacing-3);
   }
   .p-5 {
     padding: var(--spacing-5);
+  }
+  .px-1 {
+    padding-inline: var(--spacing-1);
+  }
+  .px-2 {
+    padding-inline: var(--spacing-2);
   }
   .px-3 {
     padding-inline: var(--spacing-3);
@@ -538,6 +570,16 @@
   .underline-offset-4 {
     text-underline-offset: 4px;
   }
+  .outline-2 {
+    outline-style: var(--tw-outline-style);
+    outline-width: 2px;
+  }
+  .-outline-offset-2 {
+    outline-offset: calc(2px * -1);
+  }
+  .outline-ng {
+    outline-color: var(--color-ng);
+  }
   .first\:pr-3 {
     &:first-child {
       padding-right: var(--spacing-3);
@@ -548,11 +590,39 @@
       padding-left: var(--spacing-0);
     }
   }
+  .last\:border-r-0 {
+    &:last-child {
+      border-right-style: var(--tw-border-style);
+      border-right-width: 0px;
+    }
+  }
+  .last\:border-b-0 {
+    &:last-child {
+      border-bottom-style: var(--tw-border-style);
+      border-bottom-width: 0px;
+    }
+  }
   .hover\:text-ink {
     &:hover {
       @media (hover: hover) {
         color: var(--color-ink);
       }
+    }
+  }
+  .focus\:outline-2 {
+    &:focus {
+      outline-style: var(--tw-outline-style);
+      outline-width: 2px;
+    }
+  }
+  .focus\:-outline-offset-2 {
+    &:focus {
+      outline-offset: calc(2px * -1);
+    }
+  }
+  .focus\:outline-ink {
+    &:focus {
+      outline-color: var(--color-ink);
     }
   }
   .md\:box-content {
@@ -819,6 +889,11 @@
   syntax: "*";
   inherits: false;
 }
+@property --tw-outline-style {
+  syntax: "*";
+  inherits: false;
+  initial-value: solid;
+}
 @layer properties {
   @supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))) {
     *, ::before, ::after, ::backdrop {
@@ -829,6 +904,7 @@
       --tw-skew-y: initial;
       --tw-border-style: solid;
       --tw-font-weight: initial;
+      --tw-outline-style: solid;
     }
   }
 }

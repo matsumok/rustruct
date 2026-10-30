@@ -3,5 +3,6 @@
 
 pub mod allowable_stress;
 pub mod concrete;
+pub mod kirchhoff_plate;
 pub mod quantity;
 pub mod rebar;

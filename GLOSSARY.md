@@ -14,8 +14,8 @@
 _Avoid_: 計算ツール、アプリ、ページ
 
 **分野**:
-Tools の一覧で Tool を束ねる構造の種別。RC・Steel・Timber・Dynamics の4つ。スラブたわみは RC、地震応答は Dynamics。
-_Avoid_: カテゴリ、構造種別、S、木造（見出しでは英語で呼ぶ）
+Tools の一覧で Tool を束ねる見出し。材料ごとの RC・Steel・Timber と、解析の Dynamics・Mechanics の5つ。Mechanics は材料に依らない梁・板の弾性解の Tool。必要スラブ厚さは RC、地震応答は Dynamics、Kirchhoff 板の曲げは Mechanics。
+_Avoid_: カテゴリ、構造種別、S、木造、力学（見出しでは英語で呼ぶ）
 
 **Data**:
 構造設計で参照する材料や規格の値を、表と、値を導く式で示すページのひとつ。値を確かめる小さな計算を含むことがあるが、Model を持たず保存もしない。例: コンクリート、鉄筋。

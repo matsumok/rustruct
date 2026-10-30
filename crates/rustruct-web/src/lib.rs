@@ -19,8 +19,17 @@ pub use prerender::render_path;
 /// SSG: 書き出す住所の列挙と、書く場所の設定。
 mod ssg;
 
+/// 計算のページ（Data と Tool）の表示用の表と列の部品。
+mod table;
+
 /// Data: 材料や規格の値のページ。
 mod data;
+
+/// Tools: 一覧（分野の見出しごと）と、各 Tool のページ。
+mod tools;
+
+/// Tool「Kirchhoff 板の曲げ」のページ。
+mod kirchhoff_plate;
 
 /// ヘッダーのボタンのアイコン（Carbon）。
 mod icons;
@@ -29,9 +38,14 @@ use data::{ConcretePage, DataIndex, RebarPage};
 use dioxus_primitives::collapsible::{Collapsible, CollapsibleContent, CollapsibleTrigger};
 use dioxus_primitives::dialog::{DialogContent, DialogRoot, DialogTitle};
 use icons::{ChevronIcon, CloseIcon, DarkIcon, LightIcon, MenuIcon, UserIcon};
+use kirchhoff_plate::KirchhoffPlatePage;
+pub use kirchhoff_plate::{
+    Balance, CenterRow, EdgeRow, InputField, Maximum, PlateInputs, PlateReadout,
+};
 #[cfg(feature = "server")]
 pub use ssg::serve_config;
 pub use ssg::{NOT_FOUND_PATH, static_paths};
+use tools::{Field, ToolsIndex};
 
 include!(concat!(env!("OUT_DIR"), "/fonts.rs"));
 
@@ -48,8 +62,10 @@ pub enum Route {
     #[layout(Frame)]
         #[route("/")]
         Home {},
-        #[route("/tools", SectionPage)]
+        #[route("/tools", ToolsIndex)]
         Tools {},
+        #[route("/tools/kirchhoff-plate", KirchhoffPlatePage)]
+        ToolsKirchhoffPlate {},
         #[route("/data", DataIndex)]
         Data {},
         #[route("/data/concrete", ConcretePage)]
@@ -71,6 +87,8 @@ pub enum Route {
 enum Listing {
     /// トップの一覧（四部）
     Home,
+    /// `/tools` の一覧の、分野の見出しの下
+    Tools(Field),
     /// `/data` の一覧
     Data,
     /// どこにも載らない
@@ -94,19 +112,23 @@ impl Route {
                 "構造設計者向けの計算ツールと、数学的な可視化・書きもの。",
             ),
             Route::Tools {} => ("Tools", "構造計算の入力・計算・判定。"),
-            Route::Data {} => ("Data", "構造設計で参照する材料や規格の値。"),
+            Route::ToolsKirchhoffPlate {} => (
+                "Kirchhoff 板の曲げ",
+                "長方形の板の、たわみ・曲げモーメント・反力。",
+            ),
+            Route::Data {} => ("Data", "構造設計で参照する材料と規格の値。"),
             Route::DataConcrete {} => (
                 "コンクリート",
-                "Fc から単位体積重量・ヤング係数・許容応力度を求める。",
+                "Fc から気乾単位体積重量・ヤング係数・許容応力度を求める。",
             ),
             Route::DataRebar {} => (
                 "鉄筋",
-                "異形棒鋼の呼び名ごとの公称直径・周長・断面積・単位質量と、種類ごとの許容応力度。",
+                "異形棒鋼の呼び名ごとの寸法と単位質量、種類ごとの許容応力度。",
             ),
             Route::Studies {} => ("Studies", "数学やかたちを眺めて考えるための可視化。"),
             Route::Notes {} => ("Notes", "構造や数学についての書きもの。"),
             Route::Root {} => ("root", "root のための場所。"),
-            Route::NotFound { .. } => ("Not found", "この住所には何もない。"),
+            Route::NotFound { .. } => ("Not found", "ページが見つからない。"),
         };
         PageText {
             heading,
@@ -118,6 +140,7 @@ impl Route {
     fn listing(&self) -> Listing {
         match self {
             Route::Tools {} | Route::Data {} | Route::Studies {} | Route::Notes {} => Listing::Home,
+            Route::ToolsKirchhoffPlate {} => Listing::Tools(Field::Mechanics),
             Route::DataConcrete {} | Route::DataRebar {} => Listing::Data,
             Route::Home {} | Route::Root {} | Route::NotFound { .. } => Listing::Nowhere,
         }
@@ -132,6 +155,11 @@ impl Route {
     /// `/data` に並べるページ。四部と同じく、ルーターの住所一覧から導く。
     pub fn data_pages() -> impl Iterator<Item = Route> {
         Route::listed_on(Listing::Data)
+    }
+
+    /// `/tools` の分野 `field` の見出しの下に並べる Tool。四部と同じく、ルーターの住所一覧から導く。
+    fn tools_in(field: Field) -> impl Iterator<Item = Route> {
+        Route::listed_on(Listing::Tools(field))
     }
 
     fn listed_on(listing: Listing) -> impl Iterator<Item = Route> {
@@ -488,7 +516,7 @@ fn RouteList(routes: Vec<Route>) -> Element {
     }
 }
 
-/// Tools / Studies / Notes の空ページ。
+/// Studies / Notes の空ページ。
 #[component]
 fn SectionPage() -> Element {
     rsx! {

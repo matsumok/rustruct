@@ -91,7 +91,7 @@ done
 
 # 住所ごとの HTML。一覧は crates/rustruct-web/src/ssg.rs の static_paths と同じ（check-ssg.sh と同様、not-found は別に見る）。
 # /root/ に Cloudflare Access を掛けたら（docs/stack.md）、サービストークンを通さない限りここは 200 でなくなる
-for p in / /tools/ /data/ /data/concrete/ /data/rebar/ /studies/ /notes/ /root/; do
+for p in / /tools/ /tools/kirchhoff-plate/ /data/ /data/concrete/ /data/rebar/ /studies/ /notes/ /root/; do
   fetch_fresh "$p" "$dir/page.html"
   [ "$status" = 200 ] || ng "$p が 200 でない: $status$(why)"
   grep -qF '>rustruct<' "$dir/page.html" || ng "$p に wordmark が無い"
@@ -110,7 +110,7 @@ esac
 # （cloudflare/workers-sdk#16047、2026-10-14 時点で open）。そこだけ NG にせず注意に留める。本番は厳しいまま
 status=$(fetch "/no-such-address-$$/" "$dir/notfound.html")
 [ "$status" = 404 ] || ng "未知の住所が 404 でない: $status"
-if ! grep -qF 'この住所には何もない。' "$dir/notfound.html"; then
+if ! grep -qF 'ページが見つからない。' "$dir/notfound.html"; then
   case "$url" in
     *.workers.dev) echo "注意: プレビューでは not-found の本文が届かない（workers-sdk#16047 が直るまで）" ;;
     *) ng "未知の住所に not-found の本文が無い" ;;
