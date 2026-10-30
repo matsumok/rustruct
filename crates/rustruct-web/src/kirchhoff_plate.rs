@@ -32,11 +32,21 @@ const EDGE_DIVISIONS: usize = 100;
 /// （kirchhoff-plate の ADR-0008）
 const CORNER_MARGIN: f64 = 0.05;
 
+/// 注記に書く `CORNER_MARGIN`（「5 %」）
+fn corner_margin_text() -> String {
+    format!("{} %", CORNER_MARGIN * 100.0)
+}
+
 /// 自由辺のある組の、辺の最大値の注記（ADR-0008）
-const CORNER_NOTES: [&str; 2] = [
-    "固定辺と自由辺の隅では、せん断力と辺の反力が発散する",
-    "辺のせん断力と反力の最大値は、隅から辺長の 5 % を除いた範囲で取る",
-];
+fn corner_notes() -> Vec<String> {
+    vec![
+        "固定辺と自由辺の隅では、せん断力と辺の反力が発散する".into(),
+        format!(
+            "辺のせん断力と反力の最大値は、隅から辺長の {} を除いた範囲で取る",
+            corner_margin_text()
+        ),
+    ]
+}
 
 /// 隅の近くの値の見せ方（ADR-0008）が効く組。固定辺と自由辺の隅でせん断力と辺の反力が発散するので、
 /// 自由辺のある組では隅から辺長の 5 % を除いて見せる
@@ -230,7 +240,7 @@ pub struct PlateReadout {
     /// 辺ごとの行。`EDGES` の順
     pub edges: Vec<EdgeRow>,
     /// 辺の最大値の表に足す注記。自由辺のある組だけ（ADR-0008）
-    pub edge_notes: Vec<&'static str>,
+    pub edge_notes: Vec<String>,
     /// 隅ごとの隅反力（kN）。`Corner::ALL` の順
     pub corners: Vec<(String, String)>,
     /// 釣り合い
@@ -382,11 +392,7 @@ impl PlateReadout {
                 my: figures(center.my.as_knm_per_m()),
             },
             edges,
-            edge_notes: if free {
-                CORNER_NOTES.to_vec()
-            } else {
-                Vec::new()
-            },
+            edge_notes: if free { corner_notes() } else { Vec::new() },
             corners: Corner::ALL
                 .into_iter()
                 .zip(corner_reactions)
@@ -529,7 +535,7 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                             li { "左右の辺の M・Q は Mx・Qx、上下の辺は My・Qy" }
                             li { "単純支持辺と自由辺では M は 0" }
                             li { "辺の反力は支える向きを正とする" }
-                            for note in readout.edge_notes.iter().copied() {
+                            for note in readout.edge_notes.iter().cloned() {
                                 li { {note} }
                             }
                         }

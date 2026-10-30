@@ -388,7 +388,7 @@ fn the_edge_shear_and_reaction_of_a_plate_with_a_free_edge_skip_five_percent_at_
 }
 
 #[test]
-fn a_plate_without_a_free_edge_takes_its_edge_maximum_up_to_the_corners() {
+fn a_plate_without_a_free_edge_has_no_notes_on_the_corners() {
     for supports in [Support::Fixed, Support::SimplySupported] {
         let r = readout(|i| i.supports = Supports::all(supports));
         assert!(r.edge_notes.is_empty(), "{:?}", r.edge_notes);

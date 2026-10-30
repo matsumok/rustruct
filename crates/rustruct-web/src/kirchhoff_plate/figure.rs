@@ -9,7 +9,9 @@ use charta::{Grid, Item, Palette, Pt, Scene, Stroke, Theme, distribution, to_svg
 use rustruct_calc::kirchhoff_plate::{PointResponse, Solution};
 use rustruct_types::kirchhoff_plate::{Edge, Support, Supports};
 
-use super::{EDGES, PlateInputs, PlateOutcome, has_free_edge, near_end, support_name};
+use super::{
+    EDGES, PlateInputs, PlateOutcome, corner_margin_text, has_free_edge, near_end, support_name,
+};
 use crate::COLUMN_WIDTH;
 
 /// 長い辺を等分する評価点の間の数。短い辺は辺長の比で決め、評価点の間はほぼ正方形になる
@@ -134,7 +136,7 @@ pub struct PlateFigure {
     pub light_svg: String,
     pub dark_svg: String,
     /// 支持条件の読み方に続ける注記。自由辺のある組では色の幅の決め方（ADR-0008）
-    pub notes: Vec<&'static str>,
+    pub notes: Vec<String>,
 }
 
 impl PlateFigure {
@@ -159,7 +161,10 @@ impl PlateFigure {
             light_svg: svg(Theme::light()),
             dark_svg: svg(Theme::dark()),
             notes: if has_free_edge(field.supports) {
-                vec!["色の幅は、隅から辺長の 5 % 以内の点を除いて決める"]
+                vec![format!(
+                    "色の幅は、隅から辺長の {} 以内の点を除いて決める",
+                    corner_margin_text()
+                )]
             } else {
                 Vec::new()
             },
