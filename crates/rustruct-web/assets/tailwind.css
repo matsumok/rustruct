@@ -275,6 +275,10 @@
   .table {
     display: table;
   }
+  .size-4 {
+    width: var(--spacing-4);
+    height: var(--spacing-4);
+  }
   .size-5 {
     width: var(--spacing-5);
     height: var(--spacing-5);
@@ -559,6 +563,9 @@
   }
   .underline-offset-4 {
     text-underline-offset: 4px;
+  }
+  .accent-ink {
+    accent-color: var(--color-ink);
   }
   .outline-2 {
     outline-style: var(--tw-outline-style);

@@ -8,15 +8,18 @@ use crate::{Page, Route, RouteList};
 /// Tools の一覧の見出しにする分野。Tool の無い分野は見出しも出さない。分野を足すときは `ALL` に一覧の順で並べる
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Field {
+    /// 鉄筋コンクリート
+    Rc,
     /// 材料に依らない梁・板の弾性解（`docs/adr/0010`）
     Mechanics,
 }
 
 impl Field {
-    const ALL: [Self; 1] = [Self::Mechanics];
+    const ALL: [Self; 2] = [Self::Rc, Self::Mechanics];
 
     fn name(self) -> &'static str {
         match self {
+            Self::Rc => "RC",
             Self::Mechanics => "Mechanics",
         }
     }

@@ -22,6 +22,9 @@ mod ssg;
 /// 計算のページ（Data と Tool）の表示用の表と列の部品。
 mod table;
 
+/// Tool の入力の Sheet の部品。
+mod sheet;
+
 /// Data: 材料や規格の値のページ。
 mod data;
 
@@ -30,6 +33,9 @@ mod tools;
 
 /// Tool「Kirchhoff 板の曲げ」のページ。
 mod kirchhoff_plate;
+
+/// Tool「必要スラブ厚さ」のページ。
+mod slab_thickness;
 
 /// ヘッダーのボタンのアイコン（Carbon）。
 mod icons;
@@ -41,6 +47,8 @@ pub use kirchhoff_plate::{
     Balance, CenterRow, EdgeRow, InputField, Maximum, PlateFigure, PlateInputs, PlateReadout,
     Quantity,
 };
+use slab_thickness::SlabThicknessPage;
+pub use slab_thickness::{PointRow, SharedRow, SlabField, SlabInputs, SlabReadout};
 #[cfg(feature = "server")]
 pub use ssg::serve_config;
 pub use ssg::{NOT_FOUND_PATH, static_paths};
@@ -65,6 +73,8 @@ pub enum Route {
         Tools {},
         #[route("/tools/kirchhoff-plate", KirchhoffPlatePage)]
         ToolsKirchhoffPlate {},
+        #[route("/tools/slab-thickness", SlabThicknessPage)]
+        ToolsSlabThickness {},
         #[route("/data", DataIndex)]
         Data {},
         #[route("/data/concrete", ConcretePage)]
@@ -115,6 +125,10 @@ impl Route {
                 "Kirchhoff 板の曲げ",
                 "長方形の板の、たわみ・曲げモーメント・反力。",
             ),
+            Route::ToolsSlabThickness {} => (
+                "必要スラブ厚さ",
+                "四辺固定の RC スラブの、たわみと表18-1 から決まる必要厚さ。",
+            ),
             Route::Data {} => ("Data", "構造設計で参照する材料と規格の値。"),
             Route::DataConcrete {} => (
                 "コンクリート",
@@ -140,6 +154,7 @@ impl Route {
         match self {
             Route::Tools {} | Route::Data {} | Route::Studies {} | Route::Notes {} => Listing::Home,
             Route::ToolsKirchhoffPlate {} => Listing::Tools(Field::Mechanics),
+            Route::ToolsSlabThickness {} => Listing::Tools(Field::Rc),
             Route::DataConcrete {} | Route::DataRebar {} => Listing::Data,
             Route::Home {} | Route::Root {} | Route::NotFound { .. } => Listing::Nowhere,
         }
