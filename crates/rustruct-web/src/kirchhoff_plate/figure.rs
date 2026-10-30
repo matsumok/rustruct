@@ -9,7 +9,9 @@ use charta::{Grid, Item, Palette, Pt, Scene, Stroke, Theme, distribution, to_svg
 use rustruct_calc::kirchhoff_plate::{PointResponse, Solution};
 use rustruct_types::kirchhoff_plate::{Edge, Support, Supports};
 
-use super::{EDGES, PlateInputs, PlateOutcome, support_name};
+use super::{
+    EDGES, PlateInputs, PlateOutcome, corner_margin_text, has_free_edge, near_end, support_name,
+};
 use crate::COLUMN_WIDTH;
 
 /// 長い辺を等分する評価点の間の数。短い辺は辺長の比で決め、評価点の間はほぼ正方形になる
@@ -133,6 +135,8 @@ pub struct PlateFigure {
     pub label: String,
     pub light_svg: String,
     pub dark_svg: String,
+    /// 支持条件の読み方に続ける注記。自由辺のある組では色の幅の決め方（ADR-0008）
+    pub notes: Vec<String>,
 }
 
 impl PlateFigure {
@@ -156,13 +160,36 @@ impl PlateFigure {
             ),
             light_svg: svg(Theme::light()),
             dark_svg: svg(Theme::dark()),
+            notes: if has_free_edge(field.supports) {
+                vec![format!(
+                    "色の幅は、隅から辺長の {} 以内の点を除いて決める",
+                    corner_margin_text()
+                )]
+            } else {
+                Vec::new()
+            },
         }
     }
 }
 
 /// 板の分布図を縁の内側に置き、縁に支持条件を描く
 fn scene(field: &PlateField, quantity: Quantity) -> Scene {
-    let z = field.points.iter().map(|r| quantity.value(r)).collect();
+    let z: Vec<f64> = field.points.iter().map(|r| quantity.value(r)).collect();
+    // 色の幅。自由辺のある組では、固定辺と自由辺の隅の発散で幅が決まらないよう、隅から辺長の 5 % 以内の点を
+    // 除く。除いた点の値は色の端で振り切れる（kirchhoff-plate の ADR-0008）
+    let free = has_free_edge(field.supports);
+    let range = field
+        .points
+        .iter()
+        .zip(&z)
+        .filter(|(r, _)| {
+            !free
+                || !(near_end(r.x.as_mm() / 1000.0 / field.lx)
+                    && near_end(r.y.as_mm() / 1000.0 / field.ly))
+        })
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), (_, &v)| {
+            (lo.min(v), hi.max(v))
+        });
     let grid = Grid::new(
         Grid::axis(field.lx, field.nx),
         Grid::axis(field.ly, field.ny),
@@ -175,7 +202,7 @@ fn scene(field: &PlateField, quantity: Quantity) -> Scene {
 
     let mut scene = Scene::new(width + 2.0 * MARGIN, height + 2.0 * MARGIN);
     scene.place(
-        distribution(&grid, palette, palette.default_steps(), width),
+        distribution(&grid, palette, range, palette.default_steps(), width),
         [MARGIN, MARGIN],
     );
     let (left, right, top, bottom) = (MARGIN, MARGIN + width, MARGIN, MARGIN + height);

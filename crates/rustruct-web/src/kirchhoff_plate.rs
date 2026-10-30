@@ -6,7 +6,7 @@
 //! Sheet の行見出しに添えて対応を示す。
 
 use dioxus::prelude::*;
-use rustruct_calc::kirchhoff_plate::{PlateError, Solution, solve};
+use rustruct_calc::kirchhoff_plate::{EdgeSample, PlateError, Solution, solve};
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Plate, Support, Supports};
 use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
 
@@ -27,6 +27,41 @@ const NOT_COMPUTED: &str = "—";
 
 /// 辺の最大値を取る評価点の分け方。辺を等分する数
 const EDGE_DIVISIONS: usize = 100;
+
+/// 隅の近くとして、分布図の色の幅と辺のせん断力・反力の最大値から除く幅。辺長に対する比
+/// （kirchhoff-plate の ADR-0008）
+const CORNER_MARGIN: f64 = 0.05;
+
+/// 注記に書く `CORNER_MARGIN`（「5 %」）
+fn corner_margin_text() -> String {
+    format!("{} %", CORNER_MARGIN * 100.0)
+}
+
+/// 自由辺のある組の、辺の最大値の注記（ADR-0008）
+fn corner_notes() -> Vec<String> {
+    vec![
+        "固定辺と自由辺の隅では、せん断力と辺の反力が発散する".into(),
+        format!(
+            "辺のせん断力と反力の最大値は、隅から辺長の {} を除いた範囲で取る",
+            corner_margin_text()
+        ),
+    ]
+}
+
+/// 隅の近くの値の見せ方（ADR-0008）が効く組。固定辺と自由辺の隅でせん断力と辺の反力が発散するので、
+/// 自由辺のある組では隅から辺長の 5 % を除いて見せる
+fn has_free_edge(supports: Supports) -> bool {
+    Edge::ALL
+        .iter()
+        .any(|&edge| supports.at(edge) == Support::Free)
+}
+
+/// 辺の上の位置（辺長に対する比）が、両端から `CORNER_MARGIN` より端に寄っているか。評価点がちょうど 5 % に
+/// 来たときに丸めで除かないよう、少しの幅を見る
+fn near_end(fraction: f64) -> bool {
+    const ROUNDING: f64 = 1e-9;
+    fraction < CORNER_MARGIN - ROUNDING || fraction > 1.0 - CORNER_MARGIN + ROUNDING
+}
 
 /// 入力の Sheet の欄。並びは Sheet の行の順
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -204,6 +239,8 @@ pub struct PlateReadout {
     pub center: CenterRow,
     /// 辺ごとの行。`EDGES` の順
     pub edges: Vec<EdgeRow>,
+    /// 辺の最大値の表に足す注記。自由辺のある組だけ（ADR-0008）
+    pub edge_notes: Vec<String>,
     /// 隅ごとの隅反力（kN）。`Corner::ALL` の順
     pub corners: Vec<(String, String)>,
     /// 釣り合い
@@ -243,6 +280,17 @@ pub struct Maximum {
 }
 
 impl Maximum {
+    /// 評価点のうち絶対値が最大のもの。`value` は表の単位の値
+    fn of<'a>(
+        samples: impl Iterator<Item = &'a EdgeSample>,
+        value: fn(&EdgeSample) -> f64,
+    ) -> Self {
+        let sample = samples
+            .max_by(|a, b| value(a).abs().total_cmp(&value(b).abs()))
+            .expect("評価点は 1 つ以上");
+        Self::new(value(sample), sample.along)
+    }
+
     fn new(value: f64, along: Length) -> Self {
         Self {
             value: figures(value),
@@ -294,6 +342,7 @@ impl PlateReadout {
                     max_reaction: Maximum::not_computed(),
                 })
                 .to_vec(),
+            edge_notes: Vec::new(),
             corners: Corner::ALL
                 .map(|corner| (corner_name(corner), dash()))
                 .to_vec(),
@@ -312,19 +361,24 @@ impl PlateReadout {
         let center = solution
             .at(Length::mm(lx / 2.0), Length::mm(ly / 2.0))
             .expect("中央は板の上");
+        let free = has_free_edge(plate.supports);
         let mut edge_total = 0.0;
         let edges = EDGES
             .map(|(edge, _)| {
                 edge_total += solution.total_reaction(edge).as_kn();
-                let max = solution.edge_maximum(edge, EDGE_DIVISIONS);
+                let samples = solution.edge(edge, EDGE_DIVISIONS);
+                let length = samples.last().expect("評価点は 1 つ以上").along.as_mm();
+                // せん断力と辺の反力は、自由辺のある組では両端から辺長の 5 % を除く。曲げモーメントは隅まで
+                let away = || {
+                    samples
+                        .iter()
+                        .filter(move |s| !free || !near_end(s.along.as_mm() / length))
+                };
                 EdgeRow {
                     name: edge.to_string(),
-                    max_moment: Maximum::new(max.moment.value.as_knm_per_m(), max.moment.along),
-                    max_shear: Maximum::new(max.shear.value.as_kn_per_m(), max.shear.along),
-                    max_reaction: Maximum::new(
-                        max.reaction.value.as_kn_per_m(),
-                        max.reaction.along,
-                    ),
+                    max_moment: Maximum::of(samples.iter(), |s| s.moment.as_knm_per_m()),
+                    max_shear: Maximum::of(away(), |s| s.shear.as_kn_per_m()),
+                    max_reaction: Maximum::of(away(), |s| s.reaction.as_kn_per_m()),
                 }
             })
             .to_vec();
@@ -338,6 +392,7 @@ impl PlateReadout {
                 my: figures(center.my.as_knm_per_m()),
             },
             edges,
+            edge_notes: if free { corner_notes() } else { Vec::new() },
             corners: Corner::ALL
                 .into_iter()
                 .zip(corner_reactions)
@@ -480,6 +535,9 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                             li { "左右の辺の M・Q は Mx・Qx、上下の辺は My・Qy" }
                             li { "単純支持辺と自由辺では M は 0" }
                             li { "辺の反力は支える向きを正とする" }
+                            for note in readout.edge_notes.iter().cloned() {
+                                li { {note} }
+                            }
                         }
                     }
                     Block {
@@ -559,6 +617,9 @@ fn FigureBlock(quantity: Signal<Quantity>, figure: Option<PlateFigure>) -> Eleme
                         li { "斜線の付いた辺は固定" }
                         li { "線だけの辺は単純支持" }
                         li { "線の無い辺は自由" }
+                        for note in figure.notes {
+                            li { {note} }
+                        }
                     }
                 },
                 None => rsx! {
