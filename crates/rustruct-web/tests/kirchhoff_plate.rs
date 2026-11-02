@@ -348,3 +348,72 @@ fn a_plate_that_cannot_be_solved_has_no_figure() {
     };
     assert_eq!(PlateFigure::from_inputs(&unreadable, Quantity::W), None);
 }
+
+/// 三辺固定一辺自由（y = Ly の辺が自由）の入力。長い辺（x、5 m）が自由
+fn three_fixed_one_free() -> PlateInputs {
+    let mut inputs = PlateInputs {
+        lx: "5.0".into(),
+        ly: "4.0".into(),
+        ..PlateInputs::default()
+    };
+    inputs.supports.y_ly = Support::Free;
+    inputs
+}
+
+#[test]
+fn the_edge_shear_and_reaction_of_a_plate_with_a_free_edge_skip_five_percent_at_each_end() {
+    // 固定辺と自由辺の隅ではせん断力と辺の反力が発散する。辺の最大値は両端から辺長の 5 % を除いて取る
+    // （kirchhoff-plate の ADR-0008）。曲げモーメントは隅まで含める
+    let r = PlateReadout::from_inputs(&three_fixed_one_free());
+    for (row, length) in r.edges.iter().zip([4.0, 4.0, 5.0, 5.0]) {
+        for m in [&row.max_shear, &row.max_reaction] {
+            if m.along == "—" {
+                continue;
+            }
+            let along: f64 = m.along.parse().unwrap();
+            assert!(
+                (0.05 * length..=0.95 * length).contains(&along),
+                "{} の辺: {along}",
+                row.name
+            );
+        }
+    }
+    assert_eq!(
+        r.edge_notes,
+        [
+            "固定辺と自由辺の隅では、せん断力と辺の反力が発散する",
+            "辺のせん断力と反力の最大値は、隅から辺長の 5 % を除いた範囲で取る",
+        ]
+    );
+}
+
+#[test]
+fn a_plate_without_a_free_edge_has_no_notes_on_the_corners() {
+    for supports in [Support::Fixed, Support::SimplySupported] {
+        let r = readout(|i| i.supports = Supports::all(supports));
+        assert!(r.edge_notes.is_empty(), "{:?}", r.edge_notes);
+    }
+    let text = text_of(element(&render_path("/tools/kirchhoff-plate"), "main"));
+    assert!(!text.contains("発散"), "{text}");
+    assert!(!text.contains("5 %"), "{text}");
+}
+
+#[test]
+fn the_shear_figure_of_a_plate_with_a_free_edge_is_read_inside_the_plate() {
+    // 隅の発散で色の幅を決めると、刻みが粗くなって板の中に等値線がほとんど引かれない。色の幅は隅から
+    // 辺長の 5 % 以内の点を除いて決める（ADR-0008）ので、板の中の Qx に正の水準が 3 つ以上読める
+    let figure = PlateFigure::from_inputs(&three_fixed_one_free(), Quantity::Qx).unwrap();
+    let mut positive: Vec<f64> = figure_numbers(&figure.light_svg)
+        .into_iter()
+        .filter(|v| *v > 0.0)
+        .collect();
+    positive.sort_by(f64::total_cmp);
+    positive.dedup();
+    assert!(positive.len() >= 3, "{positive:?}");
+    assert_eq!(
+        figure.notes,
+        ["色の幅は、隅から辺長の 5 % 以内の点を除いて決める"]
+    );
+    let fixed = PlateFigure::from_inputs(&PlateInputs::default(), Quantity::Qx).unwrap();
+    assert!(fixed.notes.is_empty(), "{:?}", fixed.notes);
+}
