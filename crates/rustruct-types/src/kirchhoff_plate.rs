@@ -141,6 +141,12 @@ impl Supports {
         }
     }
 
+    /// 自由辺が 1 つでもある組か。固定辺と自由辺の隅でせん断力と辺の反力が発散するので、隅の近くの値の
+    /// 見せ方（kirchhoff-plate の ADR-0008）が効く
+    pub fn has_free_edge(self) -> bool {
+        Edge::ALL.iter().any(|&edge| self.at(edge) == Support::Free)
+    }
+
     /// 4 文字の記号。x = 0 の辺から反時計回り（内部の約束で、画面には出さない）
     pub fn symbol(self) -> String {
         Edge::ALL.iter().map(|&e| self.at(e).symbol()).collect()

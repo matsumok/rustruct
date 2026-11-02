@@ -117,3 +117,14 @@ fn a_rotated_combination_maps_edges_and_positions() {
     assert_eq!(mapping.edge(Edge::Y0), Edge::X0);
     assert!(mapping.transpose && !mapping.flip_x && !mapping.flip_y);
 }
+
+#[test]
+fn only_four_free_edges_and_one_simply_supported_with_three_free_are_unstable() {
+    // 四辺自由と、単純支持 1 辺と自由 3 辺は板を支えきれない（ADR-0003）
+    let unstable: Vec<&str> = SupportType::ALL
+        .into_iter()
+        .filter(|t| !t.is_stable())
+        .map(SupportType::symbol)
+        .collect();
+    assert_eq!(unstable, ["RRRR", "RRRS"]);
+}

@@ -1,7 +1,9 @@
 //! Kirchhoff 板の曲げ。言葉は `docs/tools/kirchhoff-plate/GLOSSARY.md`、判断は同じ所の ADR。
 //!
 //! 公開の入口は [`solve`] 一つ。入力（[`Plate`]）から [`Solution`] を得て、点の応答、等間隔グリッドの
-//! 応答、辺に沿った辺の反力の分布とその合計、辺の最大値、隅ごとの隅反力を取る。公開の座標は隅が原点
+//! 応答、辺に沿った辺の反力の分布とその合計、辺の最大値、隅ごとの隅反力、荷重の合計と釣り合いを取る。
+//! 隅の近くの値の見せ方（ADR-0008）の規則もここが持ち（[`CORNER_MARGIN`]、[`Solution::edge_maximum`]、
+//! [`Solution::near_corner`]）、画面と照合はそれを呼ぶ。公開の座標は隅が原点
 //! （x は 0 から Lx、y は 0 から Ly）。符号は ADR-0004。
 //!
 //! 内部では、支持条件の組を 21 種の型と写し方に分け（[`SupportType`]、ADR-0003）、代表の向きの板を
@@ -31,6 +33,17 @@ pub use support_type::{Mapping, SupportType};
 /// 有限要素の短い辺の分割数。長い辺は辺長に合わせて増やす（[`mesh_divisions`]）。利用者の入力にも Model にも
 /// 持たない定数で、値は分割数を倍にしたときの変化が収まることで決めた（`docs/tools/kirchhoff-plate/adr/0006`）
 pub const DIVISIONS: usize = 40;
+
+/// 隅の近くとして除く幅。辺長に対する比。自由辺のある組で、分布図の色の幅と、辺のせん断力・辺の反力の
+/// 最大値から除く（`docs/tools/kirchhoff-plate/adr/0008`）。照合で除く幅と同じ（ADR-0002）
+pub const CORNER_MARGIN: f64 = 0.05;
+
+/// 辺の上の位置（辺長に対する比）が、両端から [`CORNER_MARGIN`] より端に寄っているか。評価点がちょうど
+/// 5 % に来たときに丸めで除かないよう、少しの幅を見る
+fn near_end(fraction: f64) -> bool {
+    const ROUNDING: f64 = 1e-9;
+    fraction < CORNER_MARGIN - ROUNDING || fraction > 1.0 - CORNER_MARGIN + ROUNDING
+}
 
 /// 入力が不正な理由。辺長・板厚・ヤング係数は正の有限値、荷重は有限値（0 と上向きも可）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,7 +181,7 @@ pub fn solve_with_series(plate: &Plate, terms: usize) -> Result<Option<Solution>
 fn normalize(plate: &Plate) -> Result<(SupportType, Mapping, f64), PlateError> {
     validate(plate)?;
     let (support_type, mapping) = SupportType::of(plate.supports);
-    if matches!(support_type, SupportType::RRRR | SupportType::RRRS) {
+    if !support_type.is_stable() {
         return Err(PlateError::Unstable(support_type));
     }
     let (rep_lx, rep_ly) = mapping.representative_lengths(plate.lx.as_mm(), plate.ly.as_mm());
@@ -297,19 +310,44 @@ impl Solution {
         Force::n(self.p() * a * a * v)
     }
 
-    /// 辺の最大値。`edge` と同じ評価点から、曲げモーメント・せん断力・辺の反力それぞれの絶対値の最大と位置
+    /// 荷重の合計 p · Lx · Ly（下向きが正）
+    pub fn total_load(&self) -> Force {
+        self.plate.load.over(self.plate.lx, self.plate.ly)
+    }
+
+    /// 辺の反力の合計 − 隅反力の合計（支える向きが正）。釣り合いでは荷重の合計 [`Self::total_load`] に等しい
+    /// （ADR-0004、ADR-0007）
+    pub fn net_reaction(&self) -> Force {
+        let edges: f64 = Edge::ALL
+            .iter()
+            .map(|&e| self.total_reaction(e).as_n())
+            .sum();
+        let corners: f64 = Corner::ALL
+            .iter()
+            .map(|&c| self.corner_reaction(c).as_n())
+            .sum();
+        Force::n(edges - corners)
+    }
+
+    /// 辺の最大値。`edge` と同じ評価点から、曲げモーメント・せん断力・辺の反力それぞれの絶対値の最大と位置。
+    /// 自由辺のある組では、固定辺と自由辺の隅で発散するせん断力と辺の反力を、両端から辺長の
+    /// [`CORNER_MARGIN`] を除いた範囲で取る。曲げモーメントは隅まで含める（ADR-0008）。両端を除いても評価点が
+    /// 残るよう、`divisions` は 2 以上
     pub fn edge_maximum(&self, edge: Edge, divisions: usize) -> EdgeMaximum {
         let samples = self.edge(edge, divisions);
+        let free = self.plate.supports.has_free_edge();
+        let length = samples.last().expect("評価点は 1 つ以上").along.as_mm();
         // 量の型を跨いで比べるので、内部の単位の数で比べる
-        let extreme = |magnitude: fn(&EdgeSample) -> f64| {
+        let extreme = |magnitude: fn(&EdgeSample) -> f64, skip_ends: bool| {
             samples
                 .iter()
+                .filter(|s| !skip_ends || !near_end(s.along.as_mm() / length))
                 .max_by(|a, b| magnitude(a).abs().total_cmp(&magnitude(b).abs()))
-                .expect("評価点は 1 つ以上")
+                .expect("両端を除いても評価点は 1 つ以上")
         };
-        let moment = extreme(|s| s.moment.as_nmm_per_mm());
-        let shear = extreme(|s| s.shear.as_n_per_mm());
-        let reaction = extreme(|s| s.reaction.as_n_per_mm());
+        let moment = extreme(|s| s.moment.as_nmm_per_mm(), false);
+        let shear = extreme(|s| s.shear.as_n_per_mm(), free);
+        let reaction = extreme(|s| s.reaction.as_n_per_mm(), free);
         EdgeMaximum {
             moment: Extreme {
                 value: moment.moment,
@@ -324,6 +362,13 @@ impl Solution {
                 along: reaction.along,
             },
         }
+    }
+
+    /// 隅から辺長の [`CORNER_MARGIN`] 以内の点か（x と y のどちらも、端から辺長の 5 % より端に寄っている）。
+    /// 分布図の色の幅（ADR-0008）と照合（ADR-0002）が除く点。自由辺のある組だけ除くかは呼び手が
+    /// `Supports::has_free_edge` で決める
+    pub fn near_corner(&self, x: Length, y: Length) -> bool {
+        near_end(x.as_mm() / self.plate.lx.as_mm()) && near_end(y.as_mm() / self.plate.ly.as_mm())
     }
 
     /// 隅反力（板を下に押さえる向きが正）。R = 2 D (1 − ν) s_x s_y w_xy。s_x・s_y は隅の座標の符号

@@ -49,6 +49,12 @@ impl SupportType {
         (ty, mapping)
     }
 
+    /// 板を支えられる型か。四辺自由（RRRR）と、単純支持 1 辺と自由 3 辺（RRRS）の 2 型だけが不安定で、
+    /// ほかの 19 型は解ける
+    pub fn is_stable(self) -> bool {
+        !matches!(self, Self::RRRR | Self::RRRS)
+    }
+
     /// 代表の向きの組。型の 4 文字がそのまま各辺の支持条件
     pub fn representative(self) -> Supports {
         let mut chars = self

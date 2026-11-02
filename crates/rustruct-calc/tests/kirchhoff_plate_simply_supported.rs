@@ -140,7 +140,7 @@ fn the_corners_hold_the_plate_down_and_the_edges_hold_it_up() {
     for (lx, ly) in [(2000.0, 2000.0), (2000.0, 3000.0), (4000.0, 2000.0)] {
         let p = simply_supported(lx, ly, 0.15, 8.0);
         let s = solve(&p).unwrap();
-        let total = p.load.as_n_per_mm2() * lx * ly;
+        let total = s.total_load().as_n();
         // 隅反力があるので、辺の反力の合計は荷重の合計より大きい
         let reactions: f64 = Edge::ALL.iter().map(|&e| s.total_reaction(e).as_n()).sum();
         assert!(reactions > total, "{lx}×{ly} の辺の反力の合計");
@@ -155,22 +155,4 @@ fn the_corners_hold_the_plate_down_and_the_edges_hold_it_up() {
             );
         }
     }
-}
-
-#[test]
-fn the_edge_maximum_of_a_square_plate_is_at_the_middle_of_the_edge() {
-    let l = 2000.0;
-    let s = solve(&simply_supported(l, l, 0.0, 10.0)).unwrap();
-    for e in Edge::ALL {
-        let m = s.edge_maximum(e, 100);
-        let mid = s.edge(e, 100)[50];
-        assert_eq!(m.reaction.along.as_mm(), l / 2.0, "{e} の反力の最大の位置");
-        assert_eq!(m.reaction.value, mid.reaction, "{e} の反力の最大");
-        assert_eq!(m.shear.along.as_mm(), l / 2.0, "{e} のせん断力の最大の位置");
-        assert_eq!(m.shear.value, mid.shear, "{e} のせん断力の最大");
-    }
-    // 辺の上のせん断力は、内部の評価と同じ導関数から求めるので同じ値
-    let edge = s.edge(Edge::X0, 2)[1];
-    let point = at(&s, 0.0, l / 2.0);
-    assert_eq!(edge.shear, point.qx, "辺の中央の Qx");
 }

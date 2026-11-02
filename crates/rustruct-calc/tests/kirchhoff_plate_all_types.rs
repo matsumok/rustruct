@@ -4,12 +4,9 @@
 //! x = Lx、y = Ly の辺）で解き、利用者の組への写しは対称のテストで確かめる。入口 `solve`（有限要素）からだけ見る
 
 mod common;
-use common::{
-    Scale, assert_deviations_within_tolerance, assert_within, at, plate, reactions_minus_corners,
-    rigidity, stable_types,
-};
+use common::{Scale, assert_deviations_within_tolerance, assert_within, at, plate, rigidity};
 use rustruct_calc::kirchhoff_plate::{
-    DIVISIONS, PointResponse, Solution, SupportType, solve, solve_with_divisions,
+    CORNER_MARGIN, DIVISIONS, PointResponse, Solution, SupportType, solve, solve_with_divisions,
 };
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Support, Supports};
 
@@ -51,7 +48,7 @@ fn every_edge_satisfies_its_boundary_conditions() {
     // 固定辺で w = 0・法線方向の傾き = 0、単純支持の辺で w = 0・M_n = 0、自由辺で M_n = 0・V_n = 0。
     // 各辺の両端から辺長の 5 % を除いた 41 点で（ADR-0008）。ν = 0 と 0.2
     let (lx, ly) = (2000.0, 3000.0);
-    for ty in stable_types() {
+    for ty in SupportType::ALL.into_iter().filter(|t| t.is_stable()) {
         let supports = ty.representative();
         for nu in [0.0, 0.2] {
             let s = solve(&plate(lx, ly, nu, 10.0, supports)).unwrap();
@@ -62,7 +59,8 @@ fn every_edge_satisfies_its_boundary_conditions() {
                     Edge::Y0 | Edge::YLy => (lx, ly),
                 };
                 for i in 0..=40 {
-                    let along = length * (0.05 + 0.9 * i as f64 / 40.0);
+                    let along =
+                        length * (CORNER_MARGIN + (1.0 - 2.0 * CORNER_MARGIN) * i as f64 / 40.0);
                     let r = |d: f64| {
                         let (x, y) = inward(e, along, d, lx, ly);
                         at(&s, x, y)
@@ -140,16 +138,27 @@ fn edge_reactions_minus_corner_reactions_balance_the_total_load() {
     // 丸め誤差（節点力は要素ごとに剛体の動きを引いて求め、連立は反復改良を 1 回するので、この大きさの板で
     // 4e-11 以下。サイト ADR-0009。許容 1e-7）で成り立つ。固定辺を含む隅と自由辺どうしの隅の
     // 隅反力は、隅の節点の w_xy を拘束するか（固定辺）、隅に支えが無いので（自由辺どうし）厳密に 0。
-    // 自由辺の反力の合計も、拘束した節点が無いので厳密に 0
-    for ty in stable_types() {
+    // 自由辺の反力の合計も、拘束した節点が無いので厳密に 0。縦横比 1〜8
+    for ty in SupportType::ALL.into_iter().filter(|t| t.is_stable()) {
         let supports = ty.representative();
-        for (lx, ly) in [(2000.0, 2000.0), (2000.0, 3000.0), (4000.0, 2000.0)] {
-            let p = plate(lx, ly, 0.15, 8.0, supports);
-            let s = solve(&p).unwrap();
+        for (lx, ly) in [
+            (2000.0, 2000.0),
+            (2000.0, 3000.0),
+            (4000.0, 2000.0),
+            (1000.0, 8000.0),
+        ] {
+            // 8 kN/m² = 0.008 N/mm²
+            let s = solve(&plate(lx, ly, 0.15, 8.0, supports)).unwrap();
             let what = format!("{} {lx}×{ly}", ty.symbol());
-            let total = p.load.as_n_per_mm2() * lx * ly;
+            let total = 0.008 * lx * ly;
             assert_within(
-                reactions_minus_corners(&s),
+                s.total_load().as_n(),
+                total,
+                1e-12 * total,
+                &format!("{what} の荷重の合計"),
+            );
+            assert_within(
+                s.net_reaction().as_n(),
                 total,
                 1e-7 * total,
                 &format!("{what} の釣り合い"),
@@ -383,7 +392,7 @@ fn every_combination_of_a_type_is_its_representative_mapped() {
     // 型に属する組をすべて（代表の向きの組を 8 つの対称で写したもの）入れ、代表の向きの板の解を写したものに
     // なること。どの組も計算核の中では同じ代表の向きの板を解くので、差は座標の換算の丸め
     let (lx, ly) = (2000.0, 3000.0);
-    for ty in stable_types() {
+    for ty in SupportType::ALL.into_iter().filter(|t| t.is_stable()) {
         let representative = ty.representative();
         let base = solve(&plate(lx, ly, 0.2, 10.0, representative)).unwrap();
         let mut seen = Vec::new();
@@ -411,7 +420,7 @@ fn every_combination_of_a_type_is_its_representative_mapped() {
 fn a_symmetric_plate_follows_its_symmetry() {
     // 代表の向きの組がある対称で自分自身に重なる型では、板の解もその対称どおりになる。要素の分割も板の中央に
     // ついて対称なので、差は丸め。x と y を入れ替える対称は正方形の板で、ほかは 2000 × 3000 の板で見る
-    for ty in stable_types() {
+    for ty in SupportType::ALL.into_iter().filter(|t| t.is_stable()) {
         let representative = ty.representative();
         for sym in SYMMETRIES {
             if sym.supports(representative) != representative {
@@ -439,7 +448,12 @@ fn a_symmetric_plate_follows_its_symmetry() {
 /// 19 型を `parts` 組に分けた `part` 番目の組（型の一覧の位置で `parts` おき）だけを見る
 fn assert_doubling_the_divisions_changes_nothing(ratio: f64, part: usize, parts: usize) {
     let lx = 2000.0;
-    for ty in stable_types().skip(part).step_by(parts) {
+    for ty in SupportType::ALL
+        .into_iter()
+        .filter(|t| t.is_stable())
+        .skip(part)
+        .step_by(parts)
+    {
         let p = plate(lx, ratio * lx, 0.2, 10.0, ty.representative());
         let coarse = solve_with_divisions(&p, DIVISIONS).unwrap();
         let fine = solve_with_divisions(&p, 2 * DIVISIONS).unwrap();
@@ -634,7 +648,7 @@ fn a_long_plate_approaches_the_strip_across_its_short_span() {
     let span = 2000.0;
     let length = 12.0 * span;
     let mut checked = Vec::new();
-    for ty in stable_types() {
+    for ty in SupportType::ALL.into_iter().filter(|t| t.is_stable()) {
         let supports = ty.representative();
         for strip in [Strip::AcrossX, Strip::AcrossY] {
             let (a, b) = strip.ends(supports);
@@ -653,7 +667,11 @@ fn a_long_plate_approaches_the_strip_across_its_short_span() {
             checked.push(ty);
         }
     }
-    let without: Vec<SupportType> = stable_types().filter(|t| !checked.contains(t)).collect();
+    let without: Vec<SupportType> = SupportType::ALL
+        .into_iter()
+        .filter(|t| t.is_stable())
+        .filter(|t| !checked.contains(t))
+        .collect();
     assert_eq!(without, [SupportType::RRSS], "帯板の極限の無い型");
 }
 
@@ -665,7 +683,7 @@ fn a_one_way_plate_with_zero_poisson_ratio_is_a_beam() {
     // 反力で見る。許容は照合と同じ（w・M は 0.5 %、Q・V は 2 %）
     let span = 2000.0;
     let mut checked = Vec::new();
-    for ty in stable_types() {
+    for ty in SupportType::ALL.into_iter().filter(|t| t.is_stable()) {
         let supports = ty.representative();
         let (strip, free) = match (supports.x0, supports.y0, supports.x_lx, supports.y_ly) {
             (_, Support::Free, _, Support::Free) => (Strip::AcrossX, true),
@@ -710,7 +728,7 @@ fn poisson_ratio_scales_the_deflection_and_mixes_the_moments_without_free_edges(
     let (lx, ly) = (2000.0, 2800.0);
     let nu = 0.3;
     let mut checked = Vec::new();
-    for ty in stable_types() {
+    for ty in SupportType::ALL.into_iter().filter(|t| t.is_stable()) {
         let supports = ty.representative();
         if Edge::ALL.iter().any(|&e| supports.at(e) == Support::Free) {
             continue;

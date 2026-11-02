@@ -46,3 +46,17 @@ fn every_corner_names_its_two_edges() {
     assert_eq!(Edge::ALL.len(), 4);
     assert_eq!(Corner::ALL.len(), 4);
 }
+
+#[test]
+fn a_combination_has_a_free_edge_when_any_one_edge_is_free() {
+    assert!(!Supports::all(Support::Fixed).has_free_edge());
+    assert!(!Supports::all(Support::SimplySupported).has_free_edge());
+    assert!(Supports::all(Support::Free).has_free_edge());
+    let one_free = Supports {
+        x0: Support::Fixed,
+        y0: Support::SimplySupported,
+        x_lx: Support::Fixed,
+        y_ly: Support::Free,
+    };
+    assert!(one_free.has_free_edge());
+}
