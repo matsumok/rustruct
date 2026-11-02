@@ -107,7 +107,7 @@ pub(crate) struct PlateField {
 impl PlateField {
     pub(crate) fn new(solution: &Solution) -> Self {
         let plate = solution.plate();
-        let (lx, ly) = (plate.lx.as_mm() / 1000.0, plate.ly.as_mm() / 1000.0);
+        let (lx, ly) = (plate.lx.as_m(), plate.ly.as_m());
         let shorter_divisions = |shorter: f64, longer: f64| {
             ((GRID_DIVISIONS as f64 * shorter / longer).round() as usize)
                 .clamp(MIN_DIVISIONS, GRID_DIVISIONS)
@@ -183,9 +183,7 @@ fn scene(field: &PlateField, quantity: Quantity) -> Scene {
         .iter()
         .zip(&z)
         .filter(|(r, _)| {
-            !free
-                || !(near_end(r.x.as_mm() / 1000.0 / field.lx)
-                    && near_end(r.y.as_mm() / 1000.0 / field.ly))
+            !free || !(near_end(r.x.as_m() / field.lx) && near_end(r.y.as_m() / field.ly))
         })
         .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), (_, &v)| {
             (lo.min(v), hi.max(v))

@@ -189,7 +189,7 @@ fn checked_basis(conditions: &Conditions) -> Result<(Basis, Vec<ActiveCriterion>
     let active = active_criteria(&conditions.criteria)?;
     let basis = Basis {
         young_modulus: shared.young_modulus.as_n_per_mm2(),
-        rc_unit_weight: shared.rc_unit_weight.as_kn_per_m3() * 1e-6,
+        rc_unit_weight: shared.rc_unit_weight.as_n_per_mm3(),
         wp: shared.wp.as_n_per_mm2(),
         amplification: conditions.amplification,
     };
@@ -344,7 +344,8 @@ fn table18_aspect_factor(lambda: f64) -> f64 {
 /// 表18-1 の λ を除いた項 0.02·(1 + wp/10 + lx/10000)·lx [mm]。λ の項の上限が 1 なので、
 /// 短辺 lx を固定して長辺を伸ばしたときの厚さの漸近値でもある
 fn table18_span_term(basis: &Basis, lx: f64) -> f64 {
-    let wp = basis.wp * 1e3; // N/mm² → kN/m²（表18-1 の式の単位）
+    // 表18-1 の式の wp は kN/m²
+    let wp = AreaLoad::n_per_mm2(basis.wp).as_kn_per_m2();
     0.02 * (1.0 + wp / 10.0 + lx / 10_000.0) * lx
 }
 
@@ -465,7 +466,7 @@ mod tests {
         let concrete = Concrete::new(Stress::n_per_mm2(24.0), ConcreteKind::Normal).unwrap();
         Basis {
             young_modulus: concrete.young_modulus().as_n_per_mm2(),
-            rc_unit_weight: concrete.rc_unit_weight().as_kn_per_m3() * 1e-6,
+            rc_unit_weight: concrete.rc_unit_weight().as_n_per_mm3(),
             wp: 2800.0e-6,
             amplification: 8.0,
         }
