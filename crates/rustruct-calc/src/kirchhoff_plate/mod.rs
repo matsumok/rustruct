@@ -24,7 +24,7 @@ use rustruct_types::kirchhoff_plate::{Corner, Edge, Support};
 use rustruct_types::quantity::{Force, ForcePerLength, Length, MomentPerLength};
 
 pub use finite_element::mesh_divisions;
-use solver::{Derivatives, Solver};
+use solver::{Derivatives, EdgePoint, Solver};
 use support_type::RepresentativeResponse;
 pub use support_type::{Mapping, SupportType};
 
@@ -152,8 +152,9 @@ pub fn solve_with_divisions(plate: &Plate, divisions: usize) -> Result<Solution,
 /// だけに級数解があり、ほかの型は `Ok(None)`。`terms` は級数の項数で、参照解の値は [`series::TERMS`]
 pub fn solve_with_series(plate: &Plate, terms: usize) -> Result<Option<Solution>, PlateError> {
     let (support_type, mapping, b) = normalize(plate)?;
+    let nu = plate.poisson_ratio.value();
     Ok(
-        series::solve(support_type, b, terms)?.map(|solver| Solution {
+        series::solve(support_type, b, nu, terms)?.map(|solver| Solution {
             plate: *plate,
             support_type,
             mapping,
@@ -249,13 +250,14 @@ impl Solution {
     }
 
     /// 辺に沿った応答。辺を `divisions` 等分した divisions + 1 点を、始点（座標 0 の端）から順に。
-    /// 境界条件で 0 の値（単純支持と自由の辺の曲げモーメント、自由の辺の反力）は、級数の打ち切りの屑を
-    /// 残さずちょうど 0 で返す
+    /// 境界条件で 0 の曲げモーメント（単純支持と自由の辺）は、ちょうど 0 で返す。有限要素はこの条件を弱い形で
+    /// しか満たさず、辺の上の値は 0 にならない。自由辺の反力は解き方が厳密に 0 で返す
     pub fn edge(&self, edge: Edge, divisions: usize) -> Vec<EdgeSample> {
         let (lx, ly) = (self.plate.lx.as_mm(), self.plate.ly.as_mm());
-        let support = self.plate.supports.at(edge);
-        let moment_vanishes = matches!(support, Support::SimplySupported | Support::Free);
-        let reaction_vanishes = support == Support::Free;
+        let moment_vanishes = matches!(
+            self.plate.supports.at(edge),
+            Support::SimplySupported | Support::Free
+        );
         let length = match edge {
             Edge::X0 | Edge::XLx => ly,
             Edge::Y0 | Edge::YLy => lx,
@@ -270,8 +272,7 @@ impl Solution {
                     Edge::X0 | Edge::XLx => self.eta(rep_along),
                     Edge::Y0 | Edge::YLy => self.xi(rep_along),
                 };
-                let d = self.solver.edge(rep_edge, nd);
-                let r = self.edge_response(rep_edge, nd, d);
+                let r = self.edge_response(rep_edge, self.solver.edge(rep_edge, nd));
                 EdgeSample {
                     along: Length::mm(along),
                     moment: MomentPerLength::nmm_per_mm(if moment_vanishes {
@@ -282,11 +283,7 @@ impl Solution {
                     shear: ForcePerLength::n_per_mm(
                         self.mapping.edge_shear_back(rep_edge, r.shear),
                     ),
-                    reaction: ForcePerLength::n_per_mm(if reaction_vanishes {
-                        0.0
-                    } else {
-                        r.reaction
-                    }),
+                    reaction: ForcePerLength::n_per_mm(r.reaction),
                 }
             })
             .collect()
@@ -295,16 +292,8 @@ impl Solution {
     /// 辺の反力の合計 [N]（辺に沿った積分、支える向きが正）。辺の反力の合計 − 隅反力の合計 = 荷重の合計
     /// （ADR-0004）。有限要素は節点の反力の和そのもので、参照解の級数は辺の反力の数値積分
     pub fn total_reaction(&self, edge: Edge) -> Force {
-        let rep_edge = self.mapping.edge(edge);
-        let (rep_lx, rep_ly) = self.representative_lengths();
-        let half_along = match rep_edge {
-            Edge::X0 | Edge::XLx => rep_ly / rep_lx,
-            Edge::Y0 | Edge::YLy => 1.0,
-        };
         let a = self.half_x();
-        let v = self
-            .solver
-            .edge_reaction_total(rep_edge, half_along, self.nu());
+        let v = self.solver.edge_reaction_total(self.mapping.edge(edge));
         Force::n(self.p() * a * a * v)
     }
 
@@ -395,10 +384,9 @@ impl Solution {
     /// 辺の上の応答（内部の単位）。反力は解き方の無次元の辺の反力 v̂（支える向きが正。有限要素では節点の反力
     /// から、級数解では −(ŵ_xxx + (2 − ν) ŵ_xyy)、せん断力とねじりモーメントの変化の和）を V = p a v̂ で
     /// 有次元にする
-    fn edge_response(&self, edge: Edge, along: f64, d: Derivatives) -> EdgeResponse {
-        let r = self.point_response(d);
-        let (a, p, nu) = (self.half_x(), self.p(), self.nu());
-        let reaction = p * a * self.solver.edge_reaction(edge, along, nu);
+    fn edge_response(&self, edge: Edge, point: EdgePoint) -> EdgeResponse {
+        let r = self.point_response(point.derivatives);
+        let reaction = self.p() * self.half_x() * point.reaction;
         match edge {
             Edge::X0 | Edge::XLx => EdgeResponse {
                 moment: r.mx,
