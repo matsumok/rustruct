@@ -1,6 +1,6 @@
-//! 描き手に依存しない小さなシーン: パス・矩形・文字だけ。色は役割名で持ち、描くときにテーマで引く。
+//! 描き手に依存しない小さなシーン: パス・矩形・円・文字だけ。色は役割名で持ち、描くときにテーマで引く。
 //!
-//! 中間表現の全体（点の記号、格子の場、座標変換の段）はまだ作らない。分布図に要る 3 種だけ。
+//! 中間表現の全体（点の記号の一揃い、格子の場、座標変換の段）はまだ作らない。分布図と等厚曲線の図に要る 4 種だけ。
 
 /// 画面の座標。x は右、y は下が正（SVG と同じ）。
 pub type Pt = [f64; 2];
@@ -74,6 +74,13 @@ pub enum Item {
         fill: Option<Paint>,
         stroke: Option<Stroke>,
     },
+    /// 円。点の印（等厚曲線の図の検討点）
+    Circle {
+        center: Pt,
+        radius: f64,
+        fill: Option<Paint>,
+        stroke: Option<Stroke>,
+    },
     /// 文字。`(x, y)` は寄せの基準で、上下の中央。`rotate` は度で、時計回りが正。
     Text {
         x: f64,
@@ -137,6 +144,17 @@ impl Scene {
                     y: y + at[1],
                     width,
                     height,
+                    fill,
+                    stroke,
+                },
+                Item::Circle {
+                    center,
+                    radius,
+                    fill,
+                    stroke,
+                } => Item::Circle {
+                    center: shift(center),
+                    radius,
                     fill,
                     stroke,
                 },
