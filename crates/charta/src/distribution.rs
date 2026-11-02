@@ -25,8 +25,15 @@ pub const HALO_WIDTH: f64 = 2.5;
 const MONO_ADVANCE: f64 = 0.6;
 
 /// グリッドの値を `width` の幅の図にする。高さはグリッドの縦横比から導く。
-/// `steps` は帯の段数の目安（`Palette::default_steps` が既定）。
-pub fn distribution(grid: &Grid, palette: Palette, steps: usize, width: f64) -> Scene {
+/// `range` は帯の境を決める値の範囲（最小、最大）で、ふつうは `Grid::range`。範囲の外の値は両端の帯の色で
+/// 振り切れ、等値線は引かない。`steps` は帯の段数の目安（`Palette::default_steps` が既定）。
+pub fn distribution(
+    grid: &Grid,
+    palette: Palette,
+    range: (f64, f64),
+    steps: usize,
+    width: f64,
+) -> Scene {
     let (x0, x1, y0, y1) = grid.extent();
     let height = width * (y1 - y0) / (x1 - x0);
     let to_screen = |p: Pt| -> Pt {
@@ -36,8 +43,7 @@ pub fn distribution(grid: &Grid, palette: Palette, steps: usize, width: f64) -> 
         ]
     };
 
-    let (lo, hi) = grid.range();
-    let edges = edges(palette, lo, hi, steps);
+    let edges = edges(palette, range.0, range.1, steps);
     let step = step_of(&edges);
     let levels = &edges[1..edges.len() - 1];
     let (isolines, bands) = contour(grid, levels);
@@ -264,7 +270,7 @@ mod tests {
 
     #[test]
     fn seq_figure_has_bands_thin_ink_lines_and_outlined_labels_on_the_cross() {
-        let scene = distribution(&bump(), Palette::Seq, 10, 200.0);
+        let scene = distribution(&bump(), Palette::Seq, bump().range(), 10, 200.0);
         assert_eq!((scene.width, scene.height), (200.0, 300.0));
         let p = parts(&scene);
 
@@ -359,7 +365,7 @@ mod tests {
 
     #[test]
     fn div_figure_splits_at_zero_and_draws_the_zero_line_like_the_others() {
-        let scene = distribution(&signed(), Palette::Div, 16, 240.0);
+        let scene = distribution(&signed(), Palette::Div, signed().range(), 16, 240.0);
         let p = parts(&scene);
         // ±10 を 16 段の目安で 2 刻み: -10〜10 の 10 本。負は div-1〜6、正は div-7〜12
         assert_eq!(p.bands.len(), 10);
@@ -410,16 +416,40 @@ mod tests {
     #[test]
     fn flat_grid_is_one_band_without_lines_or_labels() {
         let grid = Grid::from_fn(Grid::axis(1.0, 4), Grid::axis(1.0, 4), |_, _| 0.0).unwrap();
-        let scene = distribution(&grid, Palette::Seq, 10, 100.0);
+        let scene = distribution(&grid, Palette::Seq, grid.range(), 10, 100.0);
         let p = parts(&scene);
         assert_eq!((p.bands.len(), p.lines.len(), p.labels.len()), (1, 0, 0));
+    }
+
+    #[test]
+    fn values_beyond_the_range_take_the_color_of_the_end_band() {
+        // 0〜10 の傾き。色の幅を 0〜5 にすると、等値線は 5 未満だけに引かれ、5 を超える側は最後の帯の色
+        let grid = Grid::from_fn(Grid::axis(1.0, 20), Grid::axis(1.0, 4), |x, _| 10.0 * x).unwrap();
+        let scene = distribution(&grid, Palette::Seq, (0.0, 5.0), 10, 100.0);
+        let p = parts(&scene);
+        let numbers: Vec<f64> = p
+            .labels
+            .iter()
+            .map(|l| match l {
+                Item::Text { text, .. } => text.parse().unwrap(),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert!(numbers.contains(&4.5), "{numbers:?}");
+        assert!(numbers.iter().all(|v| *v < 5.0), "{numbers:?}");
+        let Some(Item::Path { subpaths, .. }) = p.bands.last() else {
+            panic!("帯が無い");
+        };
+        let right = subpaths.iter().flatten().map(|q| q[0]).fold(0.0, f64::max);
+        assert_eq!(right, 100.0);
     }
 
     #[test]
     fn figure_renders_in_both_themes() {
         for grid in [bump(), signed()] {
             for palette in [Palette::Seq, Palette::Div] {
-                let scene = distribution(&grid, palette, palette.default_steps(), 300.0);
+                let scene =
+                    distribution(&grid, palette, grid.range(), palette.default_steps(), 300.0);
                 for theme in [Theme::light(), Theme::dark()] {
                     let svg = to_svg(&scene, &theme).unwrap();
                     assert!(svg.contains("paint-order=\"stroke\""));
