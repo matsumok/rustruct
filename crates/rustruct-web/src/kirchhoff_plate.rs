@@ -177,8 +177,8 @@ fn plate(inputs: &PlateInputs) -> Result<Plate, Vec<(InputField, Reason)>> {
         return Err(errors);
     };
     Ok(Plate {
-        lx: Length::mm(lx * 1000.0),
-        ly: Length::mm(ly * 1000.0),
+        lx: Length::m(lx),
+        ly: Length::m(ly),
         thickness: Length::mm(thickness),
         young_modulus: Stress::n_per_mm2(young_modulus),
         poisson_ratio,
@@ -270,7 +270,7 @@ impl Maximum {
             along: if value == 0.0 {
                 NOT_COMPUTED.into()
             } else {
-                figures(along.as_mm() / 1000.0)
+                figures(along.as_m())
             },
         }
     }
@@ -329,7 +329,7 @@ impl PlateReadout {
     fn computed(solution: &Solution) -> Self {
         let plate = solution.plate();
         let (lx, ly) = (plate.lx.as_mm(), plate.ly.as_mm());
-        let total_load = plate.load.as_kn_per_m2() * lx * ly / 1e6;
+        let total_load = plate.load.over(plate.lx, plate.ly).as_kn();
 
         let center = solution
             .at(Length::mm(lx / 2.0), Length::mm(ly / 2.0))

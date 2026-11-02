@@ -261,8 +261,8 @@ impl SlabRead {
             _ => None,
         };
         let spans = span_x.zip(span_y).map(|(x, y)| Spans {
-            x: Length::mm(x * 1000.0),
-            y: Length::mm(y * 1000.0),
+            x: Length::m(x),
+            y: Length::m(y),
         });
 
         Self {
@@ -312,7 +312,7 @@ impl PointRow {
         Self {
             required_thickness: fixed(ev.required_thickness.as_mm(), 1),
             governing: criterion_name(ev.governing).into(),
-            short_span: fixed(ev.short_span.as_mm() / 1000.0, 2),
+            short_span: fixed(ev.short_span.as_m(), 2),
             aspect_ratio: fixed(ev.aspect_ratio, 2),
             elastic_deflection: mm(ev.elastic_deflection),
             amplified_deflection: mm(ev.amplified_deflection),

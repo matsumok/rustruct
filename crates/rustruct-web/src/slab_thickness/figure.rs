@@ -117,7 +117,7 @@ impl View {
 }
 
 fn scene(conditions: &Conditions, point: Option<(&str, Spans)>) -> Scene {
-    let m = |l: Length| l.as_mm() / 1000.0;
+    let m = Length::as_m;
     let points: Vec<(f64, f64)> = point.iter().map(|(_, s)| (m(s.x), m(s.y))).collect();
     let view = View::around(&points);
 
@@ -138,8 +138,8 @@ fn scene(conditions: &Conditions, point: Option<(&str, Spans)>) -> Scene {
         .collect();
     let thickness_at = |x: f64, y: f64| {
         let spans = Spans {
-            x: Length::mm(x * 1000.0),
-            y: Length::mm(y * 1000.0),
+            x: Length::m(x),
+            y: Length::m(y),
         };
         evaluate(conditions, spans)
             .expect("条件は読めている")
@@ -152,9 +152,7 @@ fn scene(conditions: &Conditions, point: Option<(&str, Spans)>) -> Scene {
     let (thicknesses, step) = thicknesses(t_min, t_max);
     let curves = iso_curves(
         conditions,
-        &xs.iter()
-            .map(|&x| Length::mm(x * 1000.0))
-            .collect::<Vec<_>>(),
+        &xs.iter().map(|&x| Length::m(x)).collect::<Vec<_>>(),
         &thicknesses
             .iter()
             .map(|&t| Length::mm(t))

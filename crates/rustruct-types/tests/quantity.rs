@@ -1,11 +1,39 @@
-//! Kirchhoff 板の曲げで足した物理量（ADR-0004）。生成の単位と取り出しの単位の換算と、ポアソン比の範囲。
+//! 物理量（ADR-0004）。生成の単位と取り出しの単位の換算、面荷重と長方形の力の合計、ポアソン比の範囲。
 //! 期待値は換算の係数（10³ 倍など）の手計算。
 
 mod common;
 use common::assert_close;
 use rustruct_types::quantity::{
-    AreaLoad, Force, ForcePerLength, MomentPerLength, PoissonRatio, PoissonRatioError,
+    AreaLoad, Force, ForcePerLength, Length, MomentPerLength, PoissonRatio, PoissonRatioError,
+    UnitWeight,
 };
+
+#[test]
+fn length_converts_between_m_and_mm() {
+    assert_eq!(Length::m(4.0).as_mm(), 4000.0);
+    assert_eq!(Length::mm(4000.0).as_m(), 4.0);
+    assert_close(Length::m(0.25).as_mm(), 250.0, "0.25 m");
+    assert_close(Length::mm(150.0).as_m(), 0.15, "150 mm");
+}
+
+#[test]
+fn unit_weight_converts_from_kn_per_m3_to_n_per_mm3() {
+    // 1 kN/m³ = 10³ N / 10⁹ mm³ = 10⁻⁶ N/mm³
+    assert_close(
+        UnitWeight::kn_per_m3(24.0).as_n_per_mm3(),
+        24.0e-6,
+        "24 kN/m³",
+    );
+}
+
+#[test]
+fn area_load_over_a_rectangle_is_the_total_force() {
+    // 10 kN/m² × 4 m × 6 m = 240 kN
+    let total = AreaLoad::kn_per_m2(10.0).over(Length::m(4.0), Length::m(6.0));
+    assert_close(total.as_kn(), 240.0, "10 kN/m² × 4 m × 6 m");
+    // 0.01 N/mm² × 4000 mm × 6000 mm = 240000 N
+    assert_close(total.as_n(), 240_000.0, "N");
+}
 
 #[test]
 fn area_load_converts_between_kn_per_m2_and_n_per_mm2() {

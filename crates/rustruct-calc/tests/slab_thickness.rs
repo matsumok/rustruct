@@ -80,8 +80,8 @@ fn shared(conditions: &Conditions) -> Result<SharedValues, InvalidInput> {
 /// スパンは m
 fn spans(x: f64, y: f64) -> Spans {
     Spans {
-        x: Length::mm(x * 1000.0),
-        y: Length::mm(y * 1000.0),
+        x: Length::m(x),
+        y: Length::m(y),
     }
 }
 
@@ -139,7 +139,7 @@ fn known_case_matches_hand_calculation() {
     // 増大後たわみ = 変形増大係数 × δe
     assert!((ev.elastic_deflection.as_mm() * 8.0 - amplified).abs() < 1e-9);
     // 全荷重 = γ₁·t_req + 仕上げ + 積載（Fc 24 では γ₁ = 24 kN/m³）
-    let expected_w = 24_000.0 * (t / 1000.0) + 2800.0;
+    let expected_w = 24_000.0 * ev.required_thickness.as_m() + 2800.0;
     assert!(
         (ev.total_load.as_n_per_m2() - expected_w).abs() < 1e-6,
         "w = {:?}",
@@ -396,7 +396,7 @@ fn self_weight_uses_the_rc_unit_weight_of_the_fc_class() {
         4.0,
         5.0,
     );
-    let expected_w = 24_500.0 * (ev.required_thickness.as_mm() / 1000.0) + 2800.0;
+    let expected_w = 24_500.0 * ev.required_thickness.as_m() + 2800.0;
     assert!(
         (ev.total_load.as_n_per_m2() - expected_w).abs() < 1e-6,
         "w = {:?}",
@@ -627,9 +627,9 @@ mod shared_values {
         let v = shared(&base()).unwrap();
         let ev = at(&base(), 4.0, 5.0);
         // 全荷重 = γ₁·t_req + wp
-        let w = v.rc_unit_weight.as_kn_per_m3() * 1e3 * (ev.required_thickness.as_mm() / 1000.0)
-            + v.wp.as_n_per_m2();
-        assert!((w - ev.total_load.as_n_per_m2()).abs() < 1e-6, "w = {w}");
+        let w =
+            v.rc_unit_weight.as_kn_per_m3() * ev.required_thickness.as_m() + v.wp.as_kn_per_m2();
+        assert!((w - ev.total_load.as_kn_per_m2()).abs() < 1e-9, "w = {w}");
     }
 
     /// wp は仕上げ荷重と積載荷重の和。γ₁ と E はコンクリートの値
@@ -721,9 +721,12 @@ mod shared_values {
         let v = shared(&base()).unwrap();
         for (x, y) in [(2.0, 2.0), (4.0, 5.0), (12.0, 3.0)] {
             let ev = at(&base(), x, y);
-            let w = v.rc_unit_weight.as_kn_per_m3() * ev.required_thickness.as_mm()
-                + v.wp.as_n_per_m2();
-            assert!((w - ev.total_load.as_n_per_m2()).abs() < 1e-6, "({x}, {y})");
+            let w = v.rc_unit_weight.as_kn_per_m3() * ev.required_thickness.as_m()
+                + v.wp.as_kn_per_m2();
+            assert!(
+                (w - ev.total_load.as_kn_per_m2()).abs() < 1e-9,
+                "({x}, {y})"
+            );
         }
     }
 }
@@ -759,7 +762,7 @@ mod iso_curves {
 
     /// m → Length
     fn m(values: &[f64]) -> Vec<Length> {
-        values.iter().map(|&v| Length::mm(v * 1000.0)).collect()
+        values.iter().map(|&v| Length::m(v)).collect()
     }
 
     /// 等厚曲線群。x は m、厚さは mm。y は m で返す
@@ -771,9 +774,7 @@ mod iso_curves {
             .map(|c| {
                 (
                     c.thickness.as_mm(),
-                    c.ys.into_iter()
-                        .map(|y| y.map(|y| y.as_mm() / 1000.0))
-                        .collect(),
+                    c.ys.into_iter().map(|y| y.map(Length::as_m)).collect(),
                 )
             })
             .collect()
@@ -916,7 +917,10 @@ mod iso_curves {
         let t = 200.0;
         let (_, ys) = &curves(&with(min_thickness_only()), &xs, &[t])[0];
         // wp = 2800 N/m² = 2.8 kN/m²、x は m → mm
-        let asymptote = |x: f64| 0.02 * (1.0 + 2.8 / 10.0 + x * 1000.0 / 10_000.0) * x * 1000.0;
+        let asymptote = |x: f64| {
+            let lx = Length::m(x).as_mm();
+            0.02 * (1.0 + 2.8 / 10.0 + lx / 10_000.0) * lx
+        };
         let (mut bounded, mut unbounded) = (0, 0);
         for (x, y) in xs.iter().zip(ys) {
             // 漸近値のごく近くは曲線が跳ね上がるので、少し離して見る
