@@ -16,7 +16,7 @@ mod figure;
 use figure::PlateField;
 pub use figure::{PlateFigure, Quantity};
 
-use crate::sheet::{Sheet, SheetCell, SheetHead, SheetInput, SheetRow};
+use crate::inputs::{Definition, Field, InputGroup, Inputs, Kind, Layout, Reason, Sign};
 use crate::table::{
     Block, Caption, Column, Columns, DecimalCell, HeadCell, HeadRow, Notes, Row, Table, TextCell,
 };
@@ -63,7 +63,7 @@ fn near_end(fraction: f64) -> bool {
     fraction < CORNER_MARGIN - ROUNDING || fraction > 1.0 - CORNER_MARGIN + ROUNDING
 }
 
-/// 入力の Sheet の欄。並びは Sheet の行の順
+/// 欄。並びは Sheet の行の順
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputField {
     Lx,
@@ -72,48 +72,66 @@ pub enum InputField {
     YoungModulus,
     PoissonRatio,
     Load,
+    /// 辺の支持条件
+    Support(Edge),
 }
 
-impl InputField {
-    const ALL: [Self; 6] = [
-        Self::Lx,
-        Self::Ly,
-        Self::Thickness,
-        Self::YoungModulus,
-        Self::PoissonRatio,
-        Self::Load,
-    ];
+impl Field for InputField {
+    const ALL: &'static [Self] = ROWS.as_flattened();
 
-    /// 欄の名前。単位は括弧で名前に付ける
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Lx => "Lx（m）",
-            Self::Ly => "Ly（m）",
-            Self::Thickness => "t（mm）",
-            Self::YoungModulus => "E（N/mm²）",
-            Self::PoissonRatio => "ν",
-            Self::Load => "p（kN/m²）",
-        }
+    /// 名前と種類と初期値（Issue #36）。ν の上限（0.5 未満）は欄の規則の外なので `plate` が見る。
+    /// 荷重 p は負（上向き）も受ける
+    fn definition(self) -> Definition {
+        let number = |sign, initial| Kind::number(false, sign, initial);
+        let (name, kind) = match self {
+            Self::Lx => ("Lx（m）".into(), number(Sign::Positive, "4.0")),
+            Self::Ly => ("Ly（m）".into(), number(Sign::Positive, "5.0")),
+            Self::Thickness => ("t（mm）".into(), number(Sign::Positive, "150")),
+            Self::YoungModulus => ("E（N/mm²）".into(), number(Sign::Positive, "22700")),
+            Self::PoissonRatio => ("ν".into(), number(Sign::NonNegative, "0")),
+            Self::Load => ("p（kN/m²）".into(), number(Sign::Any, "10")),
+            Self::Support(edge) => (
+                format!("{edge}（{}）", direction(edge)),
+                Kind::Choice {
+                    options: SUPPORTS
+                        .map(|support| (support.symbol(), support_name(support)))
+                        .to_vec(),
+                    initial: Support::Fixed.symbol(),
+                },
+            ),
+        };
+        Definition { name, kind }
     }
 }
 
-/// 辺の画面での呼び方。図の向き（x は右、y は上）で決める。並びは入力の Sheet と結果の表の行の順
-const EDGES: [(Edge, &str); 4] = [
-    (Edge::X0, "左"),
-    (Edge::XLx, "右"),
-    (Edge::Y0, "下"),
-    (Edge::YLy, "上"),
-];
+/// 辺の並び。入力の Sheet と結果の表の行の順（左右、上下）
+const EDGES: [Edge; 4] = [Edge::X0, Edge::XLx, Edge::Y0, Edge::YLy];
 
-/// 入力の Sheet の 1 行に並べる、対になる欄
-const FIELD_PAIRS: [[InputField; 2]; 3] = [
+/// 辺の画面での呼び方。図の向き（x は右、y は上）で決める
+fn direction(edge: Edge) -> &'static str {
+    match edge {
+        Edge::X0 => "左",
+        Edge::XLx => "右",
+        Edge::Y0 => "下",
+        Edge::YLy => "上",
+    }
+}
+
+/// 入力の Sheet の行。対になる欄を 1 行に 2 組ずつ（スマホで縦に長くしないため）、
+/// 数値の欄の後に向かい合う辺の支持条件
+const ROWS: [[InputField; 2]; 5] = [
     [InputField::Lx, InputField::Ly],
     [InputField::Thickness, InputField::YoungModulus],
     [InputField::PoissonRatio, InputField::Load],
+    [
+        InputField::Support(Edge::X0),
+        InputField::Support(Edge::XLx),
+    ],
+    [
+        InputField::Support(Edge::Y0),
+        InputField::Support(Edge::YLy),
+    ],
 ];
-
-/// 入力の Sheet の 1 行に並べる、向かい合う辺
-const EDGE_PAIRS: [[(Edge, &str); 2]; 2] = [[EDGES[0], EDGES[1]], [EDGES[2], EDGES[3]]];
 
 /// 支持条件の選び方。並びは選択肢の順
 const SUPPORTS: [Support; 3] = [Support::Fixed, Support::SimplySupported, Support::Free];
@@ -127,104 +145,59 @@ fn support_name(support: Support) -> &'static str {
     }
 }
 
-/// 入力の Sheet の中身。数値の欄は打ったままの文字で持ち、読めるかは `PlateReadout` が決める
-#[derive(Debug, Clone, PartialEq)]
-pub struct PlateInputs {
-    pub lx: String,
-    pub ly: String,
-    pub thickness: String,
-    pub young_modulus: String,
-    pub poisson_ratio: String,
-    pub load: String,
-    pub supports: Supports,
+/// 入力の Sheet の中身。読めるかは `PlateReadout` が決める
+pub type PlateInputs = Inputs<InputField>;
+
+/// 入力を Model へ。読めない欄はすべて（欄, 理由）で返す
+fn plate(inputs: &PlateInputs) -> Result<Plate, Vec<(InputField, Reason)>> {
+    let mut reading = inputs.reading();
+    let [lx, ly, thickness, young_modulus] = [
+        InputField::Lx,
+        InputField::Ly,
+        InputField::Thickness,
+        InputField::YoungModulus,
+    ]
+    .map(|field| reading.number(field));
+    let poisson_ratio =
+        reading
+            .number(InputField::PoissonRatio)
+            .and_then(|v| match PoissonRatio::new(v) {
+                Ok(ratio) => Some(ratio),
+                Err(_) => {
+                    reading.refuse(InputField::PoissonRatio, "0 以上 0.5 未満で入れる");
+                    None
+                }
+            });
+    let load = reading.number(InputField::Load);
+    let errors = reading.errors();
+    // 読めない欄は None なので、すべて Some なら理由も無い
+    let (Some(lx), Some(ly), Some(thickness), Some(young_modulus), Some(poisson_ratio), Some(load)) =
+        (lx, ly, thickness, young_modulus, poisson_ratio, load)
+    else {
+        return Err(errors);
+    };
+    Ok(Plate {
+        lx: Length::mm(lx * 1000.0),
+        ly: Length::mm(ly * 1000.0),
+        thickness: Length::mm(thickness),
+        young_modulus: Stress::n_per_mm2(young_modulus),
+        poisson_ratio,
+        load: AreaLoad::kn_per_m2(load),
+        supports: supports(inputs),
+    })
 }
 
-impl Default for PlateInputs {
-    /// 開いたときの値（Issue #36）
-    fn default() -> Self {
-        Self {
-            lx: "4.0".into(),
-            ly: "5.0".into(),
-            thickness: "150".into(),
-            young_modulus: "22700".into(),
-            poisson_ratio: "0".into(),
-            load: "10".into(),
-            supports: Supports::all(Support::Fixed),
-        }
-    }
-}
-
-impl PlateInputs {
-    fn get(&self, field: InputField) -> &str {
-        match field {
-            InputField::Lx => &self.lx,
-            InputField::Ly => &self.ly,
-            InputField::Thickness => &self.thickness,
-            InputField::YoungModulus => &self.young_modulus,
-            InputField::PoissonRatio => &self.poisson_ratio,
-            InputField::Load => &self.load,
-        }
-    }
-
-    fn set(&mut self, field: InputField, value: String) {
-        *match field {
-            InputField::Lx => &mut self.lx,
-            InputField::Ly => &mut self.ly,
-            InputField::Thickness => &mut self.thickness,
-            InputField::YoungModulus => &mut self.young_modulus,
-            InputField::PoissonRatio => &mut self.poisson_ratio,
-            InputField::Load => &mut self.load,
-        } = value;
-    }
-
-    /// Model へ。読めない欄はすべて（欄, 理由）で返す
-    fn plate(&self) -> Result<Plate, Vec<(InputField, &'static str)>> {
-        let mut errors = Vec::new();
-        let mut read = |field: InputField| match read_value(field, self.get(field)) {
-            Ok(v) => v,
-            Err(message) => {
-                errors.push((field, message));
-                f64::NAN
-            }
-        };
-        let [lx, ly, thickness, young_modulus, poisson_ratio, load] =
-            InputField::ALL.map(&mut read);
-        if !errors.is_empty() {
-            return Err(errors);
-        }
-        Ok(Plate {
-            lx: Length::mm(lx * 1000.0),
-            ly: Length::mm(ly * 1000.0),
-            thickness: Length::mm(thickness),
-            young_modulus: Stress::n_per_mm2(young_modulus),
-            poisson_ratio: PoissonRatio::new(poisson_ratio).expect("範囲は read_value で見た"),
-            load: AreaLoad::kn_per_m2(load),
-            supports: self.supports,
-        })
-    }
-}
-
-/// 1 つの欄を数に読む。3 桁区切りの「,」は読み飛ばす。読めない理由は欄に添える文言
-fn read_value(field: InputField, input: &str) -> Result<f64, &'static str> {
-    let input = input.trim().replace(',', "");
-    if input.is_empty() {
-        return Err("値を入れる");
-    }
-    let value: f64 = input
-        .parse()
-        .ok()
-        .filter(|v: &f64| v.is_finite())
-        .ok_or("数値で入れる")?;
-    match field {
-        InputField::Lx | InputField::Ly | InputField::Thickness | InputField::YoungModulus
-            if value <= 0.0 =>
-        {
-            Err("0 より大きい値を入れる")
-        }
-        InputField::PoissonRatio if PoissonRatio::new(value).is_err() => {
-            Err("0 以上 0.5 未満で入れる")
-        }
-        _ => Ok(value),
+/// 4 辺の支持条件の組。選択の欄は選択肢の記号しか持たないので、必ず支持条件に戻る
+fn supports(inputs: &PlateInputs) -> Supports {
+    let at = |edge| {
+        Support::from_symbol(inputs.choice(InputField::Support(edge)))
+            .expect("選択肢は SUPPORTS の記号")
+    };
+    Supports {
+        x0: at(Edge::X0),
+        y0: at(Edge::Y0),
+        x_lx: at(Edge::XLx),
+        y_ly: at(Edge::YLy),
     }
 }
 
@@ -232,7 +205,7 @@ fn read_value(field: InputField, input: &str) -> Result<f64, &'static str> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlateReadout {
     /// 読めない欄と、その理由
-    pub errors: Vec<(InputField, &'static str)>,
+    pub errors: Vec<(InputField, Reason)>,
     /// 支持条件の組を解けない理由（不安定か、未対応か）。「!」を付けて出す
     pub notice: Option<&'static str>,
     /// 板の中央の値
@@ -335,7 +308,7 @@ impl PlateReadout {
                 my: dash(),
             },
             edges: EDGES
-                .map(|(edge, _)| EdgeRow {
+                .map(|edge| EdgeRow {
                     name: edge.to_string(),
                     max_moment: Maximum::not_computed(),
                     max_shear: Maximum::not_computed(),
@@ -364,7 +337,7 @@ impl PlateReadout {
         let free = has_free_edge(plate.supports);
         let mut edge_total = 0.0;
         let edges = EDGES
-            .map(|(edge, _)| {
+            .map(|edge| {
                 edge_total += solution.total_reaction(edge).as_kn();
                 let samples = solution.edge(edge, EDGE_DIVISIONS);
                 let length = samples.last().expect("評価点は 1 つ以上").along.as_mm();
@@ -419,7 +392,7 @@ impl PlateOutcome {
             readout: PlateReadout::not_computed(Some(notice)),
             field: None,
         };
-        match inputs.plate() {
+        match plate(inputs) {
             Err(errors) => Self {
                 readout: PlateReadout {
                     errors,
@@ -442,16 +415,6 @@ impl PlateOutcome {
             },
         }
     }
-}
-
-/// 1 つの辺の支持条件を選び直す
-fn set_support(supports: &mut Supports, edge: Edge, support: Support) {
-    *match edge {
-        Edge::X0 => &mut supports.x0,
-        Edge::Y0 => &mut supports.y0,
-        Edge::XLx => &mut supports.x_lx,
-        Edge::YLy => &mut supports.y_ly,
-    } = support;
 }
 
 /// 隅の名前。会う 2 辺で呼ぶ（x = 0・y = 0）
@@ -488,20 +451,12 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
         Page { route: Route::ToolsKirchhoffPlate {},
             Columns {
                 Column {
-                    // 入力のすぐ下に結果（`space-6`）。この組と次の表の間は Column の間（`space-7`）
-                    div { class: "flex flex-col gap-6",
-                        div { class: "flex flex-col gap-1",
-                            InputSheet { inputs, errors: readout.errors.clone() }
-                            Notes {
-                                li { "ν は 0 を基本とする" }
-                            }
-                            for (field , message) in readout.errors.iter().copied() {
-                                p { class: "text-label text-ng", "{field.label()}: {message}" }
-                            }
-                            if let Some(notice) = readout.notice {
-                                p { class: "text-label", "! {notice}" }
-                            }
-                        }
+                    InputGroup {
+                        inputs,
+                        layout: Layout::RowHeads(ROWS.map(|row| row.to_vec()).to_vec()),
+                        notes: vec!["ν は 0 を基本とする".into()],
+                        errors: readout.errors.clone(),
+                        warning: readout.notice.map(String::from),
                         Block {
                             Caption { "板の中央" }
                             Table { fixed: true,
@@ -646,60 +601,6 @@ fn QuantitySwitch(quantity: Signal<Quantity>) -> Element {
                     "aria-pressed": if quantity() == q { "true" } else { "false" },
                     onclick: move |_| quantity.set(q),
                     {q.symbol()}
-                }
-            }
-        }
-    }
-}
-
-/// 入力の Sheet。対になる欄を 1 行に 2 組ずつ並べる（スマホで縦に長くしないため）。
-/// 枠・格子・誤りの印は `sheet` の部品が持つ
-#[component]
-fn InputSheet(inputs: Signal<PlateInputs>, errors: Vec<(InputField, &'static str)>) -> Element {
-    let supports = inputs.read().supports;
-    let has_error = |field: InputField| errors.iter().any(|(e, _)| *e == field);
-    rsx! {
-        Sheet {
-            tbody {
-                for pair in FIELD_PAIRS {
-                    SheetRow {
-                        for field in pair {
-                            SheetHead { label: field.label(), error: has_error(field) }
-                            SheetCell {
-                                SheetInput {
-                                    label: field.label(),
-                                    value: inputs.read().get(field).to_string(),
-                                    error: has_error(field),
-                                    oninput: move |e: FormEvent| inputs.write().set(field, e.value()),
-                                }
-                            }
-                        }
-                    }
-                }
-                for pair in EDGE_PAIRS {
-                    SheetRow {
-                        for (edge , direction) in pair {
-                            SheetHead { label: format!("{edge}（{direction}）"), error: false }
-                            SheetCell {
-                                select {
-                                    class: "h-6 w-full bg-paper px-2 text-body focus:outline-2 focus:-outline-offset-2 focus:outline-ink",
-                                    "aria-label": format!("{edge} の辺の支持条件"),
-                                    onchange: move |e| {
-                                        if let Some(support) = e.value().chars().next().and_then(Support::from_symbol) {
-                                            set_support(&mut inputs.write().supports, edge, support);
-                                        }
-                                    },
-                                    for support in SUPPORTS {
-                                        option {
-                                            value: "{support.symbol()}",
-                                            selected: supports.at(edge) == support,
-                                            {support_name(support)}
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }

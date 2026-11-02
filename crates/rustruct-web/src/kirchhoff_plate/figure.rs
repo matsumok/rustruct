@@ -150,7 +150,7 @@ impl PlateFigure {
         let scene = scene(field, quantity);
         let svg = |theme| to_svg(&scene, &theme).expect("役割名は tokens.json にある");
         let supports = EDGES
-            .map(|(edge, _)| format!("{edge} の辺は{}", support_name(field.supports.at(edge))))
+            .map(|edge| format!("{edge} の辺は{}", support_name(field.supports.at(edge))))
             .join("、");
         Self {
             label: format!(
@@ -206,7 +206,7 @@ fn scene(field: &PlateField, quantity: Quantity) -> Scene {
         [MARGIN, MARGIN],
     );
     let (left, right, top, bottom) = (MARGIN, MARGIN + width, MARGIN, MARGIN + height);
-    for (edge, _) in EDGES {
+    for edge in EDGES {
         // 辺の両端（y は上が正なので、y = 0 の辺が下）と、板の外への向き
         let (from, to, outward): (Pt, Pt, Pt) = match edge {
             Edge::X0 => ([left, bottom], [left, top], [-1.0, 0.0]),

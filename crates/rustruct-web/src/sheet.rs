@@ -58,6 +58,46 @@ pub(crate) fn SheetCell(children: Element) -> Element {
     }
 }
 
+/// Sheet のセルに入れるチェックの欄。`size-4` の素のチェックボックスを `ink` で、セルの高さの中央に
+#[component]
+pub(crate) fn SheetCheck(
+    label: String,
+    checked: bool,
+    onchange: EventHandler<FormEvent>,
+) -> Element {
+    rsx! {
+        div { class: "flex h-6 items-center px-2",
+            input {
+                class: "size-4 accent-ink",
+                r#type: "checkbox",
+                "aria-label": label,
+                checked,
+                onchange: move |e| onchange.call(e),
+            }
+        }
+    }
+}
+
+/// Sheet のセルに入れる選択の欄。素の `select` で、選択肢は（記号, 名前）の並び。値は記号
+#[component]
+pub(crate) fn SheetSelect(
+    label: String,
+    options: Vec<(char, &'static str)>,
+    selected: char,
+    onchange: EventHandler<FormEvent>,
+) -> Element {
+    rsx! {
+        select {
+            class: "h-6 w-full bg-paper px-2 text-body focus:outline-2 focus:-outline-offset-2 focus:outline-ink",
+            "aria-label": label,
+            onchange: move |e| onchange.call(e),
+            for (symbol , name) in options {
+                option { value: "{symbol}", selected: selected == symbol, {name} }
+            }
+        }
+    }
+}
+
 /// Sheet のセルに入れる文字の欄。`numeric` なら `num` の等幅で右揃え、そうでなければ `body` で左揃え。
 /// 読めない値は `ng` の内枠
 #[component]
