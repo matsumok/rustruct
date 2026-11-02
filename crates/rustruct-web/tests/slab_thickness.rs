@@ -129,6 +129,8 @@ fn the_initial_point_is_governed_by_the_deflection_ratio_at_its_limit() {
     // 変形角が決めるので、増大後たわみ = 許容たわみ = 4000/400
     assert_eq!(p.amplified_deflection, "10.00");
     assert_eq!(p.allowable_deflection, "10.00");
+    // 弾性たわみ = 10 / 変形増大係数 16 = 0.625 ちょうど。四捨五入で 0.63（docs/adr/0013）
+    assert_eq!(p.elastic_deflection, "0.63");
 }
 
 #[test]

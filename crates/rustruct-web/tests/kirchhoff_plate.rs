@@ -238,13 +238,13 @@ fn the_edge_moment_of_a_simply_supported_edge_is_zero_with_no_position() {
     }
 }
 
-/// 分布図の SVG の、等値線の上の数値（負は U+2212）
+/// 分布図の SVG の、等値線の上の数値（3 桁区切りの「,」を外して読む）
 fn figure_numbers(svg: &str) -> Vec<f64> {
     svg.split("<text")
         .skip(1)
         .map(|t| {
             let text = &t[t.find('>').unwrap() + 1..t.find("</text>").unwrap()];
-            text.replace('\u{2212}', "-")
+            text.replace(',', "")
                 .parse()
                 .unwrap_or_else(|_| panic!("数値でない: {text}"))
         })

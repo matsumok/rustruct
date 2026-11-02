@@ -332,6 +332,7 @@ dependencies = [
 name = "charta"
 version = "0.1.0"
 dependencies = [
+ "numerus",
  "serde_json",
 ]
 
@@ -2364,6 +2365,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "numerus"
+version = "0.1.0"
+
+[[package]]
 name = "objc2"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2892,6 +2897,7 @@ dependencies = [
  "dioxus",
  "dioxus-primitives",
  "dioxus-ssr",
+ "numerus",
  "rustruct-calc",
  "rustruct-types",
  "serde_json",

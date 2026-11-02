@@ -11,6 +11,7 @@ workspace = true
 rustruct-types.workspace = true
 rustruct-calc.workspace = true
 charta.workspace = true
+numerus.workspace = true
 dioxus.workspace = true
 # 開け閉めやダイアログの振る舞い（Esc・外を押して閉じる・フォーカス・読み上げ）。見た目は付けず Tailwind で書く（#28）。
 # crates.io にはまだ出ていないので、git の版を固定する

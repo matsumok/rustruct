@@ -48,21 +48,16 @@ pub fn step_of(edges: &[f64]) -> f64 {
     }
 }
 
-/// 水準の数値を刻みに合った桁で書く。負号は U+2212。0 に負号は付けない。
+/// 水準の数値を、末位を刻みの位にして書く（刻み 0.5 なら小数 1 桁、2.5 なら 2.5 の 5 の位まで）。
+/// 書き方は表の数と同じ `numerus`（3 桁区切り、0.001 ≦ |x| < 1,000,000 の外は E）。0 に負号は付けない。
 pub fn format_level(value: f64, step: f64) -> String {
     let decade = step.log10().floor();
     let mantissa = step / 10f64.powf(decade);
-    let mut decimals = (-decade).max(0.0) as usize;
+    let mut place = decade as i32;
     if (mantissa - 2.5).abs() < 1e-9 {
-        decimals += 1;
+        place -= 1;
     }
-    let digits = format!("{:.*}", decimals, value.abs());
-    let is_zero = digits.chars().all(|c| c == '0' || c == '.');
-    if value < 0.0 && !is_zero {
-        format!("\u{2212}{digits}")
-    } else {
-        digits
-    }
+    numerus::at_place(value, place)
 }
 
 /// 継ぎ目: 範囲と目安 → 境。期待値は 1・2・2.5・5 × 10ⁿ の規則から手で出した。
@@ -113,11 +108,14 @@ mod tests {
     #[test]
     fn level_is_written_with_the_digits_of_the_step() {
         assert_eq!(format_level(3.0, 1.0), "3");
-        assert_eq!(format_level(-3.0, 1.0), "\u{2212}3");
+        assert_eq!(format_level(-3.0, 1.0), "-3");
         assert_eq!(format_level(2.5, 2.5), "2.5");
         assert_eq!(format_level(0.30000000000000004, 0.1), "0.3");
         assert_eq!(format_level(-0.0, 0.5), "0.0");
-        assert_eq!(format_level(1200.0, 200.0), "1200");
+        assert_eq!(format_level(1200.0, 200.0), "1,200");
+        assert_eq!(format_level(1_200_000.0, 200_000.0), "1.2E+06");
+        assert_eq!(format_level(-0.0005, 0.0005), "-5E-04");
+        assert_eq!(format_level(0.00025, 0.00025), "2.5E-04");
         assert_eq!(format_level(0.025, 0.025), "0.025");
         assert_eq!(step_of(&[-2.0, 0.0, 2.0]), 2.0);
     }

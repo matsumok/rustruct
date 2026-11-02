@@ -408,7 +408,7 @@ mod tests {
             })
             .collect();
         assert!(
-            texts.contains(&"0") && texts.contains(&"\u{2212}8") && texts.contains(&"8"),
+            texts.contains(&"0") && texts.contains(&"-8") && texts.contains(&"8"),
             "{texts:?}"
         );
     }
