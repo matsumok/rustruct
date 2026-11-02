@@ -9,9 +9,7 @@ use charta::{Grid, Item, Palette, Pt, Scene, Stroke, Theme, distribution, to_svg
 use rustruct_calc::kirchhoff_plate::{PointResponse, Solution};
 use rustruct_types::kirchhoff_plate::{Edge, Support, Supports};
 
-use super::{
-    EDGES, PlateInputs, PlateOutcome, corner_margin_text, has_free_edge, near_end, support_name,
-};
+use super::{EDGES, PlateInputs, PlateOutcome, corner_margin_text, support_name};
 use crate::COLUMN_WIDTH;
 
 /// 長い辺を等分する評価点の間の数。短い辺は辺長の比で決め、評価点の間はほぼ正方形になる
@@ -102,6 +100,9 @@ pub(crate) struct PlateField {
     ny: usize,
     /// y の小さい行から、行の中は x の小さい順（`Solution::grid`）
     points: Vec<PointResponse>,
+    /// 評価点ごとに、色の幅を決めるのに使うか。自由辺のある組では、固定辺と自由辺の隅の発散で幅が決まらない
+    /// よう、隅から辺長の 5 % 以内の点（`Solution::near_corner`）を使わない（kirchhoff-plate の ADR-0008）
+    in_range: Vec<bool>,
 }
 
 impl PlateField {
@@ -117,13 +118,20 @@ impl PlateField {
         } else {
             (shorter_divisions(lx, ly), GRID_DIVISIONS)
         };
+        let points = solution.grid(nx, ny);
+        let free = plate.supports.has_free_edge();
+        let in_range = points
+            .iter()
+            .map(|p| !free || !solution.near_corner(p.x, p.y))
+            .collect();
         Self {
             lx,
             ly,
             supports: plate.supports,
             nx,
             ny,
-            points: solution.grid(nx, ny),
+            points,
+            in_range,
         }
     }
 }
@@ -160,7 +168,7 @@ impl PlateFigure {
             ),
             light_svg: svg(Theme::light()),
             dark_svg: svg(Theme::dark()),
-            notes: if has_free_edge(field.supports) {
+            notes: if field.supports.has_free_edge() {
                 vec![format!(
                     "色の幅は、隅から辺長の {} 以内の点を除いて決める",
                     corner_margin_text()
@@ -175,16 +183,12 @@ impl PlateFigure {
 /// 板の分布図を縁の内側に置き、縁に支持条件を描く
 fn scene(field: &PlateField, quantity: Quantity) -> Scene {
     let z: Vec<f64> = field.points.iter().map(|r| quantity.value(r)).collect();
-    // 色の幅。自由辺のある組では、固定辺と自由辺の隅の発散で幅が決まらないよう、隅から辺長の 5 % 以内の点を
-    // 除く。除いた点の値は色の端で振り切れる（kirchhoff-plate の ADR-0008）
-    let free = has_free_edge(field.supports);
+    // 色の幅。除いた点の値は色の端で振り切れる（kirchhoff-plate の ADR-0008）
     let range = field
-        .points
+        .in_range
         .iter()
         .zip(&z)
-        .filter(|(r, _)| {
-            !free || !(near_end(r.x.as_m() / field.lx) && near_end(r.y.as_m() / field.ly))
-        })
+        .filter(|(used, _)| **used)
         .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), (_, &v)| {
             (lo.min(v), hi.max(v))
         });

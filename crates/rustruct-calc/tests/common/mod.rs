@@ -4,7 +4,7 @@
 
 use std::f64::consts::PI;
 
-use rustruct_calc::kirchhoff_plate::{EdgeSample, Plate, PointResponse, Solution, SupportType};
+use rustruct_calc::kirchhoff_plate::{EdgeSample, Plate, PointResponse, Solution};
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Supports};
 use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
 
@@ -53,16 +53,6 @@ pub fn integrated_reaction(s: &Solution, edge: Edge, divisions: usize) -> f64 {
         .sum()
 }
 
-/// 辺の反力の合計 − 隅反力の合計 [N]
-pub fn reactions_minus_corners(s: &Solution) -> f64 {
-    let reactions: f64 = Edge::ALL.iter().map(|&e| s.total_reaction(e).as_n()).sum();
-    let corners: f64 = Corner::ALL
-        .iter()
-        .map(|&c| s.corner_reaction(c).as_n())
-        .sum();
-    reactions - corners
-}
-
 /// 四辺単純支持の板の、隅原点の点 (x, y) の応答と隅の w_xy。Navier の二重正弦級数で、どの解き方とも独立
 pub struct Navier {
     pub w: f64,
@@ -109,18 +99,6 @@ pub fn navier(plate: &Plate, x: f64, y: f64, max: usize) -> Navier {
     r
 }
 
-/// 隅から辺長の 5 % 以内の点か（x・y ともに辺長の 5 % より端に寄っている）。ADR-0008 で除く範囲
-pub fn near_corner(x: f64, y: f64, lx: f64, ly: f64) -> bool {
-    !(0.05 * lx..=0.95 * lx).contains(&x) && !(0.05 * ly..=0.95 * ly).contains(&y)
-}
-
-/// 解ける 19 型。21 型から不安定な 2 型（四辺自由、単純支持 1 辺と自由 3 辺）を除いたもの
-pub fn stable_types() -> impl Iterator<Item = SupportType> {
-    SupportType::ALL
-        .into_iter()
-        .filter(|t| !matches!(t, SupportType::RRRR | SupportType::RRRS))
-}
-
 /// 比較の分母。たわみ・曲げモーメント・せん断力それぞれの、21 × 21 のグリッドでの絶対値の最大。隅から辺長の
 /// 5 % 以内の点は除く（固定辺と自由辺の隅ではせん断力が発散し、分母にすると比が小さく出る。ADR-0008）
 pub struct Scale {
@@ -131,11 +109,10 @@ pub struct Scale {
 
 impl Scale {
     pub fn of(s: &Solution) -> Self {
-        let (lx, ly) = (s.plate().lx.as_mm(), s.plate().ly.as_mm());
         let g: Vec<PointResponse> = s
             .grid(20, 20)
             .into_iter()
-            .filter(|p| !near_corner(p.x.as_mm(), p.y.as_mm(), lx, ly))
+            .filter(|p| !s.near_corner(p.x, p.y))
             .collect();
         let max = |f: Pick| g.iter().map(|p| f(p).abs()).fold(0.0, f64::max);
         Scale {
@@ -186,7 +163,6 @@ pub struct Deviation {
 /// 比の分母は量の種類ごと（たわみ、曲げモーメント、せん断力、辺の反力、隅反力）に、基準の解の板全体での
 /// 絶対値の最大。単純支持・自由の辺の曲げモーメントや自由辺の反力は厳密に 0 で、板全体の最大と比べる
 pub fn deviations(reference: &Solution, other: &Solution) -> Vec<Deviation> {
-    let (lx, ly) = (reference.plate().lx.as_mm(), reference.plate().ly.as_mm());
     let mut out = Vec::new();
     let (ga, gb) = (reference.grid(20, 20), other.grid(20, 20));
     let edges: Vec<(Edge, Vec<EdgeSample>, Vec<EdgeSample>)> = Edge::ALL
@@ -221,14 +197,13 @@ pub fn deviations(reference: &Solution, other: &Solution) -> Vec<Deviation> {
             at: String::new(),
         };
         for (pa, pb) in ga.iter().zip(&gb) {
-            let (x, y) = (pa.x.as_mm(), pa.y.as_mm());
-            if near_corner(x, y, lx, ly) {
+            if reference.near_corner(pa.x, pa.y) {
                 continue;
             }
             let r = (f(pa) - f(pb)).abs() / scale;
             if r > worst.ratio {
                 worst.ratio = r;
-                worst.at = format!("({x}, {y})");
+                worst.at = format!("({}, {})", pa.x.as_mm(), pa.y.as_mm());
             }
         }
         out.push(worst);
