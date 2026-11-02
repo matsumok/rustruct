@@ -25,6 +25,9 @@ mod table;
 /// Tool の入力の Sheet の部品。
 mod sheet;
 
+/// 入力の組: 欄の定義、値の置き場、Sheet と注記・理由・警告の部品。
+mod inputs;
+
 /// Data: 材料や規格の値のページ。
 mod data;
 

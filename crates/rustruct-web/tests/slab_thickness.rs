@@ -135,15 +135,18 @@ fn the_initial_point_is_governed_by_the_deflection_ratio_at_its_limit() {
 
 #[test]
 fn swapping_lx_and_ly_gives_the_same_results() {
-    let swapped = readout(|i| (i.span_x, i.span_y) = ("5.0".into(), "4.0".into()));
+    let swapped = readout(|i| {
+        i.set(SlabField::SpanX, "5.0");
+        i.set(SlabField::SpanY, "4.0");
+    });
     assert_eq!(swapped.point, readout(|_| {}).point);
 }
 
 #[test]
 fn turning_on_the_table_and_blanking_the_ratio_leaves_only_the_minimum_thickness() {
     let r = readout(|i| {
-        i.deflection_ratio = String::new();
-        i.min_thickness = true;
+        i.set(SlabField::DeflectionRatio, "");
+        i.set(SlabField::MinThickness, "true");
     });
     assert!(r.errors.is_empty() && !r.no_criteria);
     // wp = 2800 N/m²、lx = 4000 mm、λ = 1.25: 0.02·(0.55/0.65)·(1+0.28+0.4)·4000 = 113.7
@@ -155,7 +158,7 @@ fn turning_on_the_table_and_blanking_the_ratio_leaves_only_the_minimum_thickness
 
 #[test]
 fn blank_criteria_with_the_table_off_is_an_error_and_nothing_is_evaluated() {
-    let r = readout(|i| i.deflection_ratio = String::new());
+    let r = readout(|i| i.set(SlabField::DeflectionRatio, ""));
     assert!(r.no_criteria);
     assert!(r.errors.is_empty());
     assert!(point_values(&r.point).iter().all(|v| *v == "—"), "{r:#?}");
@@ -166,8 +169,8 @@ fn blank_criteria_with_the_table_off_is_an_error_and_nothing_is_evaluated() {
 #[test]
 fn an_unreadable_span_leaves_the_shared_values_and_dashes_the_point() {
     let r = readout(|i| {
-        i.span_x = "0".into();
-        i.span_y = "abc".into();
+        i.set(SlabField::SpanX, "0");
+        i.set(SlabField::SpanY, "abc");
     });
     assert_eq!(
         r.errors,
@@ -183,12 +186,12 @@ fn an_unreadable_span_leaves_the_shared_values_and_dashes_the_point() {
 #[test]
 fn unreadable_conditions_are_named_with_their_reasons() {
     let r = readout(|i| {
-        i.fc = String::new();
-        i.finish_load = "-1".into();
-        i.live_load = "0".into();
-        i.amplification = "0".into();
-        i.deflection_ratio = "x".into();
-        i.deflection_absolute = "-20".into();
+        i.set(SlabField::Fc, "");
+        i.set(SlabField::FinishLoad, "-1");
+        i.set(SlabField::LiveLoad, "0");
+        i.set(SlabField::Amplification, "0");
+        i.set(SlabField::DeflectionRatio, "x");
+        i.set(SlabField::DeflectionAbsolute, "-20");
     });
     assert_eq!(
         r.errors,
@@ -207,10 +210,10 @@ fn unreadable_conditions_are_named_with_their_reasons() {
 
 #[test]
 fn fc_above_36_uses_the_heavier_rc_unit_weight_and_warns_outside_the_range() {
-    let r = readout(|i| i.fc = "42".into());
+    let r = readout(|i| i.set(SlabField::Fc, "42"));
     assert_eq!(r.shared.rc_unit_weight, "24.5");
     assert_eq!(r.warning, None);
-    let r = readout(|i| i.fc = "120".into());
+    let r = readout(|i| i.set(SlabField::Fc, "120"));
     assert!(r.warning.is_some(), "{r:#?}");
     assert_ne!(r.point.required_thickness, "—");
 }

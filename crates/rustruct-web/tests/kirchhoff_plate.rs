@@ -3,7 +3,7 @@
 
 mod common;
 use common::{assert_in_order, element, text_of};
-use rustruct_types::kirchhoff_plate::{Support, Supports};
+use rustruct_types::kirchhoff_plate::{Edge, Support};
 use rustruct_web::{InputField, PlateFigure, PlateInputs, PlateReadout, Quantity, render_path};
 
 #[test]
@@ -126,6 +126,13 @@ fn readout(change: impl FnOnce(&mut PlateInputs)) -> PlateReadout {
     PlateReadout::from_inputs(&inputs)
 }
 
+/// 4 辺とも同じ支持条件にする
+fn set_all(inputs: &mut PlateInputs, support: Support) {
+    for edge in Edge::ALL {
+        inputs.set(InputField::Support(edge), support.symbol());
+    }
+}
+
 /// 結果の値がすべて「—」
 fn assert_not_computed(r: &PlateReadout) {
     let c = &r.center;
@@ -142,7 +149,7 @@ fn assert_not_computed(r: &PlateReadout) {
 
 #[test]
 fn an_unstable_combination_shows_dashes_and_says_the_plate_is_not_held() {
-    let r = readout(|i| i.supports = Supports::all(Support::Free));
+    let r = readout(|i| set_all(i, Support::Free));
     assert_eq!(r.notice, Some("この支持条件の組では板を支えられない"));
     assert!(r.errors.is_empty());
     assert_not_computed(&r);
@@ -151,7 +158,7 @@ fn an_unstable_combination_shows_dashes_and_says_the_plate_is_not_held() {
 #[test]
 fn a_combination_with_a_free_edge_is_solved_and_balances() {
     // 不安定な組以外はすべて解ける（kirchhoff-plate の ADR-0002）。自由辺の反力は 0 で、残る辺が荷重を受ける
-    let r = readout(|i| i.supports.x_lx = Support::Free);
+    let r = readout(|i| i.set(InputField::Support(Edge::XLx), Support::Free.symbol()));
     assert_eq!(r.notice, None);
     assert!(r.errors.is_empty());
     assert_eq!(r.balance.reactions, r.balance.load);
@@ -162,7 +169,7 @@ fn a_combination_with_a_free_edge_is_solved_and_balances() {
 #[test]
 fn a_simply_supported_plate_balances_with_its_corner_reactions_pressing_down() {
     // 辺の反力の合計は荷重を超え、超えた分を隅反力が押さえる（kirchhoff-plate の ADR-0007）
-    let r = readout(|i| i.supports = Supports::all(Support::SimplySupported));
+    let r = readout(|i| set_all(i, Support::SimplySupported));
     assert_eq!(r.notice, None);
     assert_eq!([&r.balance.reactions, &r.balance.load], ["200", "200"]);
     for (corner, reaction) in &r.corners {
@@ -177,11 +184,11 @@ fn a_simply_supported_plate_balances_with_its_corner_reactions_pressing_down() {
 #[test]
 fn unreadable_fields_are_named_with_their_reasons_and_nothing_is_computed() {
     let r = readout(|i| {
-        i.lx = "0".into();
-        i.thickness = "-150".into();
-        i.young_modulus = "abc".into();
-        i.poisson_ratio = "0.5".into();
-        i.load = String::new();
+        i.set(InputField::Lx, "0");
+        i.set(InputField::Thickness, "-150");
+        i.set(InputField::YoungModulus, "abc");
+        i.set(InputField::PoissonRatio, "0.5");
+        i.set(InputField::Load, "");
     });
     assert_eq!(
         r.errors,
@@ -200,7 +207,7 @@ fn unreadable_fields_are_named_with_their_reasons_and_nothing_is_computed() {
 #[test]
 fn an_upward_load_is_computed_with_the_signs_turned() {
     let down = readout(|_| {});
-    let up = readout(|i| i.load = "-10".into());
+    let up = readout(|i| i.set(InputField::Load, "-10"));
     assert_eq!(up.center.w, format!("-{}", down.center.w));
     assert_eq!([up.balance.reactions, up.balance.load], ["-200", "-200"]);
 }
@@ -208,7 +215,10 @@ fn an_upward_load_is_computed_with_the_signs_turned() {
 #[test]
 fn a_swapped_plate_swaps_the_x_and_y_results() {
     let r = readout(|_| {});
-    let swapped = readout(|i| (i.lx, i.ly) = ("5.0".into(), "4.0".into()));
+    let swapped = readout(|i| {
+        i.set(InputField::Lx, "5.0");
+        i.set(InputField::Ly, "4.0");
+    });
     assert_eq!(swapped.center.mx, r.center.my);
     assert_eq!(swapped.edges[0].max_moment, r.edges[2].max_moment);
     assert_eq!(swapped.edges[2].max_reaction, r.edges[0].max_reaction);
@@ -227,7 +237,7 @@ fn the_edge_moment_is_largest_at_the_middle_of_a_fixed_edge() {
 
 #[test]
 fn the_edge_moment_of_a_simply_supported_edge_is_zero_with_no_position() {
-    let r = readout(|i| i.supports = Supports::all(Support::SimplySupported));
+    let r = readout(|i| set_all(i, Support::SimplySupported));
     for row in &r.edges {
         assert_eq!(
             [row.max_moment.value.as_str(), row.max_moment.along.as_str()],
@@ -315,9 +325,13 @@ fn the_figure_follows_the_aspect_of_the_plate_within_one_column_and_names_each_s
     };
     let tall = PlateFigure::from_inputs(&PlateInputs::default(), Quantity::W).unwrap();
     let mut inputs = PlateInputs::default();
-    (inputs.lx, inputs.ly) = ("8.0".into(), "2.0".into());
-    inputs.supports.x_lx = Support::Free;
-    inputs.supports.y0 = Support::SimplySupported;
+    inputs.set(InputField::Lx, "8.0");
+    inputs.set(InputField::Ly, "2.0");
+    inputs.set(InputField::Support(Edge::XLx), Support::Free.symbol());
+    inputs.set(
+        InputField::Support(Edge::Y0),
+        Support::SimplySupported.symbol(),
+    );
     let wide = PlateFigure::from_inputs(&inputs, Quantity::W).unwrap();
     let ((tw, th), (ww, wh)) = (size(&tall.light_svg), size(&wide.light_svg));
     // 長い辺の向きが 1 単位（335）いっぱい
@@ -337,26 +351,20 @@ fn the_figure_follows_the_aspect_of_the_plate_within_one_column_and_names_each_s
 
 #[test]
 fn a_plate_that_cannot_be_solved_has_no_figure() {
-    let unstable = PlateInputs {
-        supports: Supports::all(Support::Free),
-        ..PlateInputs::default()
-    };
+    let mut unstable = PlateInputs::default();
+    set_all(&mut unstable, Support::Free);
     assert_eq!(PlateFigure::from_inputs(&unstable, Quantity::W), None);
-    let unreadable = PlateInputs {
-        lx: "0".into(),
-        ..PlateInputs::default()
-    };
+    let mut unreadable = PlateInputs::default();
+    unreadable.set(InputField::Lx, "0");
     assert_eq!(PlateFigure::from_inputs(&unreadable, Quantity::W), None);
 }
 
 /// 三辺固定一辺自由（y = Ly の辺が自由）の入力。長い辺（x、5 m）が自由
 fn three_fixed_one_free() -> PlateInputs {
-    let mut inputs = PlateInputs {
-        lx: "5.0".into(),
-        ly: "4.0".into(),
-        ..PlateInputs::default()
-    };
-    inputs.supports.y_ly = Support::Free;
+    let mut inputs = PlateInputs::default();
+    inputs.set(InputField::Lx, "5.0");
+    inputs.set(InputField::Ly, "4.0");
+    inputs.set(InputField::Support(Edge::YLy), Support::Free.symbol());
     inputs
 }
 
@@ -390,7 +398,7 @@ fn the_edge_shear_and_reaction_of_a_plate_with_a_free_edge_skip_five_percent_at_
 #[test]
 fn a_plate_without_a_free_edge_has_no_notes_on_the_corners() {
     for supports in [Support::Fixed, Support::SimplySupported] {
-        let r = readout(|i| i.supports = Supports::all(supports));
+        let r = readout(|i| set_all(i, supports));
         assert!(r.edge_notes.is_empty(), "{:?}", r.edge_notes);
     }
     let text = text_of(element(&render_path("/tools/kirchhoff-plate"), "main"));
