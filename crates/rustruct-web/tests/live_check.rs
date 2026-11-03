@@ -52,16 +52,16 @@ fn serve(dir: PathBuf, first_404s: usize) -> String {
                 header.clear();
             }
             let path = line.split(' ').nth(1).unwrap_or("/").to_string();
-            let n = hits.entry(path.clone()).or_default();
-            *n += 1;
-            let rel = path.trim_start_matches('/');
+            let times_asked = hits.entry(path.clone()).or_default();
+            *times_asked += 1;
+            let relative = path.trim_start_matches('/');
             let file = if path.ends_with('/') {
-                dir.join(rel).join("index.html")
+                dir.join(relative).join("index.html")
             } else {
-                dir.join(rel)
+                dir.join(relative)
             };
             let not_found = || std::fs::read(dir.join("404.html")).unwrap();
-            let (status, headers, body) = if file.is_file() && *n <= first_404s {
+            let (status, headers, body) = if file.is_file() && *times_asked <= first_404s {
                 (404, vec![], not_found())
             } else if file.is_file() {
                 let content_type = match file.extension().and_then(|e| e.to_str()) {
@@ -73,7 +73,7 @@ fn serve(dir: PathBuf, first_404s: usize) -> String {
                 };
                 let body = std::fs::read(&file).unwrap();
                 (200, vec![format!("Content-Type: {content_type}")], body)
-            } else if dir.join(rel).join("index.html").is_file() {
+            } else if dir.join(relative).join("index.html").is_file() {
                 (307, vec![format!("Location: {path}/")], vec![])
             } else {
                 (404, vec![], not_found())
@@ -82,8 +82,8 @@ fn serve(dir: PathBuf, first_404s: usize) -> String {
                 "HTTP/1.1 {status} X\r\nConnection: close\r\nContent-Length: {}\r\n",
                 body.len()
             );
-            for h in headers {
-                head.push_str(&format!("{h}\r\n"));
+            for header_line in headers {
+                head.push_str(&format!("{header_line}\r\n"));
             }
             head.push_str("\r\n");
             let _ = stream.write_all(head.as_bytes());

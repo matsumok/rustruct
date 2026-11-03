@@ -156,7 +156,7 @@ mod output {
 
         // CSS と WASM は 1 つずつ。手元で dx build を重ねると前のビルドのアセットが残って 2 つになる
         // （check.sh の build は先に消す）。1 つでなければ参照の検査は飛ばす（同じ原因で NG を重ねない）
-        let mut one = |label: &str, extension: &str| {
+        let mut only_file_with_extension = |label: &str, extension: &str| {
             let hits: Vec<&PathBuf> = files
                 .iter()
                 .filter(|f| f.extension().is_some_and(|e| e == extension))
@@ -170,8 +170,8 @@ mod output {
                 }
             }
         };
-        let css = one("CSS", "css");
-        let wasm = one("WASM", "wasm");
+        let css = only_file_with_extension("CSS", "css");
+        let wasm = only_file_with_extension("WASM", "wasm");
 
         for path in &expected {
             let Ok(html) =
@@ -179,15 +179,7 @@ mod output {
             else {
                 continue; // 住所の集合の検査で既に NG
             };
-            if let Ok(route) = Route::from_str(path) {
-                let want = route.title();
-                if page_title(&html) != Some(want.as_str()) {
-                    problems.push(format!(
-                        "{path} の <title> が「{want}」でない: {}",
-                        page_title(&html).unwrap_or("（無し）")
-                    ));
-                }
-            }
+            problems.extend(title_problem(path, &html));
             if let Some(css) = &css
                 && stylesheet(&html).map(|href| file_of(out, href)) != Some(css.clone())
             {
@@ -213,6 +205,21 @@ mod output {
         problems
     }
 
+    /// 住所 `path` の HTML の `<title>` がそのルートのものでなければ、食い違いの 1 行。
+    /// 住所がルートとして読めないのも食い違い（照合を黙って飛ばさない）。
+    fn title_problem(path: &str, html: &str) -> Option<String> {
+        let found = page_title(html);
+        let shown = found.unwrap_or("（無し）");
+        let Ok(route) = Route::from_str(path) else {
+            return Some(format!(
+                "{path} がルートとして読めず、<title> を照合できない: {shown}"
+            ));
+        };
+        let want = route.title();
+        (found != Some(want.as_str()))
+            .then(|| format!("{path} の <title> が「{want}」でない: {shown}"))
+    }
+
     /// `dir` の下のファイルすべて（深さ優先、名前順）。
     fn files_under(dir: &Path) -> Vec<PathBuf> {
         let Ok(entries) = std::fs::read_dir(dir) else {
@@ -224,6 +231,20 @@ mod output {
             .into_iter()
             .flat_map(|p| if p.is_dir() { files_under(&p) } else { vec![p] })
             .collect()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::title_problem;
+
+        #[test]
+        fn an_address_that_is_not_a_route_is_a_problem_not_skipped() {
+            // static_paths の住所はどれもルートとして読めるので、check_ssg_output 越しには作れない
+            let html = "<head><title>Tools · rustruct.matsumok.com</title></head>";
+            let problem = title_problem("tools", html).expect("読めない住所が通った");
+            assert!(problem.contains("ルートとして読めず"), "{problem}");
+            assert_eq!(title_problem("/tools", html), None);
+        }
     }
 }
 

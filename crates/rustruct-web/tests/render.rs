@@ -272,6 +272,22 @@ fn every_page_has_a_description_meta_derived_from_the_route() {
     }
 }
 
+/// SSG が書き出す住所すべてに、空でない description がある（SSG の出力の検査 `check_ssg_output` は文言を見ない）。
+#[test]
+fn every_ssg_page_has_a_non_empty_description_meta() {
+    let key = "<meta name=\"description\" content=\"";
+    for path in static_paths() {
+        let html = render_path(&path);
+        let head = head_of(&html);
+        let start = head
+            .find(key)
+            .unwrap_or_else(|| panic!("{path} に description が無い: {head}"))
+            + key.len();
+        let len = head[start..].find('"').expect("content が閉じていない");
+        assert!(len > 0, "{path} の description が空: {head}");
+    }
+}
+
 #[test]
 fn head_links_the_fonts_and_the_stylesheet() {
     let html = render_path("/");
