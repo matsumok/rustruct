@@ -1,6 +1,6 @@
-//! 描き手に依存しない小さなシーン: パス・矩形・文字だけ。色は役割名で持ち、描くときにテーマで引く。
+//! 描き手に依存しない小さなシーン: パス・矩形・円・文字だけ。色は役割名で持ち、描くときにテーマで引く。
 //!
-//! 中間表現の全体（点の記号、格子の場、座標変換の段）はまだ作らない。分布図に要る 3 種だけ。
+//! 中間表現の全体（点の記号の一揃い、格子の場、座標変換の段）はまだ作らない。分布図と等厚曲線の図に要る 4 種だけ。
 
 /// 画面の座標。x は右、y は下が正（SVG と同じ）。
 pub type Pt = [f64; 2];
@@ -49,6 +49,23 @@ pub enum Font {
     Mono,
 }
 
+impl Font {
+    /// 1 文字の送りの見込み（文字の大きさに対する比）。等幅は 0.6 字。和文の書体は、欧文と数字が 0.6 字、
+    /// ほかが 1 字。文字を置く場所の見積もり（枠の周りの空き、数値や名前のぶつかり）に使う
+    pub fn advance(self, c: char) -> f64 {
+        match self {
+            Font::Mono => 0.6,
+            Font::Sans if c.is_ascii() => 0.6,
+            Font::Sans => 1.0,
+        }
+    }
+
+    /// 文字列の幅の見込み。`size` は文字の大きさ
+    pub fn width(self, text: &str, size: f64) -> f64 {
+        text.chars().map(|c| self.advance(c)).sum::<f64>() * size
+    }
+}
+
 /// 文字の寄せ。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Anchor {
@@ -71,6 +88,13 @@ pub enum Item {
         y: f64,
         width: f64,
         height: f64,
+        fill: Option<Paint>,
+        stroke: Option<Stroke>,
+    },
+    /// 円。点の印（等厚曲線の図の検討点）
+    Circle {
+        center: Pt,
+        radius: f64,
         fill: Option<Paint>,
         stroke: Option<Stroke>,
     },
@@ -140,6 +164,17 @@ impl Scene {
                     fill,
                     stroke,
                 },
+                Item::Circle {
+                    center,
+                    radius,
+                    fill,
+                    stroke,
+                } => Item::Circle {
+                    center: shift(center),
+                    radius,
+                    fill,
+                    stroke,
+                },
                 Item::Text {
                     x,
                     y,
@@ -170,6 +205,13 @@ impl Scene {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn text_width_counts_latin_and_digits_as_six_tenths_and_others_as_one() {
+        assert_eq!(Font::Mono.width("1,000", 10.0), 30.0);
+        assert_eq!(Font::Sans.width("S1", 10.0), 12.0);
+        assert_eq!(Font::Sans.width("検討", 10.0), 20.0);
+    }
 
     #[test]
     fn placed_items_keep_their_shape_and_move_by_the_offset() {

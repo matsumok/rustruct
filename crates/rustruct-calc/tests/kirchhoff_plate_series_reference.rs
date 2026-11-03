@@ -35,11 +35,11 @@ fn only_the_fixed_and_the_simply_supported_types_have_a_reference() {
         let p = plate(2000.0, 3000.0, 0.2, 10.0, ty.representative());
         let result = solve_with_series(&p, series::TERMS);
         match ty {
+            _ if !ty.is_stable() => {
+                assert_eq!(result.err(), Some(PlateError::Unstable(ty)));
+            }
             SupportType::FFFF | SupportType::SSSS => {
                 assert_eq!(result.unwrap().unwrap().support_type(), ty);
-            }
-            SupportType::RRRR | SupportType::RRRS => {
-                assert_eq!(result.err(), Some(PlateError::Unstable(ty)));
             }
             _ => assert!(result.unwrap().is_none(), "{}", ty.symbol()),
         }
@@ -174,7 +174,7 @@ fn the_series_edge_samples_integrate_to_the_total_reaction() {
 fn assert_doubling_the_terms_changes_nothing(
     p: &Plate,
     what: &str,
-    excluded: impl Fn(&PointResponse) -> bool,
+    excluded: impl Fn(&Solution, &PointResponse) -> bool,
 ) {
     let a = solve_with_series(p, series::TERMS).unwrap().unwrap();
     let b = solve_with_series(p, 2 * series::TERMS).unwrap().unwrap();
@@ -185,7 +185,7 @@ fn assert_doubling_the_terms_changes_nothing(
         if name.starts_with('M') {
             m_scale = f64::max(m_scale, scale);
         }
-        for (pa, pb) in ga.iter().zip(&gb).filter(|(p, _)| !excluded(p)) {
+        for (pa, pb) in ga.iter().zip(&gb).filter(|(p, _)| !excluded(&a, p)) {
             assert_within(
                 f(pa),
                 f(pb),
@@ -249,15 +249,12 @@ fn doubling_the_terms_changes_nothing_beyond_the_tolerance() {
         assert_doubling_the_terms_changes_nothing(
             &plate(lx, ly, 0.2, 10.0, FFFF),
             &format!("FFFF 比 {ratio}"),
-            |p| {
-                let (x, y) = (p.x.as_mm(), p.y.as_mm());
-                common::near_corner(x, y, lx, ly)
-            },
+            |s, p| s.near_corner(p.x, p.y),
         );
         assert_doubling_the_terms_changes_nothing(
             &plate(lx, ly, 0.2, 10.0, SSSS),
             &format!("SSSS 比 {ratio}"),
-            |p| [0.0, lx].contains(&p.x.as_mm()) && [0.0, ly].contains(&p.y.as_mm()),
+            |_, p| [0.0, lx].contains(&p.x.as_mm()) && [0.0, ly].contains(&p.y.as_mm()),
         );
     }
 }
@@ -302,6 +299,29 @@ fn the_finite_elements_match_the_series_solutions() {
                     &solve(&p).unwrap(),
                     &format!("{symbol} ν = {nu} 比 {ratio}"),
                 );
+            }
+        }
+    }
+}
+
+#[test]
+fn the_deflection_maximum_matches_the_series_solutions() {
+    // 最大たわみの値が参照解の最大と w の許容（0.5 %、ADR kirchhoff-plate-0002）で、位置が辺長の 1e-6 で一致する。
+    // 参照解も級数の w を格子から詰めて取る（ADR kirchhoff-plate-0009）
+    let lx = 2000.0;
+    for (symbol, supports) in [("SSSS", SSSS), ("FFFF", FFFF)] {
+        for ratio in [1.0, 2.0] {
+            let ly = ratio * lx;
+            let p = plate(lx, ly, 0.2, 10.0, supports);
+            let (r, f) = (
+                reference(&p).deflection_maximum(),
+                solve(&p).unwrap().deflection_maximum(),
+            );
+            let what = format!("{symbol} 比 {ratio}");
+            assert_within(f.w.as_mm(), r.w.as_mm(), 5e-3 * r.w.as_mm(), &what);
+            for m in [r, f] {
+                assert_within(m.x.as_mm(), lx / 2.0, 1e-6 * lx, &what);
+                assert_within(m.y.as_mm(), ly / 2.0, 1e-6 * ly, &what);
             }
         }
     }

@@ -10,7 +10,8 @@
 
 use rustruct_types::kirchhoff_plate::{Corner, Edge};
 
-use super::super::solver::{Derivatives, Solver};
+use super::super::solver::Derivatives;
+use super::Field;
 use super::levy::{Frame, Orientation, Series, alternating, load_edge_slope, moment_edge_slope};
 use super::linear::Matrix;
 
@@ -98,7 +99,7 @@ fn coupling(alpha: f64, beta: f64, n: usize, m: usize, half_along: f64) -> f64 {
     2.0 * alpha * beta * alternating(n + m) / (half_along * sum * sum)
 }
 
-impl Solver for Fixed {
+impl Field for Fixed {
     fn interior(&self, x: f64, y: f64) -> Derivatives {
         // y に沿う級数の双曲線関数は (1 − |x|)/b の速さで、x に沿う級数のは (b − |y|) の速さで減衰する
         let load = if (1.0 - x.abs()) / self.b >= self.b - y.abs() {

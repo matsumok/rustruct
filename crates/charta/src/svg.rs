@@ -65,6 +65,22 @@ pub fn to_svg(scene: &Scene, theme: &Theme) -> Result<String, Error> {
                     stroke_attrs(theme, stroke.as_ref())?
                 );
             }
+            Item::Circle {
+                center,
+                radius,
+                fill,
+                stroke,
+            } => {
+                let _ = writeln!(
+                    out,
+                    r#"<circle cx="{}" cy="{}" r="{}" fill="{}"{}/>"#,
+                    num(center[0]),
+                    num(center[1]),
+                    num(*radius),
+                    paint_or_none(theme, fill.as_ref())?,
+                    stroke_attrs(theme, stroke.as_ref())?
+                );
+            }
             Item::Text {
                 x,
                 y,
@@ -267,6 +283,22 @@ mod tests {
             r##"stroke="#ffffff" stroke-width="2.5" stroke-linejoin="round" paint-order="stroke""##
         ));
         assert!(svg.contains(">a&lt;b &amp; &quot;c&quot;</text>"));
+    }
+
+    #[test]
+    fn circle_is_written_with_center_radius_fill_and_stroke() {
+        let mut scene = Scene::new(10.0, 10.0);
+        scene.items.push(Item::Circle {
+            center: [4.0, 5.5],
+            radius: 3.5,
+            fill: Some(Paint::role("paper")),
+            stroke: Some(Stroke::new("ink", 1.0)),
+        });
+        let svg = to_svg(&scene, &Theme::light()).unwrap();
+        assert!(
+            svg.contains(r##"<circle cx="4" cy="5.5" r="3.5" fill="#ffffff" stroke="#1c2024" stroke-width="1""##),
+            "{svg}"
+        );
     }
 
     #[test]
