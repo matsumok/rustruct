@@ -70,10 +70,10 @@ fn the_page_shows_the_shared_values_and_the_point_results_in_order() {
         &text,
         &[
             "共有値",
-            "E（N/mm²）",
+            "E（×10⁴ N/mm²）",
             "γ₁（kN/m³）",
             "wp（N/m²）",
-            "22,669",
+            "2.27",
             "24.0",
             "2,800",
             "必要スラブ厚",
@@ -163,7 +163,7 @@ fn blank_criteria_with_the_table_off_is_an_error_and_nothing_is_evaluated() {
     assert!(r.errors.is_empty());
     assert!(point_values(&r.point).iter().all(|v| *v == "—"), "{r:#?}");
     // 共有値は条件だけで決まるので出る
-    assert_eq!(shared_values(&r.shared), ["22,669", "24.0", "2,800"]);
+    assert_eq!(shared_values(&r.shared), ["2.27", "24.0", "2,800"]);
 }
 
 #[test]
@@ -180,7 +180,7 @@ fn an_unreadable_span_leaves_the_shared_values_and_dashes_the_point() {
         ]
     );
     assert!(point_values(&r.point).iter().all(|v| *v == "—"), "{r:#?}");
-    assert_eq!(shared_values(&r.shared), ["22,669", "24.0", "2,800"]);
+    assert_eq!(shared_values(&r.shared), ["2.27", "24.0", "2,800"]);
 }
 
 #[test]

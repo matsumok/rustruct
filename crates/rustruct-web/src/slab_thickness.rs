@@ -5,7 +5,7 @@
 //! 今は検討点を 1 つだけ入れる。検討点のシートと等厚曲線の図は後の Issue。
 
 use dioxus::prelude::*;
-use numerus::fixed;
+use numerus::{fixed, scaled};
 use rustruct_calc::slab_thickness::{
     Conditions, CriteriaSet, Criterion, Evaluation, SharedValues, Spans, evaluate, shared_values,
 };
@@ -142,7 +142,7 @@ pub struct SlabReadout {
 /// 共有値の行
 #[derive(Debug, Clone, PartialEq)]
 pub struct SharedRow {
-    /// ヤング係数 E（N/mm²）
+    /// ヤング係数 E（×10⁴ N/mm²）。仮数を有効数字 3 桁（Data のコンクリートのページと同じ書き方）
     pub young_modulus: String,
     /// 鉄筋コンクリートの単位体積重量 γ₁（kN/m³）
     pub rc_unit_weight: String,
@@ -252,7 +252,7 @@ impl SharedRow {
                 wp: NOT_COMPUTED.into(),
             },
             Some(v) => Self {
-                young_modulus: fixed(v.young_modulus.as_n_per_mm2(), 0),
+                young_modulus: scaled(v.young_modulus.as_n_per_mm2(), 4, 3),
                 rc_unit_weight: fixed(v.rc_unit_weight.as_kn_per_m3(), 1),
                 wp: fixed(v.wp.as_n_per_m2(), 0),
             },
@@ -334,7 +334,7 @@ pub(crate) fn SlabThicknessPage() -> Element {
                             Table { fixed: true,
                                 thead {
                                     HeadRow {
-                                        HeadCell { "E（N/mm²）" }
+                                        HeadCell { "E（×10⁴ N/mm²）" }
                                         HeadCell { "γ₁（kN/m³）" }
                                         HeadCell { "wp（N/m²）" }
                                     }
