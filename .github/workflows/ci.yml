@@ -150,7 +150,8 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           URL: ${{ steps.publish.outputs.url }}
           SHA: ${{ github.event.pull_request.head.sha }}
-        run: gh pr comment "$PR" --edit-last --create-if-none --body "プレビュー: $URL （$SHA）"
+        run: |
+          gh pr comment "$PR" --edit-last --create-if-none --body "プレビュー: $URL （$SHA）"
 
   cleanup:
     name: プレビューを消す
