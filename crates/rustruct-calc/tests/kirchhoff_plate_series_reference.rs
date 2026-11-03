@@ -8,7 +8,7 @@ use common::{
     integrated_reaction, navier, plate, rigidity,
 };
 use rustruct_calc::kirchhoff_plate::{
-    Plate, PlateError, PointResponse, Solution, SupportType, series, solve, solve_with_series,
+    Plate, PlateError, PointResponse, Solution, SupportType, TERMS, solve, solve_with_series,
 };
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Support, Supports};
 
@@ -24,7 +24,7 @@ const FFFR: Supports = Supports {
 
 /// 参照解を既定の項数で
 fn reference(plate: &Plate) -> Solution {
-    solve_with_series(plate, series::TERMS)
+    solve_with_series(plate, TERMS)
         .unwrap()
         .expect("参照解のある型")
 }
@@ -33,7 +33,7 @@ fn reference(plate: &Plate) -> Solution {
 fn only_the_fixed_and_the_simply_supported_types_have_a_reference() {
     for ty in SupportType::ALL {
         let p = plate(2000.0, 3000.0, 0.2, 10.0, ty.representative());
-        let result = solve_with_series(&p, series::TERMS);
+        let result = solve_with_series(&p, TERMS);
         match ty {
             _ if !ty.is_stable() => {
                 assert_eq!(result.err(), Some(PlateError::Unstable(ty)));
@@ -176,8 +176,8 @@ fn assert_doubling_the_terms_changes_nothing(
     what: &str,
     excluded: impl Fn(&Solution, &PointResponse) -> bool,
 ) {
-    let a = solve_with_series(p, series::TERMS).unwrap().unwrap();
-    let b = solve_with_series(p, 2 * series::TERMS).unwrap().unwrap();
+    let a = solve_with_series(p, TERMS).unwrap().unwrap();
+    let b = solve_with_series(p, 2 * TERMS).unwrap().unwrap();
     let (ga, gb) = (a.grid(20, 20), b.grid(20, 20));
     let mut m_scale = 0.0;
     for (name, f) in POINT_QUANTITIES {
@@ -349,7 +349,7 @@ fn report_deviations_and_timing() {
                     "== {symbol} ν = {nu} 比 {ratio}: 解 {solved:?}、51×51 と辺 4 本の評価 {evaluated:?}"
                 );
                 let t = std::time::Instant::now();
-                let series = solve_with_series(&p, series::TERMS).unwrap();
+                let series = solve_with_series(&p, TERMS).unwrap();
                 if let Some(series) = series {
                     let solved = t.elapsed();
                     let t = std::time::Instant::now();
