@@ -6,12 +6,21 @@ const DECIMAL_EXPONENTS: std::ops::Range<i32> = -3..6;
 /// 有効数字 `figures` 桁で書く。末尾の 0 も桁として残す（0.560）。整数部が桁を超えるときは整数で（1,140）。
 /// 0 は「0」。規格の丸め（JIS の丸めなど）は呼ぶ側で済ませ、ここは表示の桁をそろえて書くだけにする
 pub fn significant(x: f64, figures: u32) -> String {
-    scaled(x, 0, figures)
+    mantissa(x, 0, figures)
 }
 
-/// x を 10^`exponent` で割った仮数を、有効数字 `figures` 桁で書く（`scaled(22_669.0, 4, 3)` は「2.27」）。
-/// 10^`exponent` は呼ぶ側が列の見出しに書く。丸めは [`significant`] と同じで、割り算はせずに末位の位をずらす
+/// x を 10^`exponent` の倍数として、仮数を有効数字 `figures` 桁で書き、×10ⁿ まで付ける
+/// （`scaled(22_669.0, 4, 3)` は「2.27×10⁴」）。丸めは [`significant`] と同じ。0 は「0」
 pub fn scaled(x: f64, exponent: i32, figures: u32) -> String {
+    let m = mantissa(x, exponent, figures);
+    if x == 0.0 || !x.is_finite() {
+        return m;
+    }
+    format!("{m}×10{}", superscript(exponent))
+}
+
+/// x を 10^`exponent` で割った仮数を、有効数字 `figures` 桁で書く。割り算はせずに末位の位をずらす
+fn mantissa(x: f64, exponent: i32, figures: u32) -> String {
     if x == 0.0 || !x.is_finite() {
         return at_place(x, 0);
     }
@@ -71,6 +80,19 @@ fn write(negative: bool, units: u128, place: i32) -> String {
     let digits = format!("{digits:0>width$}", width = decimals + 1);
     let (whole, fraction) = digits.split_at(digits.len() - decimals);
     format!("{sign}{}.{fraction}", grouped(whole))
+}
+
+/// 整数を上付きの文字で書く（4 → 「⁴」、-6 → 「⁻⁶」）
+fn superscript(n: i32) -> String {
+    const DIGITS: [char; 10] = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'];
+    let sign = if n < 0 { "⁻" } else { "" };
+    let digits: String = n
+        .unsigned_abs()
+        .to_string()
+        .bytes()
+        .map(|b| DIGITS[(b - b'0') as usize])
+        .collect();
+    format!("{sign}{digits}")
 }
 
 /// 整数部を 3 桁ごとに「,」で区切る（1140 → 1,140）
@@ -168,18 +190,19 @@ mod tests {
     }
 
     #[test]
-    fn scaled_writes_the_mantissa_of_ten_to_the_n() {
-        assert_eq!(scaled(22_669.0, 4, 3), "2.27");
-        assert_eq!(scaled(33_500.0, 4, 3), "3.35");
-        assert_eq!(scaled(-15_512.0, 3, 3), "-15.5");
+    fn scaled_writes_the_mantissa_and_ten_to_the_n() {
+        assert_eq!(scaled(22_669.0, 4, 3), "2.27×10⁴");
+        assert_eq!(scaled(33_500.0, 4, 3), "3.35×10⁴");
+        assert_eq!(scaled(-15_512.0, 3, 3), "-15.5×10³");
+        assert_eq!(scaled(0.0000152, -6, 3), "15.2×10⁻⁶");
     }
 
     #[test]
     fn scaled_rounds_like_significant() {
         // 2.2650 は四捨五入で上がる。0.0034650 も 2 進の誤差を落としてから丸める
-        assert_eq!(scaled(22_650.0, 4, 3), "2.27");
-        assert_eq!(scaled(0.003465, -3, 3), "3.47");
-        assert_eq!(scaled(99_960.0, 4, 3), "10.0");
+        assert_eq!(scaled(22_650.0, 4, 3), "2.27×10⁴");
+        assert_eq!(scaled(0.003465, -3, 3), "3.47×10⁻³");
+        assert_eq!(scaled(99_960.0, 4, 3), "10.0×10⁴");
         assert_eq!(scaled(0.0, 4, 3), "0");
     }
 
