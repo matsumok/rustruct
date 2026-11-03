@@ -2,7 +2,7 @@
 //! 言葉は `docs/tools/kirchhoff-plate/GLOSSARY.md`。数値は `rustruct-calc` が出し、ここでは表示の文字列を見る。
 
 mod common;
-use common::{assert_in_order, element, text_of};
+use common::{assert_in_order, element, reasons, text_of};
 use rustruct_types::kirchhoff_plate::{Edge, Support};
 use rustruct_web::{InputField, PlateFigure, PlateInputs, PlateReadout, Quantity, render_path};
 
@@ -203,7 +203,7 @@ fn unreadable_fields_are_named_with_their_reasons_and_nothing_is_computed() {
         i.set(InputField::Load, "");
     });
     assert_eq!(
-        r.errors,
+        reasons(&r.errors),
         [
             (InputField::Lx, "0 より大きい値を入れる"),
             (InputField::Thickness, "0 より大きい値を入れる"),
@@ -451,4 +451,14 @@ fn the_shear_figure_of_a_plate_with_a_free_edge_is_read_inside_the_plate() {
     );
     let fixed = PlateFigure::from_inputs(&PlateInputs::default(), Quantity::Qx).unwrap();
     assert!(fixed.notes.is_empty(), "{:?}", fixed.notes);
+}
+
+#[test]
+fn a_negative_poisson_ratio_is_named_with_the_range_of_poisson_ratio() {
+    let r = readout(|i| i.set(InputField::PoissonRatio, "-0.1"));
+    assert_eq!(
+        reasons(&r.errors),
+        [(InputField::PoissonRatio, "0 以上 0.5 未満で入れる")]
+    );
+    assert_not_computed(&r);
 }
