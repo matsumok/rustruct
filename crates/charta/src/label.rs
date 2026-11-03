@@ -1,15 +1,14 @@
 //! 線の上の数値（`docs/adr/0011`）。等幅の小さな文字を `ink` で書き、`paper` の縁で白抜きにする。
 //! 線に沿って傾け、上下が逆にならないように ±90° に収める。置く場所の候補は図ごとに決め（分布図は
 //! 中心からの十字、等厚曲線の図は対角線）、ここは候補を順に、図の中でぶつからないものだけ残す。
+//! 図の上の印や文字にかかる候補は、同じ線の上の別の場所を試せる（[`place_groups`]）。
 
 use crate::scene::{Anchor, Font, Item, Paint, Pt, Stroke};
 
 /// 線の上の数値の文字の大きさ。文字の段（`label`・`body`）の外で、この数値だけに使う。`docs/adr/0011`。
 pub const LABEL_SIZE: f64 = 9.0;
-/// 白抜きの縁の太さ。`docs/adr/0011`。
+/// 白抜きの縁の太さ。線の上の数値と、図に重ねる名前や要約の文字に使う。`docs/adr/0011`。
 pub const HALO_WIDTH: f64 = 2.5;
-/// 等幅書体の 1 文字の送り（文字の大きさに対する比）。数値の幅の見積もりに使う。
-const MONO_ADVANCE: f64 = 0.6;
 
 /// 置く候補。`at` は文字の中心、`angle` は線の向き（度）。
 pub(crate) struct Candidate {
@@ -33,7 +32,7 @@ impl Label {
             at: c.at,
             angle: upright(c.angle),
             size: [
-                c.text.chars().count() as f64 * LABEL_SIZE * MONO_ADVANCE + HALO_WIDTH,
+                Font::Mono.width(&c.text, LABEL_SIZE) + HALO_WIDTH,
                 LABEL_SIZE + HALO_WIDTH,
             ],
             text: c.text,
@@ -71,26 +70,47 @@ pub(crate) fn place(
     bounds: [Pt; 2],
     clear: &[[Pt; 2]],
 ) -> Vec<Label> {
+    place_groups(candidates.into_iter().map(|c| vec![c]), bounds, clear)
+}
+
+/// 候補の組を並びの順に置く。組の最初の候補が置ければそれを置く。最初の候補が矩形 `bounds`（左上と右下）
+/// からはみ出すか矩形 `clear` にぶつかるときは、組の残り（同じ線の上の別の場所）を順に試し、どれにも
+/// ぶつからない最初の 1 つを置く。最初の候補が先に置いた数値とぶつかるときは、組ごと置かない（ぶつかる
+/// 数値は並びの先のものを残す）。組の残りがどれも置けないときも置かない。
+pub(crate) fn place_groups(
+    groups: impl IntoIterator<Item = Vec<Candidate>>,
+    bounds: [Pt; 2],
+    clear: &[[Pt; 2]],
+) -> Vec<Label> {
     let [lo, hi] = bounds;
     let clear: Vec<[Pt; 4]> = clear
         .iter()
         .map(|[a, b]| [*a, [b[0], a[1]], *b, [a[0], b[1]]])
         .collect();
-    let mut placed: Vec<Label> = Vec::new();
-    for candidate in candidates {
-        let label = Label::new(candidate);
-        let corners = label.corners();
-        let inside = corners
+    let free = |corners: &[Pt; 4]| {
+        corners
             .iter()
-            .all(|p| p[0] >= lo[0] && p[0] <= hi[0] && p[1] >= lo[1] && p[1] <= hi[1]);
-        if inside
-            && clear.iter().all(|c| !overlaps(&corners, c))
-            && placed
+            .all(|p| p[0] >= lo[0] && p[0] <= hi[0] && p[1] >= lo[1] && p[1] <= hi[1])
+            && clear.iter().all(|c| !overlaps(corners, c))
+    };
+    let mut placed: Vec<Label> = Vec::new();
+    for group in groups {
+        let mut group = group.into_iter().map(Label::new);
+        let Some(first) = group.next() else {
+            continue;
+        };
+        let apart = |label: &Label, placed: &[Label]| {
+            let corners = label.corners();
+            placed
                 .iter()
                 .all(|other| !overlaps(&corners, &other.corners()))
-        {
-            placed.push(label);
-        }
+        };
+        let chosen = if free(&first.corners()) {
+            apart(&first, &placed).then_some(first)
+        } else {
+            group.find(|label| free(&label.corners()) && apart(label, &placed))
+        };
+        placed.extend(chosen);
     }
     placed
 }

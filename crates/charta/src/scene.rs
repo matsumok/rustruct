@@ -49,6 +49,23 @@ pub enum Font {
     Mono,
 }
 
+impl Font {
+    /// 1 文字の送りの見込み（文字の大きさに対する比）。等幅は 0.6 字。和文の書体は、欧文と数字が 0.6 字、
+    /// ほかが 1 字。文字を置く場所の見積もり（枠の周りの空き、数値や名前のぶつかり）に使う
+    pub fn advance(self, c: char) -> f64 {
+        match self {
+            Font::Mono => 0.6,
+            Font::Sans if c.is_ascii() => 0.6,
+            Font::Sans => 1.0,
+        }
+    }
+
+    /// 文字列の幅の見込み。`size` は文字の大きさ
+    pub fn width(self, text: &str, size: f64) -> f64 {
+        text.chars().map(|c| self.advance(c)).sum::<f64>() * size
+    }
+}
+
 /// 文字の寄せ。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Anchor {
@@ -188,6 +205,13 @@ impl Scene {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn text_width_counts_latin_and_digits_as_six_tenths_and_others_as_one() {
+        assert_eq!(Font::Mono.width("1,000", 10.0), 30.0);
+        assert_eq!(Font::Sans.width("S1", 10.0), 12.0);
+        assert_eq!(Font::Sans.width("検討", 10.0), 20.0);
+    }
 
     #[test]
     fn placed_items_keep_their_shape_and_move_by_the_offset() {

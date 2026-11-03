@@ -30,6 +30,7 @@ pub mod theme;
 pub use contour::{Band, Isoline, contour};
 pub use distribution::distribution;
 pub use grid::{Grid, GridError};
+pub use label::HALO_WIDTH;
 pub use level_graphs::{LevelGraph, level_graphs};
 pub use palette::Palette;
 pub use plot::{Plot, axes};
