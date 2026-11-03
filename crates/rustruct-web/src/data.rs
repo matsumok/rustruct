@@ -17,6 +17,30 @@ use crate::{Page, Route, RouteList};
 /// 計算できない値の表示（`docs/ui-decisions.md`「エラーと警告」）
 const NOT_COMPUTED: &str = "—";
 
+/// ヤング係数 E を書く 10 の指数。欄には仮数を、10ⁿ は単位と一緒に列の見出しに書く（ADR site-0013）。
+/// 欄と見出しの両方をここから書くので、指数と見出しは食い違わない
+const YOUNG_MODULUS_EXPONENT: i32 = 4;
+
+/// ヤング係数 E の欄。10⁴ N/mm² の仮数を有効数字 3 桁で（「2.27」）。Data のコンクリートのページと
+/// 必要スラブ厚さのページが同じ書き方を使う
+pub(crate) fn young_modulus(e: Stress) -> String {
+    scaled(e.as_n_per_mm2(), YOUNG_MODULUS_EXPONENT, 3)
+}
+
+/// ヤング係数 E の列の見出しに括弧で書く単位（「×10⁴ N/mm²」）
+pub(crate) fn young_modulus_unit() -> String {
+    let exponent: String = YOUNG_MODULUS_EXPONENT
+        .to_string()
+        .chars()
+        .map(|c| match c {
+            '-' => '⁻',
+            digit => ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹']
+                [digit.to_digit(10).expect("i32 の文字は負号と数字だけ") as usize],
+        })
+        .collect();
+    format!("×10{exponent} N/mm²")
+}
+
 /// `/data`。Data の一覧（名前＋一行＋パス）。
 #[component]
 pub(crate) fn DataIndex() -> Element {
@@ -33,7 +57,7 @@ pub enum ConcreteReadout {
     Computed {
         /// 気乾単位体積重量 γ [kN/m³]
         unit_weight: String,
-        /// ヤング係数 E [×10⁴ N/mm²]。仮数を有効数字 3 桁
+        /// ヤング係数 E。書き方は `data::young_modulus`
         young_modulus: String,
         /// 許容応力度。`Allowable::ALL` の順
         allowable_stresses: Vec<AllowableRow>,
@@ -49,7 +73,7 @@ impl ConcreteReadout {
         match Self::concrete(input) {
             Ok(c) => Self::Computed {
                 unit_weight: fixed(c.unit_weight().as_kn_per_m3(), 1),
-                young_modulus: scaled(c.young_modulus().as_n_per_mm2(), 4, 3),
+                young_modulus: young_modulus(c.young_modulus()),
                 allowable_stresses: Allowable::ALL
                     .map(|a| AllowableRow::new(a.name(), a.of(&c)))
                     .to_vec(),
@@ -187,11 +211,6 @@ fn designation_rows() -> Vec<(&'static str, [String; 4])> {
         .collect()
 }
 
-/// 表の Fc の区分の境。表に整数で書かれているので整数で書く
-fn fc_bound(fc: Stress) -> String {
-    fixed(fc.as_n_per_mm2(), 0)
-}
-
 /// 気乾単位体積重量の表の行: (Fc の区分, γ)
 fn unit_weight_rows() -> Vec<(String, String)> {
     let mut lower: Option<String> = None;
@@ -199,7 +218,7 @@ fn unit_weight_rows() -> Vec<(String, String)> {
         .unit_weight_table()
         .iter()
         .map(|row| {
-            let upper = fc_bound(row.fc_upper);
+            let upper = integer(row.fc_upper);
             let range = match &lower {
                 None => format!("Fc ≦ {upper}"),
                 Some(lower) => format!("{lower} < Fc ≦ {upper}"),
@@ -217,6 +236,7 @@ pub(crate) fn ConcretePage() -> Element {
     let mut fc = use_signal(|| "24".to_string());
     let readout = ConcreteReadout::from_fc_input(&fc.read());
     let [unit_weight, young_modulus] = readout.values().map(str::to_string);
+    let young_modulus_unit = young_modulus_unit();
     let allowable_rows = readout.allowable_rows();
     let long_term_pads = point_pads(allowable_rows.iter().map(|row| &row.long_term));
     let short_term_pads = point_pads(allowable_rows.iter().map(|row| &row.short_term));
@@ -224,7 +244,7 @@ pub(crate) fn ConcretePage() -> Element {
         ConcreteReadout::Computed { warning, .. } => (None, warning.clone()),
         ConcreteReadout::Unusable { error } => (Some(error.clone()), None),
     };
-    let fc_max = fc_bound(
+    let fc_max = integer(
         ConcreteKind::Normal
             .unit_weight_table()
             .last()
@@ -265,7 +285,7 @@ pub(crate) fn ConcretePage() -> Element {
                             thead {
                                 HeadRow {
                                     HeadCell { "気乾単位体積重量 γ（kN/m³）" }
-                                    HeadCell { "ヤング係数 E（×10⁴ N/mm²）" }
+                                    HeadCell { "ヤング係数 E（{young_modulus_unit}）" }
                                 }
                             }
                             tbody {
@@ -470,7 +490,7 @@ fn long_term_tension_compression_d29_and_up(kind: RebarKind) -> String {
     }
 }
 
-/// 表 6.2 の値は整数で書かれているので、そのまま整数で出す
+/// 表に整数で書かれている値（表 6.2 の許容応力度、Fc の区分の境）は、そのまま整数で出す
 fn integer(stress: Stress) -> String {
     fixed(stress.as_n_per_mm2(), 0)
 }

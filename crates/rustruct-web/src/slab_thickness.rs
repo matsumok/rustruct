@@ -5,13 +5,14 @@
 //! 今は検討点を 1 つだけ入れる。検討点のシートと等厚曲線の図は後の Issue。
 
 use dioxus::prelude::*;
-use numerus::{fixed, scaled};
+use numerus::fixed;
 use rustruct_calc::slab_thickness::{
     Conditions, CriteriaSet, Criterion, Evaluation, SharedValues, Spans, evaluate, shared_values,
 };
 use rustruct_types::concrete::{Concrete, ConcreteKind};
 use rustruct_types::quantity::{AreaLoad, Length, Stress};
 
+use crate::data::{young_modulus, young_modulus_unit};
 use crate::inputs::{Definition, Field, InputGroup, Inputs, Kind, Layout, Reason, Sign};
 use crate::table::{
     Block, Caption, Column, Columns, HeadCell, HeadRow, Notes, NumCell, Row, Table, TextCell,
@@ -142,7 +143,7 @@ pub struct SlabReadout {
 /// 共有値の行
 #[derive(Debug, Clone, PartialEq)]
 pub struct SharedRow {
-    /// ヤング係数 E（×10⁴ N/mm²）。仮数を有効数字 3 桁（Data のコンクリートのページと同じ書き方）
+    /// ヤング係数 E。書き方は `data::young_modulus`
     pub young_modulus: String,
     /// 鉄筋コンクリートの単位体積重量 γ₁（kN/m³）
     pub rc_unit_weight: String,
@@ -252,7 +253,7 @@ impl SharedRow {
                 wp: NOT_COMPUTED.into(),
             },
             Some(v) => Self {
-                young_modulus: scaled(v.young_modulus.as_n_per_mm2(), 4, 3),
+                young_modulus: young_modulus(v.young_modulus),
                 rc_unit_weight: fixed(v.rc_unit_weight.as_kn_per_m3(), 1),
                 wp: fixed(v.wp.as_n_per_m2(), 0),
             },
@@ -309,6 +310,7 @@ pub(crate) fn SlabThicknessPage() -> Element {
         rc_unit_weight,
         wp,
     } = readout.shared.clone();
+    let young_modulus_unit = young_modulus_unit();
     let point = readout.point.clone();
     let across = if readout.no_criteria {
         vec![(SlabField::CRITERIA.to_vec(), NO_CRITERIA)]
@@ -334,7 +336,7 @@ pub(crate) fn SlabThicknessPage() -> Element {
                             Table { fixed: true,
                                 thead {
                                     HeadRow {
-                                        HeadCell { "E（×10⁴ N/mm²）" }
+                                        HeadCell { "E（{young_modulus_unit}）" }
                                         HeadCell { "γ₁（kN/m³）" }
                                         HeadCell { "wp（N/m²）" }
                                     }
