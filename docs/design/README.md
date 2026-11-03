@@ -69,11 +69,12 @@ rustruct は、構造計算のツール（Tools）、材料や規格の値（Dat
 ## 余白と形
 
 - ページ左右の余白はスマホ `space-5`、iPad（768px〜）`space-7`、PC（1024px〜）`space-8`。セクション間は `space-7`、トップの一文の上下は `space-8`。縦の余白は画面幅で変えない（ADR site-0007）。
+- シェルの寸法は tokens の `layout` に名前で持ち、値は `space-<n>` の参照にする。画面左右の余白は `margin`（`px-margin-sm md:px-margin-md lg:px-margin-lg`。本文・ヘッダー・メニューの左右で、殻の1つの部品が持つ）、計算のページの列の区切りの左右の空きは `gap`（`md:gap-gap-md lg:gap-gap-lg`）、ヘッダーの高さは `header`（`h-header`。メニューの一番上の行と `scroll-padding-top` も同じ）。
 - 余白は tokens の段だけを使い、段を増やさない。`space-9` は計算のページの区切りの左右だけで、それより大きい余白は使わない。
 - 一覧のグリッドは2列まで。スマホは1列、768px から 1単位の列を2つ。横の溝 `space-4`、縦の溝 `space-6`。
 - 本文の1単位は 335px（`width-column`。iPhone SE の本文の幅）。表と図は1単位か2単位に収める。スマホでは列を画面いっぱいにし、768px からはこの幅の列を並べる。計算のページの2列の区切りは「ツール画面の約束」。一覧の2列は `space-4` の溝（ADR site-0006、ADR site-0007）。
 - 切り替わる幅は 768px（`md`）と 1024px（`lg`）の2つだけ。768px から `display`・`title`・`figure`・`prose` を約 1.2 倍にする（36 / 26 / 64 / 17px）。1つの役割の大きさは2つまで。ほかの文字はどの幅でも同じ。
-- 本文は中央に寄せ、最大幅は2単位（本文の箱は2列と区切りの線と左右の空き。iPad 703px `max-w-page`、PC 831px `lg:max-w-page-lg`。1単位と `space-4`・`space-9` から導く）。
+- 本文は中央に寄せ、最大幅は2単位（本文の箱は2列と区切りの線と左右の空き。iPad 703px `max-w-page`、PC 831px `lg:max-w-page-lg`。1単位と `gap` から導く）。
 - 角は `radius-0` が既定。`radius-8` はボタンとツールの入力カードだけ。
 - 影、グラデーション、ぼかし、トランジションは使わない。
 

@@ -57,6 +57,12 @@
     --spacing-7: 40px;
     --spacing-8: 48px;
     --spacing-9: 80px;
+    --spacing-margin-lg: 48px;
+    --spacing-margin-md: 40px;
+    --spacing-margin-sm: 20px;
+    --spacing-gap-lg: 80px;
+    --spacing-gap-md: 16px;
+    --spacing-header: 48px;
     --radius-0: 0px;
     --radius-8: 8px;
     --radius-full: 9999px;
@@ -298,11 +304,11 @@
   .h-6 {
     height: var(--spacing-6);
   }
-  .h-8 {
-    height: var(--spacing-8);
-  }
   .h-auto {
     height: auto;
+  }
+  .h-header {
+    height: var(--spacing-header);
   }
   .w-column {
     width: var(--container-column);
@@ -462,8 +468,8 @@
   .px-3 {
     padding-inline: var(--spacing-3);
   }
-  .px-5 {
-    padding-inline: var(--spacing-5);
+  .px-margin-sm {
+    padding-inline: var(--spacing-margin-sm);
   }
   .py-2 {
     padding-block: var(--spacing-2);
@@ -637,11 +643,6 @@
       outline-color: var(--color-ink);
     }
   }
-  .md\:box-content {
-    @media (width >= 768px) {
-      box-sizing: content-box;
-    }
-  }
   .md\:block {
     @media (width >= 768px) {
       display: block;
@@ -697,9 +698,9 @@
       align-items: flex-start;
     }
   }
-  .md\:gap-4 {
+  .md\:gap-gap-md {
     @media (width >= 768px) {
-      gap: var(--spacing-4);
+      gap: var(--spacing-gap-md);
     }
   }
   .md\:self-stretch {
@@ -719,9 +720,9 @@
       border-left-width: 1px;
     }
   }
-  .md\:px-7 {
+  .md\:px-margin-md {
     @media (width >= 768px) {
-      padding-inline: var(--spacing-7);
+      padding-inline: var(--spacing-margin-md);
     }
   }
   .lg\:max-w-page-lg {
@@ -729,14 +730,19 @@
       max-width: var(--container-page-lg);
     }
   }
-  .lg\:gap-9 {
+  .lg\:gap-gap-lg {
     @media (width >= 1024px) {
-      gap: var(--spacing-9);
+      gap: var(--spacing-gap-lg);
     }
   }
   .lg\:px-8 {
     @media (width >= 1024px) {
       padding-inline: var(--spacing-8);
+    }
+  }
+  .lg\:px-margin-lg {
+    @media (width >= 1024px) {
+      padding-inline: var(--spacing-margin-lg);
     }
   }
   .dark\:block {
@@ -868,7 +874,7 @@
     background-color: var(--color-paper);
     color: var(--color-ink);
     font-family: var(--font-sans);
-    scroll-padding-top: var(--spacing-8);
+    scroll-padding-top: var(--spacing-header);
     scrollbar-gutter: stable;
   }
 }

@@ -1,7 +1,7 @@
 //! サイトの画面。Dioxus fullstack で、`web`（ブラウザ）と `server`（SSG）の feature で切り替える。
 //! ネイティブの `cargo test` では feature なしで HTML を描き、ブラウザも WASM も使わない。
 //!
-//! 見た目はすべて役割名のクラス（`text-ink`、`text-wordmark`、`px-5` …）で書く。値は
+//! 見た目はすべて役割名のクラス（`text-ink`、`text-wordmark`、`gap-4` …）で書く。値は
 //! `docs/design/tokens.json` にだけあり、`theme.css` を経て Tailwind のクラスになる。
 
 use dioxus::prelude::*;
@@ -266,7 +266,7 @@ pub fn App() -> Element {
 }
 
 /// 全ページ共通の枠。上に固定するヘッダーと、その下の本文（ADR site-0007）。
-/// 本文はページの左右の余白（スマホ `space-5`、iPad `space-7`、PC `space-8`）の内側に置く。
+/// 本文は画面の左右の余白（`Margin`）の内側に置く。
 #[component]
 fn Frame() -> Element {
     let route = use_route::<Route>();
@@ -274,7 +274,16 @@ fn Frame() -> Element {
         document::Title { "{route.title()}" }
         document::Meta { name: "description", content: route.text().description }
         Header { route: route.clone() }
-        div { class: "px-5 md:px-7 lg:px-8", Outlet::<Route> {} }
+        Margin { Outlet::<Route> {} }
+    }
+}
+
+/// 画面の左右の余白（tokens の `layout` の `margin`。スマホ `space-5`、iPad `space-7`、PC `space-8`）を内側に持つ箱。
+/// 本文・ヘッダー・メニューの行が使い、余白の段はここにだけ書く。`class` はこの箱の残りの形（並べ方・罫・塗り）。
+#[component]
+fn Margin(#[props(default)] class: &'static str, children: Element) -> Element {
+    rsx! {
+        div { class: "px-margin-sm md:px-margin-md lg:px-margin-lg", class: "{class}", {children} }
     }
 }
 
@@ -287,41 +296,43 @@ fn Header(route: Route) -> Element {
     let mut menu_open = use_signal(|| false);
     let mut account_note = use_signal(|| false);
     rsx! {
-        header { class: "sticky top-0 z-20 flex h-8 items-center justify-between border-b border-line bg-paper px-5 md:px-7 lg:px-8",
-            div { class: "flex items-center gap-4",
-                // 閉じるボタンはメニューの右上にある（メニューは幕ごとヘッダーに重なる）
-                button {
-                    class: "p-3 text-ink",
-                    r#type: "button",
-                    "aria-label": "メニューを開く",
-                    "aria-expanded": if menu_open() { "true" } else { "false" },
-                    onclick: move |_| menu_open.set(true),
-                    MenuIcon { class: "size-5" }
-                }
-                Link { to: Route::Home {}, onclick: move |_| menu_open.set(false), Wordmark {} }
-                Breadcrumb { route: route.clone() }
-            }
-            div { class: "flex items-center gap-4",
-                button {
-                    class: "p-3 text-ink",
-                    r#type: "button",
-                    "aria-label": "ライトとダークを切り替える",
-                    onclick: move |_| toggle_theme(),
-                    ThemeIcon {}
-                }
-                // 準備中の一言はボタンの下に重ねて出し、ヘッダーの並びを動かさない
-                div { class: "relative",
+        header { class: "sticky top-0 z-20",
+            Margin { class: "flex h-header items-center justify-between border-b border-line bg-paper",
+                div { class: "flex items-center gap-4",
+                    // 閉じるボタンはメニューの右上にある（メニューは幕ごとヘッダーに重なる）
                     button {
                         class: "p-3 text-ink",
                         r#type: "button",
-                        "aria-label": "アカウント",
-                        "aria-expanded": if account_note() { "true" } else { "false" },
-                        onclick: move |_| account_note.toggle(),
-                        UserIcon { class: "size-5" }
+                        "aria-label": "メニューを開く",
+                        "aria-expanded": if menu_open() { "true" } else { "false" },
+                        onclick: move |_| menu_open.set(true),
+                        MenuIcon { class: "size-5" }
                     }
-                    if account_note() {
-                        p { class: "absolute top-full right-0 whitespace-nowrap border border-line bg-paper px-3 py-2 text-label text-muted",
-                            {ACCOUNT_NOTE}
+                    Link { to: Route::Home {}, onclick: move |_| menu_open.set(false), Wordmark {} }
+                    Breadcrumb { route: route.clone() }
+                }
+                div { class: "flex items-center gap-4",
+                    button {
+                        class: "p-3 text-ink",
+                        r#type: "button",
+                        "aria-label": "ライトとダークを切り替える",
+                        onclick: move |_| toggle_theme(),
+                        ThemeIcon {}
+                    }
+                    // 準備中の一言はボタンの下に重ねて出し、ヘッダーの並びを動かさない
+                    div { class: "relative",
+                        button {
+                            class: "p-3 text-ink",
+                            r#type: "button",
+                            "aria-label": "アカウント",
+                            "aria-expanded": if account_note() { "true" } else { "false" },
+                            onclick: move |_| account_note.toggle(),
+                            UserIcon { class: "size-5" }
+                        }
+                        if account_note() {
+                            p { class: "absolute top-full right-0 whitespace-nowrap border border-line bg-paper px-3 py-2 text-label text-muted",
+                                {ACCOUNT_NOTE}
+                            }
                         }
                     }
                 }
@@ -394,7 +405,7 @@ fn Menu(route: Route, open: Signal<bool>) -> Element {
             DialogContent {
                 class: "fixed inset-y-0 left-0 w-full overflow-y-auto border-r border-line bg-paper md:w-auto",
                 DialogTitle { class: "sr-only", "メニュー" }
-                div { class: "flex h-8 items-center justify-end border-b border-line px-5 md:px-7 lg:px-8",
+                Margin { class: "flex h-header items-center justify-end border-b border-line",
                     button {
                         class: "p-3 text-ink",
                         r#type: "button",
@@ -403,9 +414,11 @@ fn Menu(route: Route, open: Signal<bool>) -> Element {
                         CloseIcon { class: "size-5" }
                     }
                 }
-                ul { class: "px-5 py-4 md:w-column md:box-content md:px-7 lg:px-8",
-                    for s in Route::sections() {
-                        MenuNode { node: s, here: route.clone(), depth: 0, on_close: move |_| open.set(false) }
+                Margin {
+                    ul { class: "py-4 md:w-column",
+                        for s in Route::sections() {
+                            MenuNode { node: s, here: route.clone(), depth: 0, on_close: move |_| open.set(false) }
+                        }
                     }
                 }
             }
