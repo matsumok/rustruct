@@ -4,7 +4,9 @@
 mod common;
 use common::{assert_in_order, element, reasons, text_of};
 use rustruct_types::kirchhoff_plate::{Edge, Support};
-use rustruct_web::{InputField, PlateFigure, PlateInputs, PlateReadout, Quantity, render_path};
+use rustruct_web::{
+    InputField, PlateFigure, PlateInputs, PlateOutcome, PlateReadout, Quantity, render_path,
+};
 
 #[test]
 fn tools_lists_kirchhoff_plate_under_the_mechanics_heading() {
@@ -127,7 +129,7 @@ fn the_signs_are_stated_in_the_notes() {
 fn readout(change: impl FnOnce(&mut PlateInputs)) -> PlateReadout {
     let mut inputs = PlateInputs::default();
     change(&mut inputs);
-    PlateReadout::from_inputs(&inputs)
+    PlateOutcome::from_inputs(&inputs).readout
 }
 
 /// 4 辺とも同じ支持条件にする
@@ -272,6 +274,12 @@ fn the_edge_moment_of_a_simply_supported_edge_is_zero_with_no_position() {
     }
 }
 
+/// 入力から、ページと同じ経路で 1 つの量の分布図。解けなければ図は無い
+fn figure_of(inputs: &PlateInputs, quantity: Quantity) -> Option<PlateFigure> {
+    let field = PlateOutcome::from_inputs(inputs).field?;
+    Some(PlateFigure::new(&field, quantity))
+}
+
 /// 分布図の SVG の、等値線の上の数値（3 桁区切りの「,」を外して読む）
 fn figure_numbers(svg: &str) -> Vec<f64> {
     svg.split("<text")
@@ -331,7 +339,7 @@ fn each_switch_names_its_figure_with_the_unit() {
 #[test]
 fn a_moment_figure_of_the_fixed_plate_reads_both_signs() {
     // 四辺固定の Mx は中央で正、x = 0 と x = Lx の辺の近くで負
-    let figure = PlateFigure::from_inputs(&PlateInputs::default(), Quantity::Mx).unwrap();
+    let figure = figure_of(&PlateInputs::default(), Quantity::Mx).unwrap();
     let numbers = figure_numbers(&figure.light_svg);
     assert!(numbers.iter().any(|v| *v > 0.0), "{numbers:?}");
     assert!(numbers.iter().any(|v| *v < 0.0), "{numbers:?}");
@@ -347,7 +355,7 @@ fn the_figure_follows_the_aspect_of_the_plate_within_one_column_and_names_each_s
         };
         (attr("width"), attr("height"))
     };
-    let tall = PlateFigure::from_inputs(&PlateInputs::default(), Quantity::W).unwrap();
+    let tall = figure_of(&PlateInputs::default(), Quantity::W).unwrap();
     let mut inputs = PlateInputs::default();
     inputs.set(InputField::Lx, "8.0");
     inputs.set(InputField::Ly, "2.0");
@@ -356,7 +364,7 @@ fn the_figure_follows_the_aspect_of_the_plate_within_one_column_and_names_each_s
         InputField::Support(Edge::Y0),
         Support::SimplySupported.symbol(),
     );
-    let wide = PlateFigure::from_inputs(&inputs, Quantity::W).unwrap();
+    let wide = figure_of(&inputs, Quantity::W).unwrap();
     let ((tw, th), (ww, wh)) = (size(&tall.light_svg), size(&wide.light_svg));
     // 長い辺の向きが 1 単位（335）いっぱい
     assert_eq!((th, ww), (335.0, 335.0), "{tw}×{th} {ww}×{wh}");
@@ -377,10 +385,10 @@ fn the_figure_follows_the_aspect_of_the_plate_within_one_column_and_names_each_s
 fn a_plate_that_cannot_be_solved_has_no_figure() {
     let mut unstable = PlateInputs::default();
     set_all(&mut unstable, Support::Free);
-    assert_eq!(PlateFigure::from_inputs(&unstable, Quantity::W), None);
+    assert_eq!(figure_of(&unstable, Quantity::W), None);
     let mut unreadable = PlateInputs::default();
     unreadable.set(InputField::Lx, "0");
-    assert_eq!(PlateFigure::from_inputs(&unreadable, Quantity::W), None);
+    assert_eq!(figure_of(&unreadable, Quantity::W), None);
 }
 
 /// 三辺固定一辺自由（y = Ly の辺が自由）の入力。長い辺（x、5 m）が自由
@@ -406,7 +414,7 @@ fn the_deflection_maximum_of_the_fixed_plate_is_the_centre() {
 
 #[test]
 fn with_a_free_edge_the_deflection_maximum_is_on_that_edge() {
-    let r = PlateReadout::from_inputs(&three_fixed_one_free());
+    let r = PlateOutcome::from_inputs(&three_fixed_one_free()).readout;
     let d = &r.deflection_maximum;
     assert_eq!(
         [d.x.as_deref(), d.y.as_deref()],
@@ -418,7 +426,9 @@ fn with_a_free_edge_the_deflection_maximum_is_on_that_edge() {
     let mut inputs = three_fixed_one_free();
     inputs.set(InputField::Support(Edge::YLy), Support::Fixed.symbol());
     inputs.set(InputField::Support(Edge::Y0), Support::Free.symbol());
-    let moved = PlateReadout::from_inputs(&inputs).deflection_maximum;
+    let moved = PlateOutcome::from_inputs(&inputs)
+        .readout
+        .deflection_maximum;
     assert_eq!(
         [moved.x.as_deref(), moved.y.as_deref()],
         [Some("2.50"), Some("0")]
@@ -430,7 +440,7 @@ fn with_a_free_edge_the_deflection_maximum_is_on_that_edge() {
 fn a_plate_with_a_free_edge_says_how_the_edge_shear_and_reaction_are_taken() {
     // 両端から辺長の 5 % を除いて取る規則（ADR kirchhoff-plate-0008）は計算核の `edge_maximum` のテスト。
     // ここでは注記の文言
-    let r = PlateReadout::from_inputs(&three_fixed_one_free());
+    let r = PlateOutcome::from_inputs(&three_fixed_one_free()).readout;
     assert_eq!(
         r.edge_notes,
         [
@@ -455,7 +465,7 @@ fn a_plate_without_a_free_edge_has_no_notes_on_the_corners() {
 fn the_shear_figure_of_a_plate_with_a_free_edge_is_read_inside_the_plate() {
     // 隅の発散で色の幅を決めると、刻みが粗くなって板の中に等値線がほとんど引かれない。色の幅は隅から
     // 辺長の 5 % 以内の点を除いて決める（ADR kirchhoff-plate-0008）ので、板の中の Qx に正の水準が 3 つ以上読める
-    let figure = PlateFigure::from_inputs(&three_fixed_one_free(), Quantity::Qx).unwrap();
+    let figure = figure_of(&three_fixed_one_free(), Quantity::Qx).unwrap();
     let mut positive: Vec<f64> = figure_numbers(&figure.light_svg)
         .into_iter()
         .filter(|v| *v > 0.0)
@@ -467,7 +477,7 @@ fn the_shear_figure_of_a_plate_with_a_free_edge_is_read_inside_the_plate() {
         figure.notes,
         ["色の幅は、隅から辺長の 5 % 以内の点を除いて決める"]
     );
-    let fixed = PlateFigure::from_inputs(&PlateInputs::default(), Quantity::Qx).unwrap();
+    let fixed = figure_of(&PlateInputs::default(), Quantity::Qx).unwrap();
     assert!(fixed.notes.is_empty(), "{:?}", fixed.notes);
 }
 

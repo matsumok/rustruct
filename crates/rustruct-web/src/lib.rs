@@ -42,18 +42,17 @@ mod slab_thickness;
 
 /// ヘッダーのボタンのアイコン（Carbon）。
 mod icons;
-pub use data::{AllowableRow, ConcreteReadout};
+pub use data::ConcreteReadout;
 use data::{ConcretePage, DataIndex, RebarPage};
 use dioxus_primitives::collapsible::{Collapsible, CollapsibleContent, CollapsibleTrigger};
 use dioxus_primitives::dialog::{DialogContent, DialogRoot, DialogTitle};
 use icons::{ChevronIcon, CloseIcon, DarkIcon, LightIcon, MenuIcon, UserIcon};
 use kirchhoff_plate::KirchhoffPlatePage;
 pub use kirchhoff_plate::{
-    Balance, CenterRow, EdgeRow, InputField, Maximum, PlateFigure, PlateInputs, PlateReadout,
-    Quantity,
+    InputField, PlateFigure, PlateInputs, PlateOutcome, PlateReadout, Quantity,
 };
 use slab_thickness::SlabThicknessPage;
-pub use slab_thickness::{PointRow, SharedRow, SlabField, SlabFigure, SlabInputs, SlabReadout};
+pub use slab_thickness::{SlabField, SlabFigure, SlabInputs, SlabOutcome, SlabReadout};
 #[cfg(feature = "server")]
 pub use ssg::serve_config;
 pub use ssg::{NOT_FOUND_PATH, static_paths};
