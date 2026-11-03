@@ -61,23 +61,23 @@ fn invalid_inputs_are_refused() {
     };
     assert_eq!(
         bad(|p| p.lx = Length::mm(0.0)),
-        Some(PlateError::InvalidInput(InvalidInput::Lx))
+        Some(PlateError::InvalidInput(vec![InvalidInput::Lx]))
     );
     assert_eq!(
         bad(|p| p.ly = Length::mm(-1.0)),
-        Some(PlateError::InvalidInput(InvalidInput::Ly))
+        Some(PlateError::InvalidInput(vec![InvalidInput::Ly]))
     );
     assert_eq!(
         bad(|p| p.thickness = Length::mm(f64::NAN)),
-        Some(PlateError::InvalidInput(InvalidInput::Thickness))
+        Some(PlateError::InvalidInput(vec![InvalidInput::Thickness]))
     );
     assert_eq!(
         bad(|p| p.young_modulus = Stress::n_per_mm2(0.0)),
-        Some(PlateError::InvalidInput(InvalidInput::YoungModulus))
+        Some(PlateError::InvalidInput(vec![InvalidInput::YoungModulus]))
     );
     assert_eq!(
         bad(|p| p.load = AreaLoad::n_per_mm2(f64::INFINITY)),
-        Some(PlateError::InvalidInput(InvalidInput::Load))
+        Some(PlateError::InvalidInput(vec![InvalidInput::Load]))
     );
     // 荷重 0 と負（上向き）は不正ではない
     assert!(bad(|p| p.load = AreaLoad::n_per_mm2(0.0)).is_none());
@@ -445,4 +445,37 @@ fn equal_maxima_on_opposite_free_edges_give_the_one_nearer_the_origin() {
             "反対の自由辺の中央",
         );
     }
+}
+
+/// 不正な欄が 2 つ以上あれば、最初の 1 つでなく全部を欄の順に返す（ページは読めない欄を全部いっぺんに出す）
+#[test]
+fn every_invalid_input_is_returned_in_the_order_of_the_fields() {
+    use rustruct_calc::kirchhoff_plate::InvalidInput;
+    let mut p = fixed(1000.0, 1000.0, 0.0, 1.0);
+    p.load = AreaLoad::n_per_mm2(f64::NAN);
+    p.thickness = Length::mm(-150.0);
+    p.lx = Length::mm(0.0);
+    assert_eq!(
+        solve(&p).err(),
+        Some(PlateError::InvalidInput(vec![
+            InvalidInput::Lx,
+            InvalidInput::Thickness,
+            InvalidInput::Load,
+        ]))
+    );
+}
+
+/// 理由の文言は欄の下に出すもの。欄の名前は含めない（ページが欄に付ける）
+#[test]
+fn an_invalid_input_reads_as_what_to_enter() {
+    use rustruct_calc::kirchhoff_plate::InvalidInput;
+    for reason in [
+        InvalidInput::Lx,
+        InvalidInput::Ly,
+        InvalidInput::Thickness,
+        InvalidInput::YoungModulus,
+    ] {
+        assert_eq!(reason.to_string(), "0 より大きい値を入れる", "{reason:?}");
+    }
+    assert_eq!(InvalidInput::Load.to_string(), "数値で入れる");
 }

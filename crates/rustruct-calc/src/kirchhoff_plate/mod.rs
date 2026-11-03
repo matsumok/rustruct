@@ -46,7 +46,8 @@ fn near_end(fraction: f64) -> bool {
     fraction < CORNER_MARGIN - ROUNDING || fraction > 1.0 - CORNER_MARGIN + ROUNDING
 }
 
-/// 入力が不正な理由。辺長・板厚・ヤング係数は正の有限値、荷重は有限値（0 と上向きも可）
+/// 入力が不正な理由。欄ごとに 1 つで、並びは欄の順。辺長・板厚・ヤング係数は正の有限値、荷重は有限値（0 と
+/// 上向きも可）。ν は [`PoissonRatio`](rustruct_types::quantity::PoissonRatio) が作るときに守る
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InvalidInput {
     Lx,
@@ -56,22 +57,21 @@ pub enum InvalidInput {
     Load,
 }
 
+/// 欄の下に出す文言。欄の名前は含めない（画面が欄に付ける）
 impl fmt::Display for InvalidInput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::Lx => "x方向の辺長が正の有限値でない",
-            Self::Ly => "y方向の辺長が正の有限値でない",
-            Self::Thickness => "板厚が正の有限値でない",
-            Self::YoungModulus => "ヤング係数が正の有限値でない",
-            Self::Load => "等分布荷重が有限値でない",
+            Self::Lx | Self::Ly | Self::Thickness | Self::YoungModulus => "0 より大きい値を入れる",
+            Self::Load => "数値で入れる",
         })
     }
 }
 
 /// 解を求められない理由。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlateError {
-    InvalidInput(InvalidInput),
+    /// 不正な欄のすべて。欄の順で、空にはならない
+    InvalidInput(Vec<InvalidInput>),
     /// 板を支えきれない支持条件の組（四辺自由、単純支持 1 辺と自由 3 辺）
     Unstable(SupportType),
     /// 連立一次方程式が解けない。支持の足りない組は手前で弾くので、有限要素なら拘束の組み立て、参照解の級数なら
@@ -82,7 +82,13 @@ pub enum PlateError {
 impl fmt::Display for PlateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidInput(reason) => write!(f, "{reason}"),
+            Self::InvalidInput(reasons) => {
+                let reasons: Vec<String> = reasons
+                    .iter()
+                    .map(|reason| format!("{reason:?}: {reason}"))
+                    .collect();
+                write!(f, "入力が不正（{}）", reasons.join("、"))
+            }
             Self::Unstable(ty) => write!(f, "支持条件の型 {} は不安定", ty.symbol()),
             Self::Singular => f.write_str("連立一次方程式が解けない"),
         }
@@ -197,29 +203,28 @@ fn normalize(plate: &Plate) -> Result<(SupportType, Mapping, f64), PlateError> {
     Ok((support_type, mapping, rep_ly / rep_lx))
 }
 
-fn validate(plate: &Plate) -> Result<(), InvalidInput> {
+/// 値の規則を欄ごとに見て、不正な欄を欄の順にすべて集める
+fn validate(plate: &Plate) -> Result<(), PlateError> {
     let positive = |v: f64| v.is_finite() && v > 0.0;
-    if !positive(plate.lx.as_mm()) {
-        return Err(InvalidInput::Lx);
-    }
-    if !positive(plate.ly.as_mm()) {
-        return Err(InvalidInput::Ly);
-    }
-    if !positive(plate.thickness.as_mm()) {
-        return Err(InvalidInput::Thickness);
-    }
-    if !positive(plate.young_modulus.as_n_per_mm2()) {
-        return Err(InvalidInput::YoungModulus);
-    }
-    if !plate.load.as_n_per_mm2().is_finite() {
-        return Err(InvalidInput::Load);
-    }
-    Ok(())
-}
-
-impl From<InvalidInput> for PlateError {
-    fn from(reason: InvalidInput) -> Self {
-        Self::InvalidInput(reason)
+    let checks = [
+        (positive(plate.lx.as_mm()), InvalidInput::Lx),
+        (positive(plate.ly.as_mm()), InvalidInput::Ly),
+        (positive(plate.thickness.as_mm()), InvalidInput::Thickness),
+        (
+            positive(plate.young_modulus.as_n_per_mm2()),
+            InvalidInput::YoungModulus,
+        ),
+        (plate.load.as_n_per_mm2().is_finite(), InvalidInput::Load),
+    ];
+    let invalid: Vec<InvalidInput> = checks
+        .into_iter()
+        .filter(|(valid, _)| !valid)
+        .map(|(_, reason)| reason)
+        .collect();
+    if invalid.is_empty() {
+        Ok(())
+    } else {
+        Err(PlateError::InvalidInput(invalid))
     }
 }
 
