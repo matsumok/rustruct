@@ -1,0 +1,76 @@
+name: publish
+description: >-
+  配信物（check job の artifact「site」）を落とし、wrangler で Cloudflare に置き、その URL を check-live.sh で見る。
+  deploy・preview・cleanup の job が呼び、wrangler の呼び方（版と認証）はここ 1 か所に置く（Issue #99）。
+  site を false にすると wrangler だけを回す（cleanup の preview delete）。配置の手順と秘密は docs/deploy.md
+
+inputs:
+  command:
+    description: wrangler のコマンド（deploy、preview --name …、preview delete --name … --skip-confirmation）
+    required: true
+  api-token:
+    description: Cloudflare の API トークン（secrets.CLOUDFLARE_API_TOKEN）
+    required: true
+  account-id:
+    description: Cloudflare のアカウント ID（secrets.CLOUDFLARE_ACCOUNT_ID）
+    required: true
+  access-id:
+    description: Cloudflare Access のサービストークンの Client ID（secrets.CF_ACCESS_CLIENT_ID）。site が false なら要らない
+    required: false
+    default: ""
+  access-secret:
+    description: Cloudflare Access のサービストークンの Client Secret（secrets.CF_ACCESS_CLIENT_SECRET）。site が false なら要らない
+    required: false
+    default: ""
+  url:
+    description: live で見る URL。省略すると wrangler の preview-url の出力
+    required: false
+    default: ""
+  site:
+    description: 配信物を落として置き、live を見る。false は配信物を使わないコマンド（preview delete）で、wrangler だけを回す
+    required: false
+    default: "true"
+
+outputs:
+  url:
+    description: 置いた先の URL（site が false なら空）
+    value: ${{ steps.url.outputs.url }}
+
+runs:
+  using: composite
+  steps:
+    - if: inputs.site == 'true'
+      uses: actions/download-artifact@v8
+      with:
+        name: site
+        path: target/deploy
+
+    # wrangler は npm から落として使うだけ。リポジトリに JS も package.json も持たない。
+    # 版を上げるのはここ 1 か所。preview コマンドと preview-url 出力は wrangler 4.136.3 以上、
+    # wrangler-action v4.1.3 以上（wrangler-action の action.yml の記述）
+    - id: wrangler
+      uses: cloudflare/wrangler-action@v4.1.3
+      with:
+        apiToken: ${{ inputs.api-token }}
+        accountId: ${{ inputs.account-id }}
+        wranglerVersion: "4.145.0"
+        command: ${{ inputs.command }}
+
+    - id: url
+      if: inputs.site == 'true'
+      shell: sh
+      env:
+        URL: ${{ inputs.url || steps.wrangler.outputs.preview-url }}
+      run: |
+        test -n "$URL" || { echo "URL が無い（url を渡さず、wrangler も preview-url を返さなかった）"; exit 1; }
+        echo "url=$URL" >>"$GITHUB_OUTPUT"
+
+    # 公開前はサイト全体に Cloudflare Access が掛かっている。サービストークンで通る（docs/deploy.md）
+    - name: live (配置した URL のスモークテスト)
+      if: inputs.site == 'true'
+      shell: sh
+      env:
+        CF_ACCESS_CLIENT_ID: ${{ inputs.access-id }}
+        CF_ACCESS_CLIENT_SECRET: ${{ inputs.access-secret }}
+        URL: ${{ steps.url.outputs.url }}
+      run: sh scripts/check-live.sh "$URL"
