@@ -76,6 +76,10 @@ fn the_page_shows_the_results_of_the_fixed_plate_in_order() {
             "w（mm）",
             "Mx（kN·m/m）",
             "My（kN·m/m）",
+            "最大たわみ",
+            "w（mm）",
+            "x（m）",
+            "y（m）",
             "辺の最大値",
             "M（kN·m/m）",
             "Q（kN/m）",
@@ -136,7 +140,10 @@ fn set_all(inputs: &mut PlateInputs, support: Support) {
 /// 結果の値がすべて「—」
 fn assert_not_computed(r: &PlateReadout) {
     let c = &r.center;
-    let mut values: Vec<&str> = [&c.w, &c.mx, &c.my].map(String::as_str).to_vec();
+    let d = &r.deflection_maximum;
+    let mut values: Vec<&str> = [&c.w, &c.mx, &c.my, &d.w, &d.x, &d.y]
+        .map(String::as_str)
+        .to_vec();
     for row in &r.edges {
         for m in [&row.max_moment, &row.max_shear, &row.max_reaction] {
             values.extend([&m.value, &m.along].map(String::as_str));
@@ -371,6 +378,34 @@ fn three_fixed_one_free() -> PlateInputs {
     inputs.set(InputField::Ly, "4.0");
     inputs.set(InputField::Support(Edge::YLy), Support::Free.symbol());
     inputs
+}
+
+#[test]
+fn the_deflection_maximum_of_the_fixed_plate_is_the_centre() {
+    // 求め方（要素の中まで見る、kirchhoff-plate の ADR-0009）は計算核のテスト。ここでは表の値と位置の書き方
+    let r = readout(|_| {});
+    let d = &r.deflection_maximum;
+    assert_eq!(d.w, r.center.w);
+    assert_eq!([d.x.as_str(), d.y.as_str()], ["2.00", "2.50"]);
+}
+
+#[test]
+fn with_a_free_edge_the_deflection_maximum_is_on_that_edge() {
+    let r = PlateReadout::from_inputs(&three_fixed_one_free());
+    let d = &r.deflection_maximum;
+    assert_eq!([d.x.as_str(), d.y.as_str()], ["2.50", "4.00"]);
+    assert!(
+        d.w.parse::<f64>().unwrap() > r.center.w.parse::<f64>().unwrap(),
+        "{d:?} {:?}",
+        r.center
+    );
+    // 自由辺を y = 0 に移すと位置は 0
+    let mut inputs = three_fixed_one_free();
+    inputs.set(InputField::Support(Edge::YLy), Support::Fixed.symbol());
+    inputs.set(InputField::Support(Edge::Y0), Support::Free.symbol());
+    let moved = PlateReadout::from_inputs(&inputs).deflection_maximum;
+    assert_eq!([moved.x.as_str(), moved.y.as_str()], ["2.50", "0"]);
+    assert_eq!(moved.w, d.w);
 }
 
 #[test]

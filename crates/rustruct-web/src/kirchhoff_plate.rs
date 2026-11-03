@@ -191,6 +191,8 @@ pub struct PlateReadout {
     pub notice: Option<&'static str>,
     /// 板の中央の値
     pub center: CenterRow,
+    /// 最大たわみ（kirchhoff-plate の ADR-0009）
+    pub deflection_maximum: DeflectionRow,
     /// 辺ごとの行。`EDGES` の順
     pub edges: Vec<EdgeRow>,
     /// 辺の最大値の表に足す注記。自由辺のある組だけ（ADR-0008）
@@ -222,6 +224,16 @@ pub struct CenterRow {
     /// 曲げモーメント（kN·m/m）
     pub mx: String,
     pub my: String,
+}
+
+/// 結果の表の、最大たわみの行
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeflectionRow {
+    /// たわみ（mm）
+    pub w: String,
+    /// 位置（m）。隅 x = 0・y = 0 からの座標
+    pub x: String,
+    pub y: String,
 }
 
 /// 辺の最大値の 1 つ
@@ -282,6 +294,11 @@ impl PlateReadout {
                 mx: dash(),
                 my: dash(),
             },
+            deflection_maximum: DeflectionRow {
+                w: dash(),
+                x: dash(),
+                y: dash(),
+            },
             edges: EDGES
                 .map(|edge| EdgeRow {
                     name: edge.to_string(),
@@ -309,6 +326,7 @@ impl PlateReadout {
                 Length::mm(plate.ly.as_mm() / 2.0),
             )
             .expect("中央は板の上");
+        let deflection = solution.deflection_maximum();
         let edges = EDGES
             .map(|edge| {
                 let maximum = solution.edge_maximum(edge, EDGE_DIVISIONS);
@@ -327,6 +345,11 @@ impl PlateReadout {
                 w: figures(center.w.as_mm()),
                 mx: figures(center.mx.as_knm_per_m()),
                 my: figures(center.my.as_knm_per_m()),
+            },
+            deflection_maximum: DeflectionRow {
+                w: figures(deflection.w.as_mm()),
+                x: figures(deflection.x.as_m()),
+                y: figures(deflection.y.as_m()),
             },
             edges,
             edge_notes: if plate.supports.has_free_edge() {
@@ -416,6 +439,7 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
     });
     let readout = outcome.read().readout.clone();
     let CenterRow { w, mx, my } = readout.center.clone();
+    let deflection = readout.deflection_maximum.clone();
     let corner_pads = point_pads(readout.corners.iter().map(|(_, r)| r));
     let Balance { reactions, load } = readout.balance.clone();
     rsx! {
@@ -450,6 +474,29 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                                 li { "たわみは下向きを正とする" }
                                 li { "曲げモーメントは下側が引張になる向きを正とする" }
                             }
+                        }
+                    }
+                    Block {
+                        Caption { "最大たわみ" }
+                        Table { fixed: true,
+                            thead {
+                                HeadRow {
+                                    HeadCell { "w（mm）" }
+                                    HeadCell { "x（m）" }
+                                    HeadCell { "y（m）" }
+                                }
+                            }
+                            tbody {
+                                Row {
+                                    DecimalCell { value: deflection.w, pad: 0 }
+                                    DecimalCell { value: deflection.x, pad: 0 }
+                                    DecimalCell { value: deflection.y, pad: 0 }
+                                }
+                            }
+                        }
+                        Notes {
+                            li { "板全体での絶対値の最大値" }
+                            li { "x、y は隅 x = 0・y = 0 からの座標" }
                         }
                     }
                     Block {
