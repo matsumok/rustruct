@@ -194,7 +194,7 @@ impl Route {
 
     /// ヘッダーのパンくずの段。住所を「/」ごとに区切った各段と、押すと行くページ（今いる段と、ページの無い段は
     /// None）。行き先はルーターの住所一覧から引くので、一覧を別に書かない。トップは段が無い。not-found は
-    /// どの住所でも同じ 1 ファイルなので、住所を出さない（ADR-0001 の規則）。
+    /// どの住所でも同じ 1 ファイルなので、住所を出さない（ADR site-0001 の規則）。
     fn trail(&self) -> Vec<(String, Option<Route>)> {
         if matches!(self, Route::Home {} | Route::NotFound { .. }) {
             return Vec::new();
@@ -229,7 +229,7 @@ impl Route {
             .collect()
     }
 
-    /// `other` がこのページか、その下のページか。not-found はどこにも入らない（ADR-0001 の規則）。
+    /// `other` がこのページか、その下のページか。not-found はどこにも入らない（ADR site-0001 の規則）。
     fn holds(&self, other: &Route) -> bool {
         if matches!(other, Route::NotFound { .. }) {
             return false;
@@ -263,7 +263,7 @@ pub fn App() -> Element {
     }
 }
 
-/// 全ページ共通の枠。上に固定するヘッダーと、その下の本文（`docs/adr/0007`）。
+/// 全ページ共通の枠。上に固定するヘッダーと、その下の本文（ADR site-0007）。
 /// 本文はページの左右の余白（スマホ `space-5`、iPad `space-7`、PC `space-8`）の内側に置く。
 #[component]
 fn Frame() -> Element {
@@ -366,7 +366,7 @@ fn aria_current(here: &Route, node: &Route) -> Option<&'static str> {
 }
 
 /// ライトとダークのアイコン。今の色のほうを出す。色は描く前に決まるが、どちらかはブラウザでしか分からないので、
-/// 両方を描いて CSS で片方を隠す（初回描画と hydration で中身を変えない。ADR-0001 の規則）。
+/// 両方を描いて CSS で片方を隠す（初回描画と hydration で中身を変えない。ADR site-0001 の規則）。
 #[component]
 fn ThemeIcon() -> Element {
     rsx! {
@@ -569,7 +569,7 @@ fn RootPage() -> Element {
 
 /// 存在しない住所。同じ枠の中で「ない」ことを一文で示す。
 ///
-/// 静的な 1 ファイル（`NOT_FOUND_PATH`）がどの住所でも届くので、求められた住所は出さない（ADR-0001 の規則）。
+/// 静的な 1 ファイル（`NOT_FOUND_PATH`）がどの住所でも届くので、求められた住所は出さない（ADR site-0001 の規則）。
 #[component]
 fn NotFound(segments: Vec<String>) -> Element {
     let route = Route::NotFound { segments };

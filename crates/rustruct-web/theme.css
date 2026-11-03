@@ -127,7 +127,7 @@
   --breakpoint-lg: 1024px;
 }
 
-/* 768px から: 大きな文字と Notes の本文だけ大きくする（docs/adr/0007） */
+/* 768px から: 大きな文字と Notes の本文だけ大きくする（ADR site-0007） */
 :root {
   @variant md {
     --text-display: 36px;

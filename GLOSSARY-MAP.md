@@ -12,10 +12,12 @@
 
 材料の判断は `docs/materials/adr/`、スラブの共有の判断は `docs/slab/adr/`、各 Tool の固有の判断は `docs/tools/<tool>/adr/`、サイト全体の判断は `docs/adr/` に置く。
 
+ADR の名前は置き場の接頭辞と番号で、ファイル名も同じ: `site-0002`（`docs/adr/`）、`materials-0002`、`slab-0001`、`kirchhoff-plate-0008`、`slab-thickness-0001`。接頭辞はフォルダ名、サイト全体は `site`。番号は置き場ごとに続ける。参照は「ADR site-0002」と書き、置き場を文で添えない。
+
 ## Relationships
 
 - **材料 → 各 Tool**: Tool は材料の言葉と型をそのまま使い、Tool の GLOSSARY で定義し直さない
 - **スラブ → 各スラブ Tool**: 必要スラブ厚さとスラブ設計は、スラブの言葉と型をそのまま使い、Tool の GLOSSARY で定義し直さない
-- **Kirchhoff 板 → スラブ設計**: スラブ設計は Kirchhoff 板の計算核と言葉（辺・支持条件・結果の量）を使い、定義し直さない。スラブの内法スパンを Kirchhoff 板の辺長として渡す（`docs/slab/adr/0001`）
+- **Kirchhoff 板 → スラブ設計**: スラブ設計は Kirchhoff 板の計算核と言葉（辺・支持条件・結果の量）を使い、定義し直さない。スラブの内法スパンを Kirchhoff 板の辺長として渡す（ADR slab-0001）
 - **サイト全体 → 各 Tool**: 各 Tool の Model は、サイト全体で定義する Model の一種。呼ぶときは「必要スラブ厚さ Model」「地震応答 Model」のように修飾する
 - **必要スラブ厚さ と Kirchhoff 板**: 互いに使わない。記号 w は必要スラブ厚さでは全荷重、Kirchhoff 板ではたわみを指す

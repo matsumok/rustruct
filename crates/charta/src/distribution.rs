@@ -1,4 +1,4 @@
-//! 分布図: グリッドの値を等値線と帯で示す図を、`docs/adr/0011` で決めた見た目のシーンにする。
+//! 分布図: グリッドの値を等値線と帯で示す図を、ADR site-0011 で決めた見た目のシーンにする。
 //!
 //! - 帯は `seq`（正負のない量）か `div`（正負のある量）。境は 1・2・2.5・5 × 10ⁿ の刻み
 //! - 等値線は `ink` の細線。0 の線も同じ
@@ -16,7 +16,7 @@ use crate::levels::{edges, format_level, step_of};
 use crate::palette::Palette;
 use crate::scene::{Item, Pt, Scene, Stroke};
 
-/// 等値線の太さ。`docs/adr/0011`。
+/// 等値線の太さ。ADR site-0011。
 pub const LINE_WIDTH: f64 = 0.25;
 pub use crate::label::{HALO_WIDTH, LABEL_SIZE};
 

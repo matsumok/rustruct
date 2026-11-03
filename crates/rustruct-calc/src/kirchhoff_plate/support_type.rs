@@ -1,4 +1,4 @@
-//! 支持条件の組を 21 種の型に正規化し、代表の向きから元の組への写し方を一つの値で持つ（ADR-0003）。
+//! 支持条件の組を 21 種の型に正規化し、代表の向きから元の組への写し方を一つの値で持つ（ADR kirchhoff-plate-0003）。
 //! 型ごとの解き方は代表の向き（型の 4 文字がそのまま x = 0、y = 0、x = Lx、y = Ly の辺）だけを知る。
 
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Support, Supports};

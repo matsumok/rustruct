@@ -20,7 +20,7 @@ fn a_long_three_fixed_one_free_plate_behaves_as_a_fixed_strip_across_the_short_s
     // 三辺固定一辺自由で Ly/Lx = 6、ν = 0。y = 0 の固定辺から離れた断面は両端固定の梁で、自由辺（y = Ly）の
     // 上でもそのまま（ν = 0 なら帯板の解が自由辺の条件を満たす）。中央 pL²/24、固定辺 −pL²/12、
     // たわみ pL⁴/(384D)、固定辺のせん断力と反力 pL/2。許容はたわみと曲げモーメントが 0.5 %、
-    // せん断力と反力が 2 %（有限要素の離散化の誤差。ADR-0002）
+    // せん断力と反力が 2 %（有限要素の離散化の誤差。ADR kirchhoff-plate-0002）
     let lx = 2000.0;
     let p = plate(lx, 6.0 * lx, 0.0, 10.0, FFFR);
     let s = solve(&p).unwrap();
@@ -84,7 +84,7 @@ fn a_long_three_fixed_one_free_plate_behaves_as_a_fixed_strip_across_the_short_s
 
 #[test]
 fn the_shear_and_reaction_along_a_fixed_edge_are_smooth_when_nu_is_not_zero() {
-    // 自由辺のある型を ν ≠ 0 で解いても、固定辺のせん断力と反力は辺に沿って振れない（ADR-0005）。両端から
+    // 自由辺のある型を ν ≠ 0 で解いても、固定辺のせん断力と反力は辺に沿って振れない（ADR kirchhoff-plate-0005）。両端から
     // 5 % を除いた範囲で、隣り合う評価点の差の符号が変わるのは 1 回以下（辺の中央で向きが変わるだけ）
     let p = plate(2000.0, 2000.0, 0.2, 10.0, FFFR);
     let s = solve(&p).unwrap();

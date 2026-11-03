@@ -1,9 +1,9 @@
 //! 等厚曲線の図（コンター図）。横軸に Lx、縦軸に Ly をとり、必要スラブ厚が等しい曲線を引いて間を塗り分け、
-//! 検討点を印で示す。言葉は `docs/tools/slab-thickness/GLOSSARY.md`、曲線の引き方は同じ所の ADR-0001。
+//! 検討点を印で示す。言葉は `docs/tools/slab-thickness/GLOSSARY.md`、曲線の引き方はADR slab-thickness-0001。
 //!
 //! 曲線は `rustruct-calc` の `iso_curves` が x の並びの上で直接引き、`charta` の `level_graphs` が線と帯に
 //! する。範囲・厚さの刻み・80 mm の下限・条件の要約は移植元の slab の決めを引き継ぎ、色・線・数値の置き方は
-//! サイトの分布図にそろえる（同じ所の ADR-0002、`docs/ui-decisions.md`「等厚曲線の図」）。図は 1 単位
+//! サイトの分布図にそろえる（ADR slab-thickness-0002、`docs/ui-decisions.md`「等厚曲線の図」）。図は 1 単位
 //! （`width-column`）の幅に収め、色はライトとダークの 2 枚を作る。
 
 use charta::plot::TEXT_SIZE;

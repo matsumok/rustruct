@@ -1,4 +1,4 @@
-//! 物理量の newtype（ADR-0004）。中身は N・mm・s の系（質量は t）に正規化した `f64`。
+//! 物理量の newtype（ADR site-0004）。中身は N・mm・s の系（質量は t）に正規化した `f64`。
 //! 作るときと取り出すときに単位を名前で言う。型は使う Tool が出たときに要る分だけ足す。
 
 macro_rules! quantity {
@@ -186,7 +186,7 @@ impl Force {
     }
 }
 
-/// ポアソン比。無次元。0 以上 0.5 未満の範囲は生成で守る（`docs/tools/kirchhoff-plate/adr/0005`）。
+/// ポアソン比。無次元。0 以上 0.5 未満の範囲は生成で守る（ADR kirchhoff-plate-0005）。
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default)]
 pub struct PoissonRatio(f64);
 

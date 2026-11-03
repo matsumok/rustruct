@@ -164,7 +164,7 @@ fn an_unstable_combination_shows_dashes_and_says_the_plate_is_not_held() {
 
 #[test]
 fn a_combination_with_a_free_edge_is_solved() {
-    // 不安定な組以外はすべて解ける（kirchhoff-plate の ADR-0002）。釣り合いと自由辺の反力は計算核のテスト
+    // 不安定な組以外はすべて解ける（ADR kirchhoff-plate-0002）。釣り合いと自由辺の反力は計算核のテスト
     let r = readout(|i| i.set(InputField::Support(Edge::XLx), Support::Free.symbol()));
     assert_eq!(r.notice, None);
     assert!(r.errors.is_empty());
@@ -176,7 +176,7 @@ fn a_combination_with_a_free_edge_is_solved() {
 
 #[test]
 fn a_simply_supported_plate_shows_a_reaction_at_every_corner() {
-    // 隅反力の向きと釣り合いは計算核のテスト（kirchhoff-plate の ADR-0007）。ここでは隅ごとの行の名前と、
+    // 隅反力の向きと釣り合いは計算核のテスト（ADR kirchhoff-plate-0007）。ここでは隅ごとの行の名前と、
     // 値が出ていること
     let r = readout(|i| set_all(i, Support::SimplySupported));
     assert_eq!(r.notice, None);
@@ -382,7 +382,7 @@ fn three_fixed_one_free() -> PlateInputs {
 
 #[test]
 fn the_deflection_maximum_of_the_fixed_plate_is_the_centre() {
-    // 求め方（要素の中まで見る、kirchhoff-plate の ADR-0009）は計算核のテスト。ここでは表の値と位置の書き方
+    // 求め方（要素の中まで見る、ADR kirchhoff-plate-0009）は計算核のテスト。ここでは表の値と位置の書き方
     let r = readout(|_| {});
     let d = &r.deflection_maximum;
     assert_eq!(d.w, r.center.w);
@@ -410,7 +410,7 @@ fn with_a_free_edge_the_deflection_maximum_is_on_that_edge() {
 
 #[test]
 fn a_plate_with_a_free_edge_says_how_the_edge_shear_and_reaction_are_taken() {
-    // 両端から辺長の 5 % を除いて取る規則（kirchhoff-plate の ADR-0008）は計算核の `edge_maximum` のテスト。
+    // 両端から辺長の 5 % を除いて取る規則（ADR kirchhoff-plate-0008）は計算核の `edge_maximum` のテスト。
     // ここでは注記の文言
     let r = PlateReadout::from_inputs(&three_fixed_one_free());
     assert_eq!(
@@ -436,7 +436,7 @@ fn a_plate_without_a_free_edge_has_no_notes_on_the_corners() {
 #[test]
 fn the_shear_figure_of_a_plate_with_a_free_edge_is_read_inside_the_plate() {
     // 隅の発散で色の幅を決めると、刻みが粗くなって板の中に等値線がほとんど引かれない。色の幅は隅から
-    // 辺長の 5 % 以内の点を除いて決める（ADR-0008）ので、板の中の Qx に正の水準が 3 つ以上読める
+    // 辺長の 5 % 以内の点を除いて決める（ADR kirchhoff-plate-0008）ので、板の中の Qx に正の水準が 3 つ以上読める
     let figure = PlateFigure::from_inputs(&three_fixed_one_free(), Quantity::Qx).unwrap();
     let mut positive: Vec<f64> = figure_numbers(&figure.light_svg)
         .into_iter()

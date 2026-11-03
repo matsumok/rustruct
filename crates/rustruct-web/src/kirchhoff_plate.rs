@@ -1,5 +1,5 @@
 //! Tool「Kirchhoff 板の曲げ」（`/tools/kirchhoff-plate`）。言葉は `docs/tools/kirchhoff-plate/GLOSSARY.md`、
-//! 符号と座標は同じ所の ADR-0004。数値はすべて `rustruct-calc` の `solve` から引き、ここでは入力の文字の
+//! 符号と座標はADR kirchhoff-plate-0004。数値はすべて `rustruct-calc` の `solve` から引き、ここでは入力の文字の
 //! 読み取りと、表示の桁だけを決める。計算はブラウザの中で同期に回し、入力を変えるたびに結果を描き直す。
 //!
 //! 辺は座標で呼ぶ（x = 0 の辺など）。画面の上下左右は図の向き（x は右、y は上）でここが決め、入力の
@@ -28,12 +28,12 @@ const NOT_COMPUTED: &str = "—";
 /// 辺の最大値を取る評価点の分け方。辺を等分する数
 const EDGE_DIVISIONS: usize = 100;
 
-/// 注記に書く、計算核の隅の近くの幅（「5 %」、kirchhoff-plate の ADR-0008）
+/// 注記に書く、計算核の隅の近くの幅（「5 %」、ADR kirchhoff-plate-0008）
 fn corner_margin_text() -> String {
     format!("{} %", at_place(CORNER_MARGIN * 100.0, 0))
 }
 
-/// 自由辺のある組の、辺の最大値の注記（ADR-0008）
+/// 自由辺のある組の、辺の最大値の注記（ADR kirchhoff-plate-0008）
 fn corner_notes() -> Vec<String> {
     vec![
         "固定辺と自由辺の隅では、せん断力と辺の反力が発散する".into(),
@@ -191,11 +191,11 @@ pub struct PlateReadout {
     pub notice: Option<&'static str>,
     /// 板の中央の値
     pub center: CenterRow,
-    /// 最大たわみ（kirchhoff-plate の ADR-0009）
+    /// 最大たわみ（ADR kirchhoff-plate-0009）
     pub deflection_maximum: DeflectionRow,
     /// 辺ごとの行。`EDGES` の順
     pub edges: Vec<EdgeRow>,
-    /// 辺の最大値の表に足す注記。自由辺のある組だけ（ADR-0008）
+    /// 辺の最大値の表に足す注記。自由辺のある組だけ（ADR kirchhoff-plate-0008）
     pub edge_notes: Vec<String>,
     /// 隅ごとの隅反力（kN）。`Corner::ALL` の順
     pub corners: Vec<(String, String)>,
@@ -422,7 +422,7 @@ fn figures(value: f64) -> String {
     significant(value, 3)
 }
 
-/// `/tools/kirchhoff-plate`。入力の Sheet のすぐ下に結果の表を続けた列と、分布図の列（ADR-0006）。
+/// `/tools/kirchhoff-plate`。入力の Sheet のすぐ下に結果の表を続けた列と、分布図の列（ADR site-0006）。
 /// 「入力」「結果」の部の見出しは置かず、表の見出しで区切る。解くのは入力が変わったときだけで、
 /// 分布図の量を切り替えても解き直さない。
 #[component]

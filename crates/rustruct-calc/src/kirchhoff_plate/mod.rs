@@ -1,14 +1,14 @@
 //! Kirchhoff 板の曲げ。言葉は `docs/tools/kirchhoff-plate/GLOSSARY.md`、判断は同じ所の ADR。
 //!
 //! 公開の入口は [`solve`] 一つ。入力（[`Plate`]）から [`Solution`] を得て、点の応答、等間隔グリッドの
-//! 応答、辺に沿った辺の反力の分布とその合計、辺の最大値、最大たわみ（ADR-0009）、隅ごとの隅反力、荷重の合計と
+//! 応答、辺に沿った辺の反力の分布とその合計、辺の最大値、最大たわみ（ADR kirchhoff-plate-0009）、隅ごとの隅反力、荷重の合計と
 //! 釣り合いを取る。
-//! 隅の近くの値の見せ方（ADR-0008）の規則もここが持ち（[`CORNER_MARGIN`]、[`Solution::edge_maximum`]、
+//! 隅の近くの値の見せ方（ADR kirchhoff-plate-0008）の規則もここが持ち（[`CORNER_MARGIN`]、[`Solution::edge_maximum`]、
 //! [`Solution::near_corner`]）、画面と照合はそれを呼ぶ。公開の座標は隅が原点
-//! （x は 0 から Lx、y は 0 から Ly）。符号は ADR-0004。
+//! （x は 0 から Lx、y は 0 から Ly）。符号は ADR kirchhoff-plate-0004。
 //!
-//! 内部では、支持条件の組を 21 種の型と写し方に分け（[`SupportType`]、ADR-0003）、代表の向きの板を
-//! 中央原点・x の半辺長 1 の無次元の板として、長方形の共形要素の有限要素（`finite_element`）で解く（ADR-0002）。
+//! 内部では、支持条件の組を 21 種の型と写し方に分け（[`SupportType`]、ADR kirchhoff-plate-0003）、代表の向きの板を
+//! 中央原点・x の半辺長 1 の無次元の板として、長方形の共形要素の有限要素（`finite_element`）で解く（ADR kirchhoff-plate-0002）。
 //! 解き方（`solver`）が返すのは無次元のたわみの導関数（と辺の反力）だけで、曲げモーメント・せん断力・隅反力への
 //! 換算はこのファイルの一箇所。四辺固定と四辺単純支持の級数解（`series`）は参照解で、照合テストだけが
 //! [`solve_with_series`] から呼ぶ。
@@ -32,11 +32,11 @@ use support_type::RepresentativeResponse;
 pub use support_type::{Mapping, SupportType};
 
 /// 有限要素の短い辺の分割数。長い辺は辺長に合わせて増やす（[`mesh_divisions`]）。利用者の入力にも Model にも
-/// 持たない定数で、値は分割数を倍にしたときの変化が収まることで決めた（`docs/tools/kirchhoff-plate/adr/0006`）
+/// 持たない定数で、値は分割数を倍にしたときの変化が収まることで決めた（ADR kirchhoff-plate-0006）
 pub const DIVISIONS: usize = 40;
 
 /// 隅の近くとして除く幅。辺長に対する比。自由辺のある組で、分布図の色の幅と、辺のせん断力・辺の反力の
-/// 最大値から除く（`docs/tools/kirchhoff-plate/adr/0008`）。照合で除く幅と同じ（ADR-0002）
+/// 最大値から除く（ADR kirchhoff-plate-0008）。照合で除く幅と同じ（ADR kirchhoff-plate-0002）
 pub const CORNER_MARGIN: f64 = 0.05;
 
 /// 辺の上の位置（辺長に対する比）が、両端から [`CORNER_MARGIN`] より端に寄っているか。評価点がちょうど
@@ -75,7 +75,7 @@ pub enum PlateError {
     /// 板を支えきれない支持条件の組（四辺自由、単純支持 1 辺と自由 3 辺）
     Unstable(SupportType),
     /// 連立一次方程式が解けない。支持の足りない組は手前で弾くので、有限要素なら拘束の組み立て、参照解の級数なら
-    /// 式か項数の取り方の誤り（サイト ADR-0009）
+    /// 式か項数の取り方の誤り（ADR site-0009）
     Singular,
 }
 
@@ -155,7 +155,7 @@ pub fn solve(plate: &Plate) -> Result<Solution, PlateError> {
     solve_with_divisions(plate, DIVISIONS)
 }
 
-/// 短い辺の分割数を指定して有限要素で解く。分割数を倍にしたときの変化を見るテスト（ADR-0006）のためにあり、
+/// 短い辺の分割数を指定して有限要素で解く。分割数を倍にしたときの変化を見るテスト（ADR kirchhoff-plate-0006）のためにあり、
 /// 画面は [`solve`] を使う
 pub fn solve_with_divisions(plate: &Plate, divisions: usize) -> Result<Solution, PlateError> {
     let (support_type, mapping, b) = normalize(plate)?;
@@ -312,7 +312,7 @@ impl Solution {
     }
 
     /// 辺の反力の合計 [N]（辺に沿った積分、支える向きが正）。辺の反力の合計 − 隅反力の合計 = 荷重の合計
-    /// （ADR-0004）。有限要素は節点の反力の和そのもので、参照解の級数は辺の反力の数値積分
+    /// （ADR kirchhoff-plate-0004）。有限要素は節点の反力の和そのもので、参照解の級数は辺の反力の数値積分
     pub fn total_reaction(&self, edge: Edge) -> Force {
         let a = self.half_x();
         let v = self.solver.edge_reaction_total(self.mapping.edge(edge));
@@ -325,7 +325,7 @@ impl Solution {
     }
 
     /// 辺の反力の合計 − 隅反力の合計（支える向きが正）。釣り合いでは荷重の合計 [`Self::total_load`] に等しい
-    /// （ADR-0004、ADR-0007）
+    /// （ADR kirchhoff-plate-0004、ADR kirchhoff-plate-0007）
     pub fn net_reaction(&self) -> Force {
         let edges: f64 = Edge::ALL
             .iter()
@@ -340,7 +340,7 @@ impl Solution {
 
     /// 辺の最大値。`edge` と同じ評価点から、曲げモーメント・せん断力・辺の反力それぞれの絶対値の最大と位置。
     /// 自由辺のある組では、固定辺と自由辺の隅で発散するせん断力と辺の反力を、両端から辺長の
-    /// [`CORNER_MARGIN`] を除いた範囲で取る。曲げモーメントは隅まで含める（ADR-0008）。
+    /// [`CORNER_MARGIN`] を除いた範囲で取る。曲げモーメントは隅まで含める（ADR kirchhoff-plate-0008）。
     ///
     /// 辺を等分する数 `DIVISIONS` は型の引数で、両端を除いても評価点が残るよう 2 以上でなければ
     /// コンパイルが通らない。
@@ -414,7 +414,7 @@ impl Solution {
     }
 
     /// たわみの最大。有限要素の節点の w から |w| が最大の節点を選び、その節点に接する要素の中を形状関数の w で
-    /// 詰めた点（ADR-0009）。同じ大きさの最大が板を辺に平行な中心線で折り返した点にもあるとき（対辺がともに
+    /// 詰めた点（ADR kirchhoff-plate-0009）。同じ大きさの最大が板を辺に平行な中心線で折り返した点にもあるとき（対辺がともに
     /// 自由な板など）は、原点に近い側（y、次に x の小さいほう）を返す
     pub fn deflection_maximum(&self) -> DeflectionMaximum {
         let (lx, ly) = (self.plate.lx.as_mm(), self.plate.ly.as_mm());
@@ -450,7 +450,7 @@ impl Solution {
     }
 
     /// 隅から辺長の [`CORNER_MARGIN`] 以内の点か（x と y のどちらも、端から辺長の 5 % より端に寄っている）。
-    /// 分布図の色の幅（ADR-0008）と照合（ADR-0002）が除く点。自由辺のある組だけ除くかは呼び手が
+    /// 分布図の色の幅（ADR kirchhoff-plate-0008）と照合（ADR kirchhoff-plate-0002）が除く点。自由辺のある組だけ除くかは呼び手が
     /// `Supports::has_free_edge` で決める
     pub fn near_corner(&self, x: Length, y: Length) -> bool {
         near_end(x.as_mm() / self.plate.lx.as_mm()) && near_end(y.as_mm() / self.plate.ly.as_mm())
@@ -478,7 +478,7 @@ impl Solution {
     fn half_x(&self) -> f64 {
         self.representative_lengths().0 / 2.0
     }
-    /// 曲げ剛性 D = E t³ / (12 (1 − ν²)) [N·mm]。内部でしか使わないので型にしない（サイト ADR-0004）
+    /// 曲げ剛性 D = E t³ / (12 (1 − ν²)) [N·mm]。内部でしか使わないので型にしない（ADR site-0004）
     fn rigidity(&self) -> f64 {
         let t = self.plate.thickness.as_mm();
         let nu = self.nu();

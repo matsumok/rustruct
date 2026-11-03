@@ -100,7 +100,7 @@ pub fn navier(plate: &Plate, x: f64, y: f64, max: usize) -> Navier {
 }
 
 /// 比較の分母。たわみ・曲げモーメント・せん断力それぞれの、21 × 21 のグリッドでの絶対値の最大。隅から辺長の
-/// 5 % 以内の点は除く（固定辺と自由辺の隅ではせん断力が発散し、分母にすると比が小さく出る。ADR-0008）
+/// 5 % 以内の点は除く（固定辺と自由辺の隅ではせん断力が発散し、分母にすると比が小さく出る。ADR kirchhoff-plate-0008）
 pub struct Scale {
     pub w: f64,
     pub m: f64,
@@ -143,7 +143,7 @@ pub const EDGE_QUANTITIES: [(&str, PickEdge); 3] = [
 ];
 
 /// 有限要素の照合の許容。たわみと曲げモーメントは 0.5 %、せん断力・辺の反力・隅反力は 2 %
-/// （その量の板全体の絶対値の最大に対して。ADR-0002）
+/// （その量の板全体の絶対値の最大に対して。ADR kirchhoff-plate-0002）
 pub fn tolerance_of(name: &str) -> f64 {
     if name.starts_with('w') || name.starts_with('M') {
         5e-3

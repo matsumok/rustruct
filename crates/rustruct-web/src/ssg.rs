@@ -1,4 +1,4 @@
-//! SSG（ADR-0001）。`dx build --ssg` に「どの住所を書き出すか」と「どこへ書くか」を教える。
+//! SSG（ADR site-0001）。`dx build --ssg` に「どの住所を書き出すか」と「どこへ書くか」を教える。
 //!
 //! dx は server の実行ファイルを起こし、`POST /api/static_routes` が返す住所を順に GET する。
 //! 描いた HTML をファイルに残すのはサーバー側の仕事で、`serve_config` がその置き場を指す。

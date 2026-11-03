@@ -1,6 +1,6 @@
 //! 参照解（四辺固定と四辺単純支持の級数解。`solve_with_series`）と、有限要素（`solve`）との照合。
 //! 参照解そのものは、理論から言える値（境界条件、帯板の極限）、独立な解（Navier の二重級数）、項数を
-//! 変えたときの収束で確かめる。有限要素はその参照解と比べ、差が ADR-0002 の許容に収まることを見る
+//! 変えたときの収束で確かめる。有限要素はその参照解と比べ、差が ADR kirchhoff-plate-0002 の許容に収まることを見る
 
 mod common;
 use common::{
@@ -239,7 +239,7 @@ fn assert_doubling_the_terms_changes_nothing(
 
 #[test]
 fn doubling_the_terms_changes_nothing_beyond_the_tolerance() {
-    // 参照解の項数の決め方（ADR-0006 の 2026-10-23 より前の節）。縦横比 1・2・4 で、21×21 のグリッドと辺の
+    // 参照解の項数の決め方（ADR kirchhoff-plate-0006 の 2026-10-23 より前の節）。縦横比 1・2・4 で、21×21 のグリッドと辺の
     // 101 点（両端から 5 % を除く）で、N = TERMS と 2N の差がその量の絶対値の最大の 1e-3 以下。
     // 四辺固定は隅から辺長の 5 % 以内を除く（級数が隅の近くで振れる）。四辺単純支持は隅の点そのものだけを除く
     // （せん断力の厳密な値 0 に、級数が 1/N でしか近づかない）
@@ -261,7 +261,7 @@ fn doubling_the_terms_changes_nothing_beyond_the_tolerance() {
 
 #[test]
 fn the_series_edge_reactions_converge_as_one_over_the_square_of_the_terms() {
-    // 辺の反力は辺に沿う向きの級数で求めるので（ADR-0002 の級数の節）、打ち切りの誤差が項数の 2 乗に反比例
+    // 辺の反力は辺に沿う向きの級数で求めるので（ADR kirchhoff-plate-0002 の級数の節）、打ち切りの誤差が項数の 2 乗に反比例
     // して減る。項数 2560 の値を基準に、項数を倍にするごとの誤差の比が 4 に近い（3.5〜4.5）ことを辺の中央と
     // 1/4 点で見る
     let p = plate(2000.0, 3000.0, 0.2, 10.0, SSSS);
@@ -288,7 +288,7 @@ fn the_series_edge_reactions_converge_as_one_over_the_square_of_the_terms() {
 #[test]
 fn the_finite_elements_match_the_series_solutions() {
     // 有限要素（`solve`）と参照解の照合。縦横比 1・2・4、ν = 0 と 0.2 で、隅から辺長の 5 % を除いた範囲の
-    // w・Mx・My が 0.5 % 以内、Qx・Qy・辺の反力・隅反力が 2 % 以内（その量の絶対値の最大に対して。ADR-0002）
+    // w・Mx・My が 0.5 % 以内、Qx・Qy・辺の反力・隅反力が 2 % 以内（その量の絶対値の最大に対して。ADR kirchhoff-plate-0002）
     let lx = 2000.0;
     for (symbol, supports) in [("SSSS", SSSS), ("FFFF", FFFF)] {
         for nu in [0.0, 0.2] {
@@ -306,8 +306,8 @@ fn the_finite_elements_match_the_series_solutions() {
 
 #[test]
 fn the_deflection_maximum_matches_the_series_solutions() {
-    // 最大たわみの値が参照解の最大と w の許容（0.5 %、ADR-0002）で、位置が辺長の 1e-6 で一致する。
-    // 参照解も級数の w を格子から詰めて取る（ADR-0009）
+    // 最大たわみの値が参照解の最大と w の許容（0.5 %、ADR kirchhoff-plate-0002）で、位置が辺長の 1e-6 で一致する。
+    // 参照解も級数の w を格子から詰めて取る（ADR kirchhoff-plate-0009）
     let lx = 2000.0;
     for (symbol, supports) in [("SSSS", SSSS), ("FFFF", FFFF)] {
         for ratio in [1.0, 2.0] {

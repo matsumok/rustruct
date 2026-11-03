@@ -187,7 +187,7 @@ fn largest(samples: &[EdgeSample], f: fn(&EdgeSample) -> f64) -> EdgeSample {
 
 #[test]
 fn with_a_free_edge_the_edge_maximum_of_shear_and_reaction_skips_five_percent_at_each_end() {
-    // ADR-0008: 自由辺のある組では、せん断力と辺の反力の辺の最大値を両端から辺長の 5 % を除いた範囲で取り、
+    // ADR kirchhoff-plate-0008: 自由辺のある組では、せん断力と辺の反力の辺の最大値を両端から辺長の 5 % を除いた範囲で取り、
     // 曲げモーメントは隅まで含める。辺を 100 等分した評価点なら、両端の 5 点ずつを除いた 6 番目から 96 番目
     let (lx, ly) = (2000.0, 3000.0);
     let s = solve(&plate(lx, ly, 0.2, 10.0, FFFR)).unwrap();
@@ -231,7 +231,7 @@ fn with_a_free_edge_the_edge_maximum_of_shear_and_reaction_skips_five_percent_at
 
 #[test]
 fn without_a_free_edge_the_edge_maximum_runs_over_the_whole_edge() {
-    // 自由辺の無い組（FFSS）は隅まで含める（ADR-0008）。x = Lx の単純支持の辺のせん断力の最大は辺の端にある
+    // 自由辺の無い組（FFSS）は隅まで含める（ADR kirchhoff-plate-0008）。x = Lx の単純支持の辺のせん断力の最大は辺の端にある
     let (lx, ly) = (2000.0, 3000.0);
     let s = solve(&plate(lx, ly, 0.2, 10.0, FFSS)).unwrap();
     for e in Edge::ALL {
@@ -256,7 +256,7 @@ fn without_a_free_edge_the_edge_maximum_runs_over_the_whole_edge() {
 
 #[test]
 fn a_point_is_near_a_corner_when_both_x_and_y_are_within_five_percent_of_an_end() {
-    // ADR-0008: 隅から辺長の 5 % 以内の点は、x と y のどちらも辺長の 5 % より端に寄った点。ちょうど 5 % の点は
+    // ADR kirchhoff-plate-0008: 隅から辺長の 5 % 以内の点は、x と y のどちらも辺長の 5 % より端に寄った点。ちょうど 5 % の点は
     // 含まない
     let (lx, ly) = (2000.0, 3000.0);
     let s = solve(&fixed(lx, ly, 0.0, 10.0)).unwrap();

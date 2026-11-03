@@ -1,7 +1,7 @@
 //! 必要スラブ厚さの条件とスパン。言葉は `docs/tools/slab-thickness/GLOSSARY.md`、スラブの形（Lx・Ly）は
 //! `docs/slab/GLOSSARY.md`、コンクリートは `docs/materials/GLOSSARY.md`。
 //! 共有値・必要スラブ厚・決定条件は導出できるので `rustruct-calc` が求める。
-//! Model（条件と検討点の並び）の型は、保存形式（ADR-0003）を実装するときに足す。
+//! Model（条件と検討点の並び）の型は、保存形式（ADR site-0003）を実装するときに足す。
 
 use crate::concrete::Concrete;
 use crate::quantity::{AreaLoad, Length};
@@ -44,7 +44,7 @@ pub enum Criterion {
     MinThickness,
 }
 
-/// スラブの x方向スパン Lx と y方向スパン Ly。どちらも内法（`docs/slab/adr/0001`）で、
+/// スラブの x方向スパン Lx と y方向スパン Ly。どちらも内法（ADR slab-0001）で、
 /// 短辺・長辺のどちらであるかは問わない。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Spans {

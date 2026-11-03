@@ -169,7 +169,7 @@ fn unknown_path_is_not_found_inside_the_same_frame() {
 }
 
 /// not-found は静的な 1 ファイル（`/404`）として書き出され、どの住所で開かれても同じ中身が届く。
-/// 求められた住所はブラウザでしか決まらないので、初回描画には入れない（ADR-0001 の規則）。
+/// 求められた住所はブラウザでしか決まらないので、初回描画には入れない（ADR site-0001 の規則）。
 #[test]
 fn not_found_html_is_the_same_whatever_path_was_asked_for() {
     let at_404 = render_path(NOT_FOUND_PATH);
@@ -377,7 +377,7 @@ fn breadcrumb_links_each_parent_and_leaves_the_current_page_unlinked() {
 
 #[test]
 fn home_and_not_found_have_no_breadcrumb() {
-    // not-found はどの住所でも同じ 1 ファイルなので、住所を出せない（ADR-0001）
+    // not-found はどの住所でも同じ 1 ファイルなので、住所を出せない（ADR site-0001）
     for path in ["/", "/tools/nothing"] {
         let html = render_path(path);
         assert!(

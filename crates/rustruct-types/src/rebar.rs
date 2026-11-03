@@ -1,5 +1,5 @@
 //! 鉄筋（JIS G 3112:2025 の異形棒鋼）。言葉は `docs/materials/GLOSSARY.md`、値と出典は
-//! `docs/materials/adr/0002`（諸元）と `docs/materials/adr/0003`（許容応力度）。呼び名が持つのは公称直径だけで、ほかの諸元は JIS と同じ式と丸めで求める。
+//! ADR materials-0002（諸元）と ADR materials-0003（許容応力度）。呼び名が持つのは公称直径だけで、ほかの諸元は JIS と同じ式と丸めで求める。
 //! 種類と呼び名は、列挙子・一覧・記号・値を一つの表から作り、一覧への足し忘れを起こさない。
 
 use rust_decimal::Decimal;

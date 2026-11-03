@@ -1,4 +1,4 @@
-//! 分布図: 板全面の 1 つの量を、等値線と帯で示す図（`docs/adr/0011`）。
+//! 分布図: 板全面の 1 つの量を、等値線と帯で示す図（ADR site-0011）。
 //!
 //! 計算核の等間隔グリッドの応答（[`PlateField`]）から 1 つの量のスカラー場を取り出し、`charta` の
 //! 分布図にする。図は板の縦横比どおりに 1 単位（`width-column`）の正方形に収め、周りの縁に 4 辺の支持条件を
@@ -69,7 +69,7 @@ impl Quantity {
         }
     }
 
-    /// 帯の色。正負のない量（たわみ）は `seq`、正負のある量は `div`（`docs/adr/0011`）
+    /// 帯の色。正負のない量（たわみ）は `seq`、正負のある量は `div`（ADR site-0011）
     fn palette(self) -> Palette {
         match self {
             Self::W => Palette::Seq,
@@ -101,7 +101,7 @@ pub(crate) struct PlateField {
     /// y の小さい行から、行の中は x の小さい順（`Solution::grid`）
     points: Vec<PointResponse>,
     /// 評価点ごとに、色の幅を決めるのに使うか。自由辺のある組では、固定辺と自由辺の隅の発散で幅が決まらない
-    /// よう、隅から辺長の 5 % 以内の点（`Solution::near_corner`）を使わない（kirchhoff-plate の ADR-0008）
+    /// よう、隅から辺長の 5 % 以内の点（`Solution::near_corner`）を使わない（ADR kirchhoff-plate-0008）
     in_range: Vec<bool>,
 }
 
@@ -143,7 +143,7 @@ pub struct PlateFigure {
     pub label: String,
     pub light_svg: String,
     pub dark_svg: String,
-    /// 支持条件の読み方に続ける注記。自由辺のある組では色の幅の決め方（ADR-0008）
+    /// 支持条件の読み方に続ける注記。自由辺のある組では色の幅の決め方（ADR kirchhoff-plate-0008）
     pub notes: Vec<String>,
 }
 
@@ -183,7 +183,7 @@ impl PlateFigure {
 /// 板の分布図を縁の内側に置き、縁に支持条件を描く
 fn scene(field: &PlateField, quantity: Quantity) -> Scene {
     let z: Vec<f64> = field.points.iter().map(|r| quantity.value(r)).collect();
-    // 色の幅。除いた点の値は色の端で振り切れる（kirchhoff-plate の ADR-0008）
+    // 色の幅。除いた点の値は色の端で振り切れる（ADR kirchhoff-plate-0008）
     let range = field
         .in_range
         .iter()

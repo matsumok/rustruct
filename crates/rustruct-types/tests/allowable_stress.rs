@@ -1,4 +1,4 @@
-//! 許容応力度。期待値は RC 規準 表 6.1〜6.3（`docs/materials/adr/0003`）の式の手計算と、表 6.2 の写し。
+//! 許容応力度。期待値は RC 規準 表 6.1〜6.3（ADR materials-0003）の式の手計算と、表 6.2 の写し。
 
 mod common;
 use common::assert_close;

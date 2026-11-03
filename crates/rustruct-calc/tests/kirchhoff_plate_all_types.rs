@@ -10,7 +10,7 @@ use rustruct_calc::kirchhoff_plate::{
 };
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Support, Supports};
 
-/// 有限要素の離散化の許容（ADR-0002 の照合の許容）。たわみと曲げモーメントはその量の最大の 0.5 %、
+/// 有限要素の離散化の許容（ADR kirchhoff-plate-0002 の照合の許容）。たわみと曲げモーメントはその量の最大の 0.5 %、
 /// せん断力と辺の反力は 2 %
 const W_M_TOLERANCE: f64 = 5e-3;
 const Q_V_TOLERANCE: f64 = 2e-2;
@@ -46,7 +46,7 @@ fn normal_moment_and_shear(edge: Edge, r: &PointResponse) -> (f64, f64) {
 #[test]
 fn every_edge_satisfies_its_boundary_conditions() {
     // 固定辺で w = 0・法線方向の傾き = 0、単純支持の辺で w = 0・M_n = 0、自由辺で M_n = 0・V_n = 0。
-    // 各辺の両端から辺長の 5 % を除いた 41 点で（ADR-0008）。ν = 0 と 0.2
+    // 各辺の両端から辺長の 5 % を除いた 41 点で（ADR kirchhoff-plate-0008）。ν = 0 と 0.2
     let (lx, ly) = (2000.0, 3000.0);
     for ty in SupportType::ALL.into_iter().filter(|t| t.is_stable()) {
         let supports = ty.representative();
@@ -134,9 +134,9 @@ fn every_edge_satisfies_its_boundary_conditions() {
 
 #[test]
 fn edge_reactions_minus_corner_reactions_balance_the_total_load() {
-    // 辺の反力の合計 − 隅反力の合計 = 荷重の合計（ADR-0004）。辺の反力の合計は節点の反力の和そのもので、
+    // 辺の反力の合計 − 隅反力の合計 = 荷重の合計（ADR kirchhoff-plate-0004）。辺の反力の合計は節点の反力の和そのもので、
     // 丸め誤差（節点力は要素ごとに剛体の動きを引いて求め、連立は反復改良を 1 回するので、この大きさの板で
-    // 4e-11 以下。サイト ADR-0009。許容 1e-7）で成り立つ。固定辺を含む隅と自由辺どうしの隅の
+    // 4e-11 以下。ADR site-0009。許容 1e-7）で成り立つ。固定辺を含む隅と自由辺どうしの隅の
     // 隅反力は、隅の節点の w_xy を拘束するか（固定辺）、隅に支えが無いので（自由辺どうし）厳密に 0。
     // 自由辺の反力の合計も、拘束した節点が無いので厳密に 0。縦横比 1〜8
     for ty in SupportType::ALL.into_iter().filter(|t| t.is_stable()) {
@@ -443,7 +443,7 @@ fn a_symmetric_plate_follows_its_symmetry() {
     }
 }
 
-/// ADR-0006 の決め方。ν = 0.2 で、短い辺の分割数を DIVISIONS から倍にしたときの差が、参照解との照合と同じ
+/// ADR kirchhoff-plate-0006 の決め方。ν = 0.2 で、短い辺の分割数を DIVISIONS から倍にしたときの差が、参照解との照合と同じ
 /// 許容（隅から辺長の 5 % を除いて、w・M は 0.5 %、Q・V は 2 %）に収まる。比は代表の向きの Ly/Lx。
 /// 19 型を `parts` 組に分けた `part` 番目の組（型の一覧の位置で `parts` おき）だけを見る
 fn assert_doubling_the_divisions_changes_nothing(ratio: f64, part: usize, parts: usize) {
@@ -721,7 +721,7 @@ fn a_one_way_plate_with_zero_poisson_ratio_is_a_beam() {
 
 #[test]
 fn poisson_ratio_scales_the_deflection_and_mixes_the_moments_without_free_edges() {
-    // 自由辺の無い型では無次元の解が ν に依らない（ADR-0005）: w ∝ 1/D ∝ 1 − ν²、Mx(ν) = Mx(0) + ν·My(0)、
+    // 自由辺の無い型では無次元の解が ν に依らない（ADR kirchhoff-plate-0005）: w ∝ 1/D ∝ 1 − ν²、Mx(ν) = Mx(0) + ν·My(0)、
     // せん断力は ν に依らず、隅反力 2 D (1 − ν) |w_xy| は (1 − ν) 倍。有限要素でも同じ。ひずみエネルギーの ν の
     // 項 2ν (w_xx w_yy − w_xy²) は、要素の間で w と傾きが連続なので板全体では辺の上の値だけで決まり、固定辺と
     // 単純支持の辺（辺の上で w が 0）では 0 になる。差は連立の丸め（許容 1e-9）

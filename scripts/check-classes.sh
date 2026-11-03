@@ -22,7 +22,7 @@ for c in $classes; do
   fi
 done
 
-# 切り替わる幅は md と lg だけ（docs/adr/0007）。Tailwind 既定の sm・xl・2xl（40rem・80rem・96rem）の
+# 切り替わる幅は md と lg だけ（ADR site-0007）。Tailwind 既定の sm・xl・2xl（40rem・80rem・96rem）の
 # メディアクエリが生成物にあれば、theme.css の --breakpoint-* の消し忘れか、既定の幅が漏れている
 if grep -qE '\(width >= (40|80|96)rem\)' "$css"; then
   echo "NG: $css に Tailwind 既定の切り替わる幅（sm / xl / 2xl）がある"; fail=1

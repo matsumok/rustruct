@@ -17,7 +17,7 @@ Rust は stable。`rust-toolchain.toml` が channel と wasm ターゲットを�
 
 ## 公開リポジトリに書かないもの
 
-このリポジトリは公開。本人の claude.ai のアーティファクト（9月のデザインシステムと4画面のモック。2026-10-23 から更新しない、`docs/adr/0012`）の URL と ID は、リポジトリのファイル、コミットメッセージ、PR と Issue の本文・コメントのどこにも書かない。指すときは「本人の claude.ai のデザインシステム」と書く。URL はエージェントの手元の memory に置く（無ければ本人に聞く）。2026-10-13 から 10-16 まで `docs/ui-decisions.md` に ID が載っていた（履歴には残る。本人の判断で書き換えない）。
+このリポジトリは公開。本人の claude.ai のアーティファクト（9月のデザインシステムと4画面のモック。2026-10-23 から更新しない、ADR site-0012）の URL と ID は、リポジトリのファイル、コミットメッセージ、PR と Issue の本文・コメントのどこにも書かない。指すときは「本人の claude.ai のデザインシステム」と書く。URL はエージェントの手元の memory に置く（無ければ本人に聞く）。2026-10-13 から 10-16 まで `docs/ui-decisions.md` に ID が載っていた（履歴には残る。本人の判断で書き換えない）。
 
 ## Agent skills
 
@@ -31,4 +31,4 @@ The five canonical triage roles use their default label strings (`needs-triage`,
 
 ### Domain docs
 
-Multi-context: `GLOSSARY-MAP.md` at the repo root points at the site-wide `GLOSSARY.md` and one `docs/tools/<tool>/GLOSSARY.md` per Tool. Site-wide decisions live in `docs/adr/`, Tool-specific ones in `docs/tools/<tool>/adr/`. See `docs/agents/domain.md`.
+Multi-context: `GLOSSARY-MAP.md` at the repo root points at the site-wide `GLOSSARY.md` and one `docs/tools/<tool>/GLOSSARY.md` per Tool. ADR folders and names follow `GLOSSARY-MAP.md`. See `docs/agents/domain.md`.

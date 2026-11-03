@@ -23,7 +23,7 @@ fn the_interior_and_the_corner_reactions_match_the_navier_double_series() {
     // Navier の二重級数は有限要素と独立な解。m・n を 799 まで（各 400 項）取ると、Navier の打ち切りの差は
     // たわみで相対 1e-12、曲げモーメントとせん断力で各量の最大の 1e-5 未満なので、差は有限要素の離散化の誤差。
     // 許容はたわみと曲げモーメントが各量の代表値の 1e-3、せん断力と隅反力が 1e-2（級数解との照合の最大は
-    // w 3e-6、M 9e-5、Q 2.2e-3、隅反力 2e-5。ADR-0002）
+    // w 3e-6、M 9e-5、Q 2.2e-3、隅反力 2e-5。ADR kirchhoff-plate-0002）
     let (lx, ly) = (2000.0, 3000.0);
     let p = simply_supported(lx, ly, 0.2, 10.0);
     let s = solve(&p).unwrap();

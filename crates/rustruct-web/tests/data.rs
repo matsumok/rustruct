@@ -27,7 +27,7 @@ fn data_lists_concrete_then_rebar_with_path_name_and_blurb() {
     }
 }
 
-/// 呼び名, d, l, S, w。JIS G 3112 表6（ADR-0002 の写し）と同じ桁の文字列
+/// 呼び名, d, l, S, w。JIS G 3112 表6（ADR materials-0002 の写し）と同じ桁の文字列
 const REBAR_ROWS: [[&str; 5]; 16] = [
     ["D4", "4.23", "13.3", "14.05", "0.110"],
     ["D5", "5.29", "16.6", "21.98", "0.173"],
@@ -59,7 +59,7 @@ fn rebar_table_shows_every_designation_with_the_digits_of_jis() {
 }
 
 /// 種類, 長期 引張・圧縮, その括弧書き（D29 以上の値。表と同じく「（*195）」、同じ値なら空）,
-/// 長期 せん断補強, 短期 引張・圧縮, 短期 せん断補強。RC 規準 表 6.2（`docs/materials/adr/0003` の写し）
+/// 長期 せん断補強, 短期 引張・圧縮, 短期 せん断補強。RC 規準 表 6.2（ADR materials-0003 の写し）
 const ALLOWABLE_ROWS: [[&str; 6]; 4] = [
     ["SD295", "195", "", "195", "295", "295"],
     ["SD345", "215", "（*195）", "195", "345", "345"],

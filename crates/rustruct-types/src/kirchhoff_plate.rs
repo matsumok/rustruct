@@ -1,13 +1,13 @@
 //! Kirchhoff 板 Model と、支持条件の組、辺・隅の呼び方。言葉は `docs/tools/kirchhoff-plate/GLOSSARY.md`。
 //! 支持条件の組は利用者が辺ごとに選ぶ値で Model に保存する。型（21 種）と写し方は導出できるので
-//! ここには無く、`rustruct-calc` が求める（ADR-0003）。
+//! ここには無く、`rustruct-calc` が求める（ADR kirchhoff-plate-0003）。
 
 use std::fmt;
 
 use crate::quantity::{AreaLoad, Length, PoissonRatio, Stress};
 
-/// Kirchhoff 板 Model。1 枚の板の入力で、保存するのはこの値だけ（`docs/tools/kirchhoff-plate/adr/0001`）。
-/// 保存形式（serde）は、保存を実装するときに、サイトの ADR-0004（量の型）が予告した保存形式の見直しと合わせて付ける
+/// Kirchhoff 板 Model。1 枚の板の入力で、保存するのはこの値だけ（ADR kirchhoff-plate-0001）。
+/// 保存形式（serde）は、保存を実装するときに、ADR site-0004（量の型）が予告した保存形式の見直しと合わせて付ける
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Plate {
     /// x方向の辺長 Lx
@@ -112,7 +112,7 @@ impl Corner {
 }
 
 /// 4 辺の支持条件の組。不安定な組（四辺自由など）も作れる。画面で辺を 1 つずつ選ぶ途中を表すためで、
-/// 解けるかどうかは計算が答える（ADR-0003）。
+/// 解けるかどうかは計算が答える（ADR kirchhoff-plate-0003）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Supports {
     pub x0: Support,
@@ -142,7 +142,7 @@ impl Supports {
     }
 
     /// 自由辺が 1 つでもある組か。固定辺と自由辺の隅でせん断力と辺の反力が発散するので、隅の近くの値の
-    /// 見せ方（kirchhoff-plate の ADR-0008）が効く
+    /// 見せ方（ADR kirchhoff-plate-0008）が効く
     pub fn has_free_edge(self) -> bool {
         Edge::ALL.iter().any(|&edge| self.at(edge) == Support::Free)
     }
