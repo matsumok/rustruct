@@ -6,6 +6,12 @@ const DECIMAL_EXPONENTS: std::ops::Range<i32> = -3..6;
 /// 有効数字 `figures` 桁で書く。末尾の 0 も桁として残す（0.560）。整数部が桁を超えるときは整数で（1,140）。
 /// 0 は「0」。規格の丸め（JIS の丸めなど）は呼ぶ側で済ませ、ここは表示の桁をそろえて書くだけにする
 pub fn significant(x: f64, figures: u32) -> String {
+    scaled(x, 0, figures)
+}
+
+/// x を 10^`exponent` で割った仮数を、有効数字 `figures` 桁で書く（`scaled(22_669.0, 4, 3)` は「2.27」）。
+/// 10^`exponent` は呼ぶ側が列の見出しに書く。丸めは [`significant`] と同じで、割り算はせずに末位の位をずらす
+pub fn scaled(x: f64, exponent: i32, figures: u32) -> String {
     if x == 0.0 || !x.is_finite() {
         return at_place(x, 0);
     }
@@ -14,9 +20,9 @@ pub fn significant(x: f64, figures: u32) -> String {
     let units = units(x.abs(), place);
     if units >= 10u128.pow(figures as u32) {
         // 9.996 → 10.0 のように丸めで桁が上がった。末位を 1 つ上げて桁の数を保つ
-        return write(x.is_sign_negative(), units / 10, place + 1);
+        return write(x.is_sign_negative(), units / 10, place + 1 - exponent);
     }
-    write(x.is_sign_negative(), units, place)
+    write(x.is_sign_negative(), units, place - exponent)
 }
 
 /// 小数 `decimals` 桁で書く（`format!("{:.1}")` と同じ桁）。丸めて 0 になれば「0.0」のように 0 を並べる
@@ -159,6 +165,22 @@ mod tests {
         assert_eq!(fixed(22_723.4, 0), "22,723");
         assert_eq!(fixed(0.00052, 4), "5E-04");
         assert_eq!(fixed(1_234_567.0, 0), "1.234567E+06");
+    }
+
+    #[test]
+    fn scaled_writes_the_mantissa_of_ten_to_the_n() {
+        assert_eq!(scaled(22_669.0, 4, 3), "2.27");
+        assert_eq!(scaled(33_500.0, 4, 3), "3.35");
+        assert_eq!(scaled(-15_512.0, 3, 3), "-15.5");
+    }
+
+    #[test]
+    fn scaled_rounds_like_significant() {
+        // 2.2650 は四捨五入で上がる。0.0034650 も 2 進の誤差を落としてから丸める
+        assert_eq!(scaled(22_650.0, 4, 3), "2.27");
+        assert_eq!(scaled(0.003465, -3, 3), "3.47");
+        assert_eq!(scaled(99_960.0, 4, 3), "10.0");
+        assert_eq!(scaled(0.0, 4, 3), "0");
     }
 
     #[test]
