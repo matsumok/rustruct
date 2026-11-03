@@ -340,10 +340,50 @@ impl Solution {
 
     /// 辺の最大値。`edge` と同じ評価点から、曲げモーメント・せん断力・辺の反力それぞれの絶対値の最大と位置。
     /// 自由辺のある組では、固定辺と自由辺の隅で発散するせん断力と辺の反力を、両端から辺長の
-    /// [`CORNER_MARGIN`] を除いた範囲で取る。曲げモーメントは隅まで含める（ADR-0008）。両端を除いても評価点が
-    /// 残るよう、`divisions` は 2 以上
-    pub fn edge_maximum(&self, edge: Edge, divisions: usize) -> EdgeMaximum {
-        let samples = self.edge(edge, divisions);
+    /// [`CORNER_MARGIN`] を除いた範囲で取る。曲げモーメントは隅まで含める（ADR-0008）。
+    ///
+    /// 辺を等分する数 `DIVISIONS` は型の引数で、両端を除いても評価点が残るよう 2 以上でなければ
+    /// コンパイルが通らない。
+    ///
+    /// ```no_run
+    /// # use rustruct_calc::kirchhoff_plate::{Plate, solve};
+    /// # use rustruct_types::kirchhoff_plate::{Edge, Support, Supports};
+    /// # use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
+    /// # let plate = Plate {
+    /// #     lx: Length::mm(4000.0),
+    /// #     ly: Length::mm(5000.0),
+    /// #     thickness: Length::mm(200.0),
+    /// #     young_modulus: Stress::n_per_mm2(20_000.0),
+    /// #     poisson_ratio: PoissonRatio::new(0.2).unwrap(),
+    /// #     load: AreaLoad::kn_per_m2(10.0),
+    /// #     supports: Supports { y_ly: Support::Free, ..Supports::all(Support::Fixed) },
+    /// # };
+    /// let maximum = solve(&plate).unwrap().edge_maximum::<2>(Edge::X0);
+    /// ```
+    ///
+    /// ```compile_fail
+    /// # use rustruct_calc::kirchhoff_plate::{Plate, solve};
+    /// # use rustruct_types::kirchhoff_plate::{Edge, Support, Supports};
+    /// # use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
+    /// # let plate = Plate {
+    /// #     lx: Length::mm(4000.0),
+    /// #     ly: Length::mm(5000.0),
+    /// #     thickness: Length::mm(200.0),
+    /// #     young_modulus: Stress::n_per_mm2(20_000.0),
+    /// #     poisson_ratio: PoissonRatio::new(0.2).unwrap(),
+    /// #     load: AreaLoad::kn_per_m2(10.0),
+    /// #     supports: Supports { y_ly: Support::Free, ..Supports::all(Support::Fixed) },
+    /// # };
+    /// let maximum = solve(&plate).unwrap().edge_maximum::<1>(Edge::X0);
+    /// ```
+    pub fn edge_maximum<const DIVISIONS: usize>(&self, edge: Edge) -> EdgeMaximum {
+        const {
+            assert!(
+                DIVISIONS >= 2,
+                "両端を除いても評価点が残るよう、辺は 2 等分以上"
+            )
+        };
+        let samples = self.edge(edge, DIVISIONS);
         let free = self.plate.supports.has_free_edge();
         let length = samples.last().expect("評価点は 1 つ以上").along.as_mm();
         // 量の型を跨いで比べるので、内部の単位の数で比べる

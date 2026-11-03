@@ -95,7 +95,8 @@ impl<F: Field> Solver for Reference<F> {
         }
     }
 
-    /// 辺の反力の台形則。級数解の辺の反力は辺の上で滑らかなので細かい等分で足りる
+    /// 辺の反力の台形則。級数解の辺の反力は辺の上で滑らかなので細かい等分で足りる。各点を 1 回ずつ評価し、
+    /// 両端の点に 1/2 の重みを掛ける
     fn edge_reaction_total(&self, edge: Edge) -> f64 {
         let half_along = match edge {
             Edge::X0 | Edge::XLx => self.b,
@@ -103,12 +104,13 @@ impl<F: Field> Solver for Reference<F> {
         };
         let divisions = 1000;
         let step = 2.0 * half_along / divisions as f64;
-        (0..divisions)
+        let sum: f64 = (0..=divisions)
             .map(|k| {
-                let a = -half_along + step * k as f64;
-                (self.edge_reaction(edge, a) + self.edge_reaction(edge, a + step)) / 2.0 * step
+                let weight = if k == 0 || k == divisions { 0.5 } else { 1.0 };
+                weight * self.edge_reaction(edge, -half_along + step * k as f64)
             })
-            .sum()
+            .sum();
+        sum * step
     }
 
     fn corner_w_xy(&self, corner: Corner) -> f64 {

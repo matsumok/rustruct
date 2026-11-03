@@ -121,7 +121,7 @@ fn simply_supported_edges_have_zero_deflection_and_zero_edge_moment() {
             );
         }
         assert_eq!(
-            s.edge_maximum(e, 20).moment.value.as_nmm_per_mm(),
+            s.edge_maximum::<20>(e).moment.value.as_nmm_per_mm(),
             0.0,
             "{e} の曲げモーメントの最大"
         );

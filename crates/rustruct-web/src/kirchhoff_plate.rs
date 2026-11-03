@@ -329,7 +329,7 @@ impl PlateReadout {
         let deflection = solution.deflection_maximum();
         let edges = EDGES
             .map(|edge| {
-                let maximum = solution.edge_maximum(edge, EDGE_DIVISIONS);
+                let maximum = solution.edge_maximum::<EDGE_DIVISIONS>(edge);
                 EdgeRow {
                     name: edge.to_string(),
                     max_moment: Maximum::of(maximum.moment, |m| m.as_knm_per_m()),

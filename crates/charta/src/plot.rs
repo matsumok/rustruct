@@ -12,7 +12,7 @@ use crate::scene::{Anchor, Font, Item, Paint, Pt, Scene, Stroke};
 pub const FRAME_WIDTH: f64 = 1.0;
 /// 目盛りの長さ（枠から内へ）。
 pub const TICK_LENGTH: f64 = 4.0;
-/// 目盛りの数値と軸の名前の文字の大きさ（`label` の段）。
+/// 目盛りの数値と軸の名前の文字の大きさ（`label` の段）。図に重ねる名前や要約の文字も同じ大きさにする。
 pub const TEXT_SIZE: f64 = 11.0;
 /// 目盛りの数の目安（軸ごと）。刻みは 1・2・2.5・5 × 10ⁿ に丸める。
 pub const TICK_STEPS: usize = 5;
@@ -51,7 +51,7 @@ impl Plot {
     /// 数値は `digits` 文字まで入る。上と右は、枠の端の目盛りの数値が半分はみ出す分
     pub fn margins(digits: usize) -> [f64; 4] {
         let line = TEXT_SIZE + GAP;
-        let number = digits as f64 * TEXT_SIZE * MONO_ADVANCE;
+        let number = number_width(digits);
         [
             GAP + number + GAP + line,
             TEXT_SIZE / 2.0,
@@ -61,8 +61,10 @@ impl Plot {
     }
 }
 
-/// 等幅書体の 1 文字の送り（文字の大きさに対する比）。
-const MONO_ADVANCE: f64 = 0.6;
+/// 目盛りの数値 `digits` 文字の幅の見込み
+fn number_width(digits: usize) -> f64 {
+    Font::Mono.width(&"0".repeat(digits), TEXT_SIZE)
+}
 
 /// 枠、内向きの目盛り（四辺）、下と左の目盛りの数値、軸の名前。`digits` は数値の幅の見込み
 /// （[`Plot::margins`] に渡したものと同じ）。
@@ -121,7 +123,7 @@ pub fn axes(plot: &Plot, x_name: &str, y_name: &str, digits: usize) -> Scene {
         0.0,
     ));
     labels.push(text(
-        lo[0] - GAP - digits as f64 * TEXT_SIZE * MONO_ADVANCE - GAP - TEXT_SIZE / 2.0,
+        lo[0] - GAP - number_width(digits) - GAP - TEXT_SIZE / 2.0,
         (lo[1] + hi[1]) / 2.0,
         y_name.to_string(),
         Font::Sans,

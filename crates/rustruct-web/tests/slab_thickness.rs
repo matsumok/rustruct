@@ -411,3 +411,24 @@ fn curve_numbers_keep_off_the_point_mark_and_its_name() {
         }
     }
 }
+
+#[test]
+fn the_color_edge_curves_around_the_point_are_numbered_even_where_the_mark_sits_on_the_diagonal() {
+    // 検討点は数値を並べる対角線の上にある。印と名前にかかる曲線も、同じ曲線の別の場所に数値が出る
+    for k in 0..12 {
+        let lx = format!("{:.2}", 4.0 + 0.05 * k as f64);
+        let svg = figure(|i| i.set(SlabField::SpanX, lx.as_str()))
+            .unwrap()
+            .light_svg;
+        let t_req: f64 = readout(|i| i.set(SlabField::SpanX, lx.as_str()))
+            .point
+            .required_thickness
+            .parse()
+            .unwrap();
+        let numbers = thickness_numbers(&svg);
+        let below = (t_req / 20.0).floor() * 20.0;
+        for t in [below, below + 20.0] {
+            assert!(numbers.contains(&t), "Lx {lx}: {t} が無い {numbers:?}");
+        }
+    }
+}

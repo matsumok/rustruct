@@ -140,7 +140,7 @@ fn the_edge_maximum_of_a_square_plate_is_at_the_middle_of_the_edge() {
         let s = solve(&plate(l, l, 0.0, 10.0, supports)).unwrap();
         let what = supports.symbol();
         for e in Edge::ALL {
-            let m = s.edge_maximum(e, 100);
+            let m = s.edge_maximum::<100>(e);
             let mid = s.edge(e, 100)[50];
             assert_eq!(
                 m.reaction.along.as_mm(),
@@ -194,7 +194,7 @@ fn with_a_free_edge_the_edge_maximum_of_shear_and_reaction_skips_five_percent_at
     for e in Edge::ALL {
         let samples = s.edge(e, 100);
         let inner = &samples[5..=95];
-        let m = s.edge_maximum(e, 100);
+        let m = s.edge_maximum::<100>(e);
         let shear = largest(inner, |s| s.shear.as_n_per_mm());
         let reaction = largest(inner, |s| s.reaction.as_n_per_mm());
         let moment = largest(&samples, |s| s.moment.as_nmm_per_mm());
@@ -211,7 +211,7 @@ fn with_a_free_edge_the_edge_maximum_of_shear_and_reaction_skips_five_percent_at
     // x = 0 の固定辺は y = Ly の自由辺と隅で会う。全長ならせん断力と反力の最大は隅の発散で、曲げモーメントの
     // 最大は自由辺の端から 5 % 以内にある
     let x0 = s.edge(Edge::X0, 100);
-    let m = s.edge_maximum(Edge::X0, 100);
+    let m = s.edge_maximum::<100>(Edge::X0);
     assert!(
         largest(&x0, |s| s.shear.as_n_per_mm())
             .shear
@@ -236,7 +236,7 @@ fn without_a_free_edge_the_edge_maximum_runs_over_the_whole_edge() {
     let s = solve(&plate(lx, ly, 0.2, 10.0, FFSS)).unwrap();
     for e in Edge::ALL {
         let samples = s.edge(e, 100);
-        let m = s.edge_maximum(e, 100);
+        let m = s.edge_maximum::<100>(e);
         let shear = largest(&samples, |s| s.shear.as_n_per_mm());
         let reaction = largest(&samples, |s| s.reaction.as_n_per_mm());
         assert_eq!(
@@ -250,7 +250,7 @@ fn without_a_free_edge_the_edge_maximum_runs_over_the_whole_edge() {
             "{e} の反力"
         );
     }
-    let along = s.edge_maximum(Edge::XLx, 100).shear.along.as_mm();
+    let along = s.edge_maximum::<100>(Edge::XLx).shear.along.as_mm();
     assert!(along < 0.05 * ly || along > 0.95 * ly, "{along}");
 }
 

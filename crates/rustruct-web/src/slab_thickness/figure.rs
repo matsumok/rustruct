@@ -6,9 +6,10 @@
 //! サイトの分布図にそろえる（同じ所の ADR-0002、`docs/ui-decisions.md`「等厚曲線の図」）。図は 1 単位
 //! （`width-column`）の幅に収め、色はライトとダークの 2 枚を作る。
 
+use charta::plot::TEXT_SIZE;
 use charta::{
-    Anchor, Font, Item, LevelGraph, Paint, Plot, Pt, Scene, Stroke, Theme, axes, level_graphs,
-    to_svg,
+    Anchor, Font, HALO_WIDTH, Item, LevelGraph, Paint, Plot, Pt, Scene, Stroke, Theme, axes,
+    level_graphs, to_svg,
 };
 use numerus::at_place;
 use rustruct_calc::slab_thickness::{Conditions, Spans, evaluate, iso_curves, shared_values};
@@ -35,8 +36,6 @@ const THICKNESS_STEP: f64 = 10.0;
 const MAX_CURVES: usize = 200;
 /// 目盛りの数値の幅の見込み（文字数）
 const DIGITS: usize = 4;
-/// 条件の要約と検討点の名前の文字（`label` の段）
-const TEXT_SIZE: f64 = 11.0;
 /// 条件の要約の行送り
 const LINE_HEIGHT: f64 = 16.0;
 /// 枠の内側から条件の要約までの空き
@@ -44,8 +43,6 @@ const INSET: f64 = 6.0;
 /// 検討点の印の半径と線の太さ
 const MARK_RADIUS: f64 = 3.5;
 const MARK_WIDTH: f64 = 1.0;
-/// 白抜きの縁の太さ（等厚曲線の数値と同じ）
-const HALO_WIDTH: f64 = 2.5;
 
 /// 等厚曲線の図。図の名前はページが置く
 #[derive(Debug, Clone, PartialEq)]
@@ -203,8 +200,7 @@ fn scene(conditions: &Conditions, point: Option<(&str, Spans)>) -> Scene {
     scene
 }
 
-/// 印と文字が占める矩形（左上と右下）に、白抜きの縁の分を足したもの。文字の幅は見込みで、欧文と数字は
-/// 0.6 字、ほかは 1 字
+/// 印と文字が占める矩形（左上と右下）に、白抜きの縁の分を足したもの。文字の幅は charta の見込み
 fn extent(item: &Item) -> Option<[Pt; 2]> {
     let pad = HALO_WIDTH;
     match item {
@@ -216,13 +212,14 @@ fn extent(item: &Item) -> Option<[Pt; 2]> {
             ])
         }
         Item::Text {
-            x, y, text, size, ..
+            x,
+            y,
+            text,
+            size,
+            font,
+            ..
         } => {
-            let width: f64 = text
-                .chars()
-                .map(|c| if c.is_ascii() { 0.6 } else { 1.0 })
-                .sum::<f64>()
-                * size;
+            let width = font.width(text, *size);
             Some([
                 [x - pad, y - size / 2.0 - pad],
                 [x + width + pad, y + size / 2.0 + pad],
@@ -232,7 +229,7 @@ fn extent(item: &Item) -> Option<[Pt; 2]> {
     }
 }
 
-/// 図の中の文字（条件の要約、検討点の名前）。`ink` の和文を `paper` の縁で白抜きにし、左に寄せる
+/// 図の中の文字（条件の要約、検討点の名前）。目盛りの数値と同じ `label` の段の大きさの、`ink` の和文を `paper` の縁で白抜きにし、左に寄せる
 fn text(at: [f64; 2], s: &str) -> Item {
     Item::Text {
         x: at[0],

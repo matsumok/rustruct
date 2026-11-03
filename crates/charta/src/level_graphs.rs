@@ -9,10 +9,11 @@
 //! - 線は `ink` の細線（分布図と同じ太さ）
 //! - 線の上の数値は分布図と同じ白抜きの文字。場が両方向に増えるので、描く範囲の左下から右上への対角線は
 //!   範囲に現れる水準の境とちょうど一度ずつ交わる。数値はその交点に置き、ぶつかるときは `color_step` の
-//!   倍数の水準（色の変わり目）を先に、次に範囲の中心に近いものを残す
+//!   倍数の水準（色の変わり目）を先に、次に範囲の中心に近いものを残す。交点が図の上の印や文字（`clear`）に
+//!   かかるか範囲からはみ出すときは、同じ線の上を交点に近い順に、置ける場所を探す
 
 use crate::distribution::LINE_WIDTH;
-use crate::label::{Candidate, cross, place};
+use crate::label::{Candidate, LABEL_SIZE, cross, place_groups};
 use crate::levels::format_level;
 use crate::palette::Palette;
 use crate::plot::Plot;
@@ -118,10 +119,14 @@ pub fn level_graphs(
         let k = (level / color_step).round();
         (k * color_step - level).abs() < 1e-6 * color_step
     };
+    // 対角線は水準ごとに一度だけ交わる。交点が線分の継ぎ目に来ると丸めで両側の線分が拾うので、水準ごとに
+    // 最初の 1 つ
     let mut crossings: Vec<(f64, Pt, f64, f64)> = Vec::new();
     for (level, line) in &screen_lines {
         for w in line.windows(2) {
-            if let Some((u, at, angle)) = cross(from, to, w[0], w[1]) {
+            if let Some((u, at, angle)) = cross(from, to, w[0], w[1])
+                && !crossings.iter().any(|c| c.3 == *level)
+            {
                 crossings.push((u, at, angle, *level));
             }
         }
@@ -131,22 +136,60 @@ pub fn level_graphs(
             .cmp(&!is_edge(b.3))
             .then((a.0 - 0.5).abs().total_cmp(&(b.0 - 0.5).abs()))
     });
+    // 交点が印や文字にかかるときは、同じ線の上を交点から近い順に
+    let groups = crossings.into_iter().map(|(_, at, angle, level)| {
+        let text = format_level(level, step);
+        let mut others: Vec<(Pt, f64)> = screen_lines
+            .iter()
+            .filter(|(l, _)| *l == level)
+            .flat_map(|(_, run)| along(run, ALONG_STEP))
+            .collect();
+        others.sort_by(|a, b| distance(a.0, at).total_cmp(&distance(b.0, at)));
+        std::iter::once((at, angle))
+            .chain(others)
+            .map(|(at, angle)| Candidate {
+                at,
+                angle,
+                text: text.clone(),
+            })
+            .collect::<Vec<_>>()
+    });
     scene.items.extend(
-        place(
-            crossings
-                .into_iter()
-                .map(|(_, at, angle, level)| Candidate {
-                    at,
-                    angle,
-                    text: format_level(level, step),
-                }),
-            plot.bounds(),
-            clear,
-        )
-        .into_iter()
-        .map(|label| label.into_item()),
+        place_groups(groups, plot.bounds(), clear)
+            .into_iter()
+            .map(|label| label.into_item()),
     );
     scene
+}
+
+/// 交点から外したときに、線の上で次の候補を探す間隔（線に沿った長さ）。数値の文字の高さの半分
+const ALONG_STEP: f64 = LABEL_SIZE / 2.0;
+
+fn distance(a: Pt, b: Pt) -> f64 {
+    (a[0] - b[0]).hypot(a[1] - b[1])
+}
+
+/// 折れ線 `run` の上に、始点から線に沿って `spacing` ごとに取った点と、そこでの線の向き（度）
+fn along(run: &[Pt], spacing: f64) -> Vec<(Pt, f64)> {
+    let mut out = Vec::new();
+    // 次の点までに残る線に沿った長さ
+    let mut ahead = 0.0;
+    for w in run.windows(2) {
+        let (p, q) = (w[0], w[1]);
+        let length = distance(p, q);
+        if length == 0.0 {
+            continue;
+        }
+        let angle = (q[1] - p[1]).atan2(q[0] - p[0]).to_degrees();
+        let mut s = ahead;
+        while s < length {
+            let t = s / length;
+            out.push(([p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1])], angle));
+            s += spacing;
+        }
+        ahead = s - length;
+    }
+    out
 }
 
 /// 帯の輪郭から、続く同じ点と、水平に並ぶ点の間の点を除く（帯が枠の上下の辺に沿う所で点が並ぶ）
@@ -335,6 +378,30 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_number_kept_off_the_diagonal_moves_along_its_own_line() {
+        // 対角線の中心の近くを空ける: 100 の数値は対角線に置けず、100 の線（x + y = 10）の別の場所に出る
+        let clear = [[[80.0, 80.0], [120.0, 120.0]]];
+        let scene = level_graphs(&plot(), &xs(), &graphs(), 20.0, &clear);
+        let hundred: Vec<(f64, f64)> = scene
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Text { x, y, text, .. } if text == "100" => Some((*x, *y)),
+                _ => None,
+            })
+            .collect();
+        let [(x, y)] = hundred[..] else {
+            panic!("100 の数値が 1 つでない: {hundred:?}");
+        };
+        // 画面 (sx, sy) → データ (sx/20, 10 − sy/20)
+        assert!(
+            (x / 20.0 + 10.0 - y / 20.0 - 10.0).abs() < 1e-6,
+            "100 の線の外: ({x}, {y})"
+        );
+        assert!(!((80.0..=120.0).contains(&x) && (80.0..=120.0).contains(&y)));
     }
 
     #[test]
