@@ -188,6 +188,14 @@ impl Mapping {
         )
     }
 
+    /// 代表の向きの板の座標（隅が原点）の点を利用者の座標に。[`Self::representative_point`] の逆
+    pub fn user_point(self, x: f64, y: f64, lx: f64, ly: f64) -> (f64, f64) {
+        let (rep_lx, rep_ly) = self.representative_lengths(lx, ly);
+        let x = if self.flip_x { rep_lx - x } else { x };
+        let y = if self.flip_y { rep_ly - y } else { y };
+        if self.transpose { (y, x) } else { (x, y) }
+    }
+
     /// 利用者の辺の始点（座標 0 の端）からの距離を、代表の向きの辺の始点からの距離に
     pub fn representative_edge_position(
         self,

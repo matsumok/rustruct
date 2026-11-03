@@ -298,3 +298,151 @@ fn the_grid_runs_over_the_whole_plate_with_x_changing_fastest() {
     assert!(s.at(Length::mm(-1.0), Length::mm(0.0)).is_none());
     assert!(s.at(Length::mm(0.0), Length::mm(ly + 1.0)).is_none());
 }
+
+#[test]
+fn the_deflection_maximum_of_a_fixed_or_simply_supported_plate_is_at_the_centre() {
+    // 四辺の支持が同じ板では、対称から最大は中央。値は中央の w に、位置は辺長の 1e-6 に一致する
+    for supports in [FFFF, Supports::all(Support::SimplySupported)] {
+        for (lx, ly) in [(2000.0, 2000.0), (2000.0, 3000.0), (5000.0, 2000.0)] {
+            let s = solve(&plate(lx, ly, 0.2, 10.0, supports)).unwrap();
+            let m = s.deflection_maximum();
+            let centre = at(&s, lx / 2.0, ly / 2.0).w.as_mm();
+            let what = format!("{lx} × {ly}");
+            assert_within(m.w.as_mm(), centre, 1e-9 * centre, &what);
+            assert_within(m.x.as_mm(), lx / 2.0, 1e-6 * lx, &what);
+            assert_within(m.y.as_mm(), ly / 2.0, 1e-6 * ly, &what);
+        }
+    }
+}
+
+#[test]
+fn with_one_free_edge_the_deflection_maximum_is_at_the_middle_of_that_edge() {
+    // 三辺固定一辺自由。自由辺をどの辺に置いても、最大はその辺の中央。中央の w より大きい。辺長は
+    // 縦横比が割り切れない値も入れる（代表の向きとの換算の丸めを見る）
+    let with_free = |edge: Edge| {
+        let mut supports = FFFF;
+        match edge {
+            Edge::X0 => supports.x0 = Support::Free,
+            Edge::XLx => supports.x_lx = Support::Free,
+            Edge::Y0 => supports.y0 = Support::Free,
+            Edge::YLy => supports.y_ly = Support::Free,
+        }
+        supports
+    };
+    for (lx, ly, edge) in [(2000.0, 3000.0), (3100.0, 1700.0), (4000.0, 4900.0)]
+        .into_iter()
+        .flat_map(|(lx, ly)| Edge::ALL.map(|e| (lx, ly, e)))
+    {
+        let s = solve(&plate(lx, ly, 0.2, 10.0, with_free(edge))).unwrap();
+        let m = s.deflection_maximum();
+        let (x, y) = match edge {
+            Edge::X0 => (0.0, ly / 2.0),
+            Edge::XLx => (lx, ly / 2.0),
+            Edge::Y0 => (lx / 2.0, 0.0),
+            Edge::YLy => (lx / 2.0, ly),
+        };
+        let what = format!("{lx} × {ly} {edge}");
+        assert_within(m.x.as_mm(), x, 1e-6 * lx, &what);
+        assert_within(m.y.as_mm(), y, 1e-6 * ly, &what);
+        // 辺に直交する座標は辺の上にちょうど来る（丸めで板の外や辺のすぐ内に出ない）
+        let normal = match edge {
+            Edge::X0 | Edge::XLx => (m.x.as_mm(), x),
+            Edge::Y0 | Edge::YLy => (m.y.as_mm(), y),
+        };
+        assert_eq!(normal.0, normal.1, "{what}");
+        assert_within(
+            m.w.as_mm(),
+            at(&s, x, y).w.as_mm(),
+            1e-9 * m.w.as_mm(),
+            &what,
+        );
+        assert!(m.w.as_mm() > at(&s, lx / 2.0, ly / 2.0).w.as_mm(), "{what}");
+    }
+}
+
+#[test]
+fn mirrored_supports_give_a_mirrored_deflection_maximum() {
+    // 対称でない組（x = 0 と y = 0 が固定、x = Lx が単純支持、y = Ly が自由）と、それを x について裏返した組。
+    // 最大の位置は x について裏返しに、値は同じになる
+    let (lx, ly) = (3000.0, 2000.0);
+    let supports = Supports {
+        x0: Support::Fixed,
+        y0: Support::Fixed,
+        x_lx: Support::SimplySupported,
+        y_ly: Support::Free,
+    };
+    let mirrored = Supports {
+        x0: supports.x_lx,
+        x_lx: supports.x0,
+        ..supports
+    };
+    let m = solve(&plate(lx, ly, 0.2, 10.0, supports))
+        .unwrap()
+        .deflection_maximum();
+    let n = solve(&plate(lx, ly, 0.2, 10.0, mirrored))
+        .unwrap()
+        .deflection_maximum();
+    // 最大は自由辺の上で、単純支持の辺に寄る
+    assert_within(m.y.as_mm(), ly, 1e-9 * ly, "y");
+    assert!(
+        m.x.as_mm() > lx / 2.0 && m.x.as_mm() < lx,
+        "x = {}",
+        m.x.as_mm()
+    );
+    assert_within(n.x.as_mm(), lx - m.x.as_mm(), 1e-6 * lx, "裏返した x");
+    assert_within(n.y.as_mm(), m.y.as_mm(), 1e-6 * ly, "裏返した y");
+    assert_within(n.w.as_mm(), m.w.as_mm(), 1e-9 * m.w.as_mm(), "w");
+}
+
+#[test]
+fn equal_maxima_on_opposite_free_edges_give_the_one_nearer_the_origin() {
+    // 対辺が自由、ほかの 2 辺が固定か単純支持。最大は両方の自由辺の中央で同じ大きさで、原点に近い側を返す
+    let (lx, ly) = (2000.0, 3000.0);
+    let (f, ss, r) = (Support::Fixed, Support::SimplySupported, Support::Free);
+    for (supports, x, y, opposite) in [
+        (
+            Supports {
+                x0: f,
+                y0: r,
+                x_lx: f,
+                y_ly: r,
+            },
+            lx / 2.0,
+            0.0,
+            (lx / 2.0, ly),
+        ),
+        (
+            Supports {
+                x0: r,
+                y0: f,
+                x_lx: r,
+                y_ly: f,
+            },
+            0.0,
+            ly / 2.0,
+            (lx, ly / 2.0),
+        ),
+        (
+            Supports {
+                x0: ss,
+                y0: r,
+                x_lx: ss,
+                y_ly: r,
+            },
+            lx / 2.0,
+            0.0,
+            (lx / 2.0, ly),
+        ),
+    ] {
+        let s = solve(&plate(lx, ly, 0.2, 10.0, supports)).unwrap();
+        let m = s.deflection_maximum();
+        assert_within(m.x.as_mm(), x, 1e-6 * lx, "x");
+        assert_within(m.y.as_mm(), y, 1e-6 * ly, "y");
+        assert_within(
+            m.w.as_mm(),
+            at(&s, opposite.0, opposite.1).w.as_mm(),
+            1e-9 * m.w.as_mm(),
+            "反対の自由辺の中央",
+        );
+    }
+}

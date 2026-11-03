@@ -17,7 +17,7 @@ mod simply_supported;
 use rustruct_types::kirchhoff_plate::{Corner, Edge};
 
 use super::PlateError;
-use super::solver::{Derivatives, EdgePoint, Solver};
+use super::solver::{Derivatives, EdgePoint, Solver, deflection_maximum};
 use super::support_type::SupportType;
 
 /// 級数の項数。参照解の中の定数で、値は項数を倍にしたときの変化が収まることで決めた
@@ -113,5 +113,20 @@ impl<F: Field> Solver for Reference<F> {
 
     fn corner_w_xy(&self, corner: Corner) -> f64 {
         self.field.corner_w_xy(corner)
+    }
+
+    /// x の辺長を 40 等分する間隔の等分の格子から詰める。級数解には節点が無い
+    fn deflection_maximum(&self) -> (f64, f64) {
+        let uniform = |half: f64| -> Vec<f64> {
+            let n = 2 * (20.0 * half).ceil() as usize;
+            (0..=n)
+                .map(|k| -half + 2.0 * half * k as f64 / n as f64)
+                .collect()
+        };
+        deflection_maximum(
+            |x, y| self.field.interior(x, y).w,
+            &uniform(1.0),
+            &uniform(self.b),
+        )
     }
 }

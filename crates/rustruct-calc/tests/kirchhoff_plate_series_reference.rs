@@ -305,6 +305,29 @@ fn the_finite_elements_match_the_series_solutions() {
 }
 
 #[test]
+fn the_deflection_maximum_matches_the_series_solutions() {
+    // 最大たわみの値が参照解の最大と w の許容（0.5 %、ADR-0002）で、位置が辺長の 1e-6 で一致する。
+    // 参照解も級数の w を格子から詰めて取る（ADR-0009）
+    let lx = 2000.0;
+    for (symbol, supports) in [("SSSS", SSSS), ("FFFF", FFFF)] {
+        for ratio in [1.0, 2.0] {
+            let ly = ratio * lx;
+            let p = plate(lx, ly, 0.2, 10.0, supports);
+            let (r, f) = (
+                reference(&p).deflection_maximum(),
+                solve(&p).unwrap().deflection_maximum(),
+            );
+            let what = format!("{symbol} 比 {ratio}");
+            assert_within(f.w.as_mm(), r.w.as_mm(), 5e-3 * r.w.as_mm(), &what);
+            for m in [r, f] {
+                assert_within(m.x.as_mm(), lx / 2.0, 1e-6 * lx, &what);
+                assert_within(m.y.as_mm(), ly / 2.0, 1e-6 * ly, &what);
+            }
+        }
+    }
+}
+
+#[test]
 #[ignore = "参照解との差、分割数を倍にしたときの差、計算時間を出す。cargo test --release -- --ignored --nocapture で見る"]
 fn report_deviations_and_timing() {
     use rustruct_calc::kirchhoff_plate::{DIVISIONS, solve_with_divisions};
