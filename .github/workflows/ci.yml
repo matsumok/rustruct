@@ -109,10 +109,11 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://rustruct.matsumok.com
+      url: ${{ steps.publish.outputs.url }}
     steps:
       - uses: actions/checkout@v7 # action と wrangler.toml と scripts/ のため
       - name: 配置 → live
+        id: publish
         uses: ./.github/actions/publish
         with:
           command: deploy

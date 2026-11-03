@@ -15,11 +15,11 @@ inputs:
     description: Cloudflare のアカウント ID（secrets.CLOUDFLARE_ACCOUNT_ID）
     required: true
   access-id:
-    description: Cloudflare Access のサービストークンの Client ID（secrets.CF_ACCESS_CLIENT_ID）。site が false なら要らない
+    description: Cloudflare Access のサービストークンの Client ID（secrets.CF_ACCESS_CLIENT_ID）。site が true なら要り、空なら最初の step で止まる
     required: false
     default: ""
   access-secret:
-    description: Cloudflare Access のサービストークンの Client Secret（secrets.CF_ACCESS_CLIENT_SECRET）。site が false なら要らない
+    description: Cloudflare Access のサービストークンの Client Secret（secrets.CF_ACCESS_CLIENT_SECRET）。site が true なら要り、空なら最初の step で止まる
     required: false
     default: ""
   url:
@@ -39,6 +39,19 @@ outputs:
 runs:
   using: composite
   steps:
+    # live は Access のサービストークンで通る。渡し忘れを wrangler の前に止める（後だと live が Access の転送で落ちるまで分からない）
+    - name: access-id と access-secret がある
+      if: inputs.site == 'true'
+      shell: sh
+      env:
+        CF_ACCESS_CLIENT_ID: ${{ inputs.access-id }}
+        CF_ACCESS_CLIENT_SECRET: ${{ inputs.access-secret }}
+      run: |
+        test -n "$CF_ACCESS_CLIENT_ID" && test -n "$CF_ACCESS_CLIENT_SECRET" || {
+          echo "access-id か access-secret が空（site が true なら live のために要る。Secrets の CF_ACCESS_CLIENT_ID と CF_ACCESS_CLIENT_SECRET を渡す。docs/deploy.md）"
+          exit 1
+        }
+
     - if: inputs.site == 'true'
       uses: actions/download-artifact@v8
       with:

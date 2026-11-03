@@ -49,7 +49,7 @@ Secrets が無いと、`check` job は通り、`deploy` / `preview` job が wran
 
 - Worker `rustruct` が無ければ作る
 - `wrangler.toml` の `routes`（`custom_domain = true`）で `rustruct.matsumok.com` を Worker に結び、DNS レコードを Cloudflare が作る。証明書も自動
-- 続く step「live」が `scripts/check-live.sh https://rustruct.matsumok.com` で、住所ごとの HTML、`/tools` → `/tools/` の転送、未知の住所の 404、CSS・WASM、WASM の Content-Type を見る
+- 同じ action（`.github/actions/publish`）の中の step「live」が、続けて `scripts/check-live.sh https://rustruct.matsumok.com` で、住所ごとの HTML、`/tools` → `/tools/` の転送、未知の住所の 404、CSS・WASM、WASM の Content-Type を見る
 - 初回は DNS レコードと証明書の発行に数十秒かかる（2026-10-14 の初回配置で、直後の curl が全部接続できず「live」だけ落ちた）。`check-live.sh` は応答が返るまで最大 3 分待つ。それでも落ちたら、Actions の「Re-run failed jobs」で `deploy` job をやり直す
 
 GitHub の Environments（`production`、`preview`）は最初の run が自動で作る。手で作る必要は無い。
@@ -68,7 +68,7 @@ GitHub の Environments（`production`、`preview`）は最初の run が自動�
 
 公開するまでは、本番（`rustruct.matsumok.com`）とプレビュー（`*.workers.dev`）の全体に Cloudflare Access を掛け、root だけが見られるようにする（2026-10-14 に決めた）。ADR site-0002 の「Access は `/private/` だけ」は公開後の形で、これはそれまでの一時的な措置。#15（検索エンジンに載せる準備）は公開まで寝かせる。
 
-CI の live（`scripts/check-live.sh`）は Access のサービストークンで通る。Secrets の `CF_ACCESS_CLIENT_ID` と `CF_ACCESS_CLIENT_SECRET` を環境変数で渡すと、curl がそのヘッダを付ける。無いと Access のログインへ転送され、live が「Cloudflare Access のログインへ転送された」と言って落ちる。
+CI の live（`scripts/check-live.sh`）は Access のサービストークンで通る。Secrets の `CF_ACCESS_CLIENT_ID` と `CF_ACCESS_CLIENT_SECRET` を環境変数で渡すと、curl がそのヘッダを付ける。action（`.github/actions/publish`）は、どちらかが空なら wrangler の前の最初の step で止まる。値が誤っていると Access のログインへ転送され、live が「Cloudflare Access のログインへ転送された」と言って落ちる。
 
 人がやること（Cloudflare Zero Trust のダッシュボード。順に）:
 
