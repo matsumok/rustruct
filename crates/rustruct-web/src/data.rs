@@ -8,6 +8,7 @@ use rustruct_types::concrete::{BarPosition, Concrete, ConcreteKind};
 use rustruct_types::quantity::Stress;
 use rustruct_types::rebar::{BarDesignation, RebarKind};
 
+use crate::inputs::{Definition, Field, InputGroup, Inputs, Kind, Layout, Reason};
 use crate::table::{
     Block, Caption, Cell, Column, Columns, Divider, Formula, Notes, Table, TableColumn,
 };
@@ -29,6 +30,29 @@ pub(crate) fn DataIndex() -> Element {
     }
 }
 
+/// コンクリートのページの欄。Fc の 1 つだけ
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConcreteField {
+    Fc,
+}
+
+impl Field for ConcreteField {
+    const ALL: &'static [Self] = &[Self::Fc];
+
+    /// 初期値 24。0 より大きいかは `Concrete` が見る
+    fn definition(self) -> Definition {
+        match self {
+            Self::Fc => Definition {
+                name: "Fc（N/mm²）".into(),
+                kind: Kind::number(false, "24"),
+            },
+        }
+    }
+}
+
+/// 入力の中身。読めるかは `ConcreteReadout` が決める
+pub type ConcreteInputs = Inputs<ConcreteField>;
+
 /// Fc の入力から求めた、カルキュレータの表示。数値は丸めて文字にしたもの。
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConcreteReadout {
@@ -42,13 +66,20 @@ pub enum ConcreteReadout {
         /// 計算はできるが、Fc が想定の範囲を外れている
         warning: Option<String>,
     },
-    /// Fc が使えない。値はすべて「—」
-    Unusable { error: String },
+    /// Fc が使えない。値はすべて「—」。理由は入力の組の文言（欄の名前を含めない）
+    Unusable { error: Reason },
 }
 
 impl ConcreteReadout {
+    /// Fc の欄に `input` を打ったときの表示
     pub fn from_fc_input(input: &str) -> Self {
-        match Self::concrete(input) {
+        let mut inputs = ConcreteInputs::new();
+        inputs.set(ConcreteField::Fc, input);
+        Self::from_inputs(&inputs)
+    }
+
+    pub fn from_inputs(inputs: &ConcreteInputs) -> Self {
+        match Self::concrete(inputs) {
             Ok(c) => Self::Computed {
                 unit_weight: fixed(c.unit_weight().as_kn_per_m3(), 1),
                 young_modulus: young_modulus(c.young_modulus()),
@@ -94,13 +125,26 @@ impl ConcreteReadout {
         }
     }
 
-    fn concrete(input: &str) -> Result<Concrete, String> {
-        let input = input.trim();
-        if input.is_empty() {
-            return Err("Fc を入力".into());
+    /// 読めない Fc は文字の規則の理由、`Concrete` が受けない Fc は「0 より大きい値を入れる」
+    fn concrete(inputs: &ConcreteInputs) -> Result<Concrete, Reason> {
+        let fc = inputs.number(ConcreteField::Fc)?;
+        Concrete::new(Stress::n_per_mm2(fc), ConcreteKind::Normal)
+            .map_err(|_| "0 より大きい値を入れる".into())
+    }
+
+    /// 入力の組に渡す、読めない欄と理由
+    fn errors(&self) -> Vec<(ConcreteField, Reason)> {
+        match self {
+            Self::Computed { .. } => Vec::new(),
+            Self::Unusable { error } => vec![(ConcreteField::Fc, error.clone())],
         }
-        let fc: f64 = input.parse().map_err(|_| "数値を入力".to_string())?;
-        Concrete::new(Stress::n_per_mm2(fc), ConcreteKind::Normal).map_err(|e| e.to_string())
+    }
+
+    fn warning(&self) -> Option<String> {
+        match self {
+            Self::Computed { warning, .. } => warning.clone(),
+            Self::Unusable { .. } => None,
+        }
     }
 }
 
@@ -223,14 +267,10 @@ fn unit_weight_rows() -> Vec<Vec<Cell>> {
 /// 結果は入力から出た値、根拠は入力に依らない規準の表と式だと、部の見出しで分かるようにする。
 #[component]
 pub(crate) fn ConcretePage() -> Element {
-    let mut fc = use_signal(|| "24".to_string());
-    let readout = ConcreteReadout::from_fc_input(&fc.read());
+    let inputs = use_signal(ConcreteInputs::default);
+    let readout = ConcreteReadout::from_inputs(&inputs.read());
     let values = readout.values();
     let allowable_rows = readout.allowable_rows();
-    let (error, warning) = match &readout {
-        ConcreteReadout::Computed { warning, .. } => (None, warning.clone()),
-        ConcreteReadout::Unusable { error } => (Some(error.clone()), None),
-    };
     let fc_max = integer(
         ConcreteKind::Normal
             .unit_weight_table()
@@ -242,32 +282,12 @@ pub(crate) fn ConcretePage() -> Element {
         Page { route: Route::DataConcrete {},
             Columns {
                 Column {
-                    // 入力のすぐ下に結果（`space-6`）。この組と次の表の間は Column の間（`space-7`）
-                    div { class: "flex flex-col gap-6",
-                        div { class: "flex flex-col gap-1",
-                            label { class: "flex flex-col gap-1",
-                                span { class: if error.is_some() { "text-label text-ng" } else { "text-label text-muted" },
-                                    "Fc（N/mm²）"
-                                }
-                                input {
-                                    class: if error.is_some() {
-                                        "self-start rounded-8 border-2 border-ng bg-paper px-3 py-2 font-mono text-num text-right"
-                                    } else {
-                                        "self-start rounded-8 border border-line-strong bg-paper px-3 py-2 font-mono text-num text-right"
-                                    },
-                                    r#type: "text",
-                                    inputmode: "decimal",
-                                    value: "{fc}",
-                                    oninput: move |e| fc.set(e.value()),
-                                }
-                            }
-                            if let Some(message) = &error {
-                                p { class: "text-label text-ng", {message.clone()} }
-                            }
-                            if let Some(message) = warning {
-                                p { class: "text-label", "! {message}" }
-                            }
-                        }
+                    // 入力の組のすぐ下に結果（`space-6`）。この組と次の表の間は Column の間（`space-7`）
+                    InputGroup {
+                        inputs,
+                        layout: Layout::RowHeads(vec![vec![ConcreteField::Fc]]),
+                        errors: readout.errors(),
+                        warning: readout.warning(),
                         Table {
                             columns: vec![
                                 TableColumn::number("気乾単位体積重量 γ").unit("kN/m³"),

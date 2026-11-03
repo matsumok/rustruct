@@ -42,7 +42,7 @@ mod slab_thickness;
 
 /// ヘッダーのボタンのアイコン（Carbon）。
 mod icons;
-pub use data::{AllowableRow, ConcreteReadout};
+pub use data::{AllowableRow, ConcreteField, ConcreteInputs, ConcreteReadout};
 use data::{ConcretePage, DataIndex, RebarPage};
 use dioxus_primitives::collapsible::{Collapsible, CollapsibleContent, CollapsibleTrigger};
 use dioxus_primitives::dialog::{DialogContent, DialogRoot, DialogTitle};
