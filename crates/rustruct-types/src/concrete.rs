@@ -34,22 +34,27 @@ impl ConcreteKind {
 // 普通コンクリートの気乾単位体積重量（慣例の値、ADR materials-0001）。
 // Fc の区分の上限 [N/mm²] と γ [kN/m³]。表は「無筋コンクリートの単位容積重量」の列
 const NORMAL_UNIT_WEIGHT_TABLE: &[UnitWeightRange] = &[
-    UnitWeightRange::new(36.0, 23.0),
-    UnitWeightRange::new(48.0, 23.5),
-    UnitWeightRange::new(60.0, 24.0),
-    UnitWeightRange::new(80.0, 24.5),
-    UnitWeightRange::new(FC_MAX, 25.0),
+    UnitWeightRange {
+        fc_upper: Stress::n_per_mm2(36.0),
+        unit_weight: UnitWeight::kn_per_m3(23.0),
+    },
+    UnitWeightRange {
+        fc_upper: Stress::n_per_mm2(48.0),
+        unit_weight: UnitWeight::kn_per_m3(23.5),
+    },
+    UnitWeightRange {
+        fc_upper: Stress::n_per_mm2(60.0),
+        unit_weight: UnitWeight::kn_per_m3(24.0),
+    },
+    UnitWeightRange {
+        fc_upper: Stress::n_per_mm2(80.0),
+        unit_weight: UnitWeight::kn_per_m3(24.5),
+    },
+    UnitWeightRange {
+        fc_upper: Stress::n_per_mm2(FC_MAX),
+        unit_weight: UnitWeight::kn_per_m3(25.0),
+    },
 ];
-
-impl UnitWeightRange {
-    /// 区分の上限 Fc [N/mm²] と γ [kN/m³] から
-    const fn new(fc_upper: f64, kn_per_m3: f64) -> Self {
-        Self {
-            fc_upper: Stress::n_per_mm2(fc_upper),
-            unit_weight: UnitWeight::kn_per_m3(kn_per_m3),
-        }
-    }
-}
 
 /// 鉄筋の位置。許容付着応力度を分ける（表 6.3 注 1）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -145,12 +150,12 @@ impl Concrete {
     /// 気乾単位体積重量 γ。Fc の区分の表で、Fc が上限以下になる最初の区分の値を引く。
     /// 表の上限を超えた Fc は最後の区分の値を使う（ワーニングは [`Concrete::warning`] が言う）
     pub fn unit_weight(self) -> UnitWeight {
-        let fc = self.fc.as_n_per_mm2();
         let table = self.kind.unit_weight_table();
         table
             .iter()
-            .find(|range| fc <= range.fc_upper.as_n_per_mm2())
-            .unwrap_or(&table[table.len() - 1])
+            .find(|range| self.fc <= range.fc_upper)
+            .or_else(|| table.last())
+            .expect("単位体積重量の表は空でない")
             .unit_weight
     }
 
