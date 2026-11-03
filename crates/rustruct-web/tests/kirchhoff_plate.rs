@@ -137,21 +137,19 @@ fn set_all(inputs: &mut PlateInputs, support: Support) {
     }
 }
 
-/// 結果の値がすべて「—」
+/// 結果の値がすべて無し（「—」）
 fn assert_not_computed(r: &PlateReadout) {
     let c = &r.center;
     let d = &r.deflection_maximum;
-    let mut values: Vec<&str> = [&c.w, &c.mx, &c.my, &d.w, &d.x, &d.y]
-        .map(String::as_str)
-        .to_vec();
+    let mut values: Vec<&Option<String>> = vec![&c.w, &c.mx, &c.my, &d.w, &d.x, &d.y];
     for row in &r.edges {
         for m in [&row.max_moment, &row.max_shear, &row.max_reaction] {
-            values.extend([&m.value, &m.along].map(String::as_str));
+            values.extend([&m.value, &m.along]);
         }
     }
-    values.extend(r.corners.iter().map(|(_, v)| v.as_str()));
-    values.extend([&r.balance.reactions, &r.balance.load].map(String::as_str));
-    assert!(values.iter().all(|v| *v == "—"), "{r:#?}");
+    values.extend(r.corners.iter().map(|(_, v)| v));
+    values.extend([&r.balance.reactions, &r.balance.load]);
+    assert!(values.iter().all(|v| v.is_none()), "{r:#?}");
 }
 
 #[test]
@@ -168,10 +166,13 @@ fn a_combination_with_a_free_edge_is_solved() {
     let r = readout(|i| i.set(InputField::Support(Edge::XLx), Support::Free.symbol()));
     assert_eq!(r.notice, None);
     assert!(r.errors.is_empty());
-    assert_ne!(r.balance.reactions, "—");
-    // 自由辺の反力は辺の全体で 0 なので、位置は「—」
+    assert!(r.balance.reactions.is_some());
+    // 自由辺の反力は辺の全体で 0 なので、位置は無し
     let free = &r.edges[1].max_reaction;
-    assert_eq!([free.value.as_str(), free.along.as_str()], ["0", "—"]);
+    assert_eq!(
+        [free.value.as_deref(), free.along.as_deref()],
+        [Some("0"), None]
+    );
 }
 
 #[test]
@@ -190,7 +191,11 @@ fn a_simply_supported_plate_shows_a_reaction_at_every_corner() {
             "x = 0・y = Ly"
         ]
     );
-    assert!(r.corners.iter().all(|(_, v)| v != "—"), "{:?}", r.corners);
+    assert!(
+        r.corners.iter().all(|(_, v)| v.is_some()),
+        "{:?}",
+        r.corners
+    );
 }
 
 #[test]
@@ -220,8 +225,12 @@ fn unreadable_fields_are_named_with_their_reasons_and_nothing_is_computed() {
 fn an_upward_load_is_computed_with_the_signs_turned() {
     let down = readout(|_| {});
     let up = readout(|i| i.set(InputField::Load, "-10"));
-    assert_eq!(up.center.w, format!("-{}", down.center.w));
-    assert_eq!([up.balance.reactions, up.balance.load], ["-200", "-200"]);
+    let down_w = down.center.w.expect("下向きの荷重で解ける");
+    assert_eq!(up.center.w, Some(format!("-{down_w}")));
+    assert_eq!(
+        [up.balance.reactions.as_deref(), up.balance.load.as_deref()],
+        [Some("-200"); 2]
+    );
 }
 
 #[test]
@@ -239,12 +248,12 @@ fn a_swapped_plate_swaps_the_x_and_y_results() {
 #[test]
 fn the_edge_moment_is_largest_at_the_middle_of_a_fixed_edge() {
     let r = readout(|_| {});
-    let along: Vec<&str> = r
+    let along: Vec<Option<&str>> = r
         .edges
         .iter()
-        .map(|e| e.max_moment.along.as_str())
+        .map(|e| e.max_moment.along.as_deref())
         .collect();
-    assert_eq!(along, ["2.50", "2.50", "2.00", "2.00"]);
+    assert_eq!(along, ["2.50", "2.50", "2.00", "2.00"].map(Some));
 }
 
 #[test]
@@ -252,8 +261,11 @@ fn the_edge_moment_of_a_simply_supported_edge_is_zero_with_no_position() {
     let r = readout(|i| set_all(i, Support::SimplySupported));
     for row in &r.edges {
         assert_eq!(
-            [row.max_moment.value.as_str(), row.max_moment.along.as_str()],
-            ["0", "—"],
+            [
+                row.max_moment.value.as_deref(),
+                row.max_moment.along.as_deref()
+            ],
+            [Some("0"), None],
             "{}",
             row.name
         );
@@ -386,25 +398,31 @@ fn the_deflection_maximum_of_the_fixed_plate_is_the_centre() {
     let r = readout(|_| {});
     let d = &r.deflection_maximum;
     assert_eq!(d.w, r.center.w);
-    assert_eq!([d.x.as_str(), d.y.as_str()], ["2.00", "2.50"]);
+    assert_eq!(
+        [d.x.as_deref(), d.y.as_deref()],
+        [Some("2.00"), Some("2.50")]
+    );
 }
 
 #[test]
 fn with_a_free_edge_the_deflection_maximum_is_on_that_edge() {
     let r = PlateReadout::from_inputs(&three_fixed_one_free());
     let d = &r.deflection_maximum;
-    assert_eq!([d.x.as_str(), d.y.as_str()], ["2.50", "4.00"]);
-    assert!(
-        d.w.parse::<f64>().unwrap() > r.center.w.parse::<f64>().unwrap(),
-        "{d:?} {:?}",
-        r.center
+    assert_eq!(
+        [d.x.as_deref(), d.y.as_deref()],
+        [Some("2.50"), Some("4.00")]
     );
+    let w = |w: &Option<String>| w.as_deref().expect("解ける").parse::<f64>().unwrap();
+    assert!(w(&d.w) > w(&r.center.w), "{d:?} {:?}", r.center);
     // 自由辺を y = 0 に移すと位置は 0
     let mut inputs = three_fixed_one_free();
     inputs.set(InputField::Support(Edge::YLy), Support::Fixed.symbol());
     inputs.set(InputField::Support(Edge::Y0), Support::Free.symbol());
     let moved = PlateReadout::from_inputs(&inputs).deflection_maximum;
-    assert_eq!([moved.x.as_str(), moved.y.as_str()], ["2.50", "0"]);
+    assert_eq!(
+        [moved.x.as_deref(), moved.y.as_deref()],
+        [Some("2.50"), Some("0")]
+    );
     assert_eq!(moved.w, d.w);
 }
 
