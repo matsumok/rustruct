@@ -2,8 +2,17 @@
 # CI（.github/workflows/ci.yml）と手元で同じ検査を回す。コマンドの定義はここだけ。
 #   sh scripts/check.sh          すべてを CI と同じ順で
 #   sh scripts/check.sh clippy   一つだけ（名前は下の case のとおり）
+#   sh scripts/check.sh live URL [配信用ディレクトリ]   配置した URL のスモークテスト（引数つきなので既定の列の外。
+#                                                    配信用ディレクトリの既定は stage の出力 target/deploy）
 set -eu
 cd "$(dirname "$0")/.."
+
+# 配置後のスモークテスト。CI は配置の job（Rust は入れていない）から check-live.sh を直に呼ぶ
+if [ "${1:-}" = live ]; then
+  shift
+  url=${1:?URL を渡す（例: sh scripts/check.sh live https://rustruct.matsumok.com）}
+  exec sh scripts/check-live.sh "$url" "${2:-target/deploy}"
+fi
 
 step() {
   case "$1" in

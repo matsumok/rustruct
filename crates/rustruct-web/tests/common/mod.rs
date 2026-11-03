@@ -1,4 +1,10 @@
-//! テストで共有する道具。HTML から本文を取り出し、文字の順序を確かめる。
+//! テストで共有する道具。HTML から本文を取り出し、文字の順序を確かめる。一時ディレクトリに見本のファイルを置く。
+
+// common はテストのクレートごとに入り、どのクレートも一部しか使わないので、使わない道具で警告が出る
+#![allow(dead_code)]
+
+use std::fs;
+use std::path::{Path, PathBuf};
 
 /// タグを外し、文字参照（`<` の `&#60;` など）を戻した本文。
 pub fn text_of(html: &str) -> String {
@@ -31,8 +37,6 @@ pub fn assert_in_order(haystack: &str, needles: &[&str]) {
 }
 
 /// 最初の `<tag …>…</tag>`（入れ子は無い前提）。ヘッダーと本文を分けて見るのに使う。
-// 使うのは render.rs だけ。common はテストのクレートごとに入るので、使わないクレートで警告が出る
-#[allow(dead_code)]
 pub fn element<'a>(html: &'a str, tag: &str) -> &'a str {
     let start = html
         .find(&format!("<{tag}"))
@@ -44,4 +48,23 @@ pub fn element<'a>(html: &'a str, tag: &str) -> &'a str {
         + start
         + close.len();
     &html[start..end]
+}
+
+/// リポジトリの直下（`scripts/` を呼ぶのに使う）。
+pub fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+/// 空の一時ディレクトリ。テストごとに別の名前にして、並列に走っても混ざらない。
+pub fn temp_dir(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("rustruct-{name}-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// `path` に `content` を書く。途中のディレクトリも作る。
+pub fn write(path: PathBuf, content: &str) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, content).unwrap();
 }

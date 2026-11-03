@@ -129,7 +129,7 @@ jobs:
         env:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
-        run: sh scripts/check-live.sh https://rustruct.matsumok.com
+        run: sh scripts/check-live.sh https://rustruct.matsumok.com target/deploy
 
   preview:
     name: 配置 (プレビュー)
@@ -167,7 +167,7 @@ jobs:
         env:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
-        run: sh scripts/check-live.sh "${{ steps.preview.outputs.preview-url }}"
+        run: sh scripts/check-live.sh "${{ steps.preview.outputs.preview-url }}" target/deploy
 
   cleanup:
     name: プレビューを消す
