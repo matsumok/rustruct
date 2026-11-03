@@ -19,7 +19,7 @@ PR を閉じる ──→ wrangler preview delete
 
 - 設定は `wrangler.toml` 1 枚。Worker のスクリプト（JS）は無く、`assets` だけ。wrangler は CI が npm から落として使う道具で、リポジトリに Node の物は置かない
 - 配信物は `sh scripts/check.sh stage`（`scripts/stage-deploy.sh`）が作る `target/deploy`。SSG の出力との違いは not-found の置き場だけ（下の「not-found」）
-- CI の job は 検査→ビルド→スモークテスト（`check`）、本番配置（`deploy`）、プレビュー配置（`preview`）、掃除（`cleanup`）に分かれ、どこで落ちたかが job と step の名前で分かる
+- CI の job は 検査→ビルド→スモークテスト（`check`）、本番配置（`deploy`）、プレビュー配置（`preview`）、掃除（`cleanup`）に分かれ、どこで落ちたかが job と step の名前で分かる。`deploy`・`preview`・`cleanup` は composite action `.github/actions/publish`（artifact を落とす → wrangler → `check-live.sh`。`cleanup` は wrangler だけ）を呼び、wrangler の版と認証はそこ 1 か所に書く。job が持つのは environment と PR のコメントだけ
 
 ## 一度だけ人がやること（Cloudflare 側）
 
@@ -49,7 +49,7 @@ Secrets が無いと、`check` job は通り、`deploy` / `preview` job が wran
 
 - Worker `rustruct` が無ければ作る
 - `wrangler.toml` の `routes`（`custom_domain = true`）で `rustruct.matsumok.com` を Worker に結び、DNS レコードを Cloudflare が作る。証明書も自動
-- 続く step「live」が `scripts/check-live.sh https://rustruct.matsumok.com` で、住所ごとの HTML、`/tools` → `/tools/` の転送、未知の住所の 404、CSS・WASM、WASM の Content-Type を見る
+- 同じ action（`.github/actions/publish`）の中の step「live」が、続けて `scripts/check-live.sh https://rustruct.matsumok.com` で、住所ごとの HTML、`/tools` → `/tools/` の転送、未知の住所の 404、CSS・WASM、WASM の Content-Type を見る
 - 初回は DNS レコードと証明書の発行に数十秒かかる（2026-10-14 の初回配置で、直後の curl が全部接続できず「live」だけ落ちた）。`check-live.sh` は応答が返るまで最大 3 分待つ。それでも落ちたら、Actions の「Re-run failed jobs」で `deploy` job をやり直す
 
 GitHub の Environments（`production`、`preview`）は最初の run が自動で作る。手で作る必要は無い。
@@ -68,7 +68,7 @@ GitHub の Environments（`production`、`preview`）は最初の run が自動�
 
 公開するまでは、本番（`rustruct.matsumok.com`）とプレビュー（`*.workers.dev`）の全体に Cloudflare Access を掛け、root だけが見られるようにする（2026-10-14 に決めた）。ADR site-0002 の「Access は `/private/` だけ」は公開後の形で、これはそれまでの一時的な措置。#15（検索エンジンに載せる準備）は公開まで寝かせる。
 
-CI の live（`scripts/check-live.sh`）は Access のサービストークンで通る。Secrets の `CF_ACCESS_CLIENT_ID` と `CF_ACCESS_CLIENT_SECRET` を環境変数で渡すと、curl がそのヘッダを付ける。無いと Access のログインへ転送され、live が「Cloudflare Access のログインへ転送された」と言って落ちる。
+CI の live（`scripts/check-live.sh`）は Access のサービストークンで通る。Secrets の `CF_ACCESS_CLIENT_ID` と `CF_ACCESS_CLIENT_SECRET` を環境変数で渡すと、curl がそのヘッダを付ける。action（`.github/actions/publish`）は、どちらかが空なら wrangler の前の最初の step で止まる。値が誤っていると Access のログインへ転送され、live が「Cloudflare Access のログインへ転送された」と言って落ちる。
 
 人がやること（Cloudflare Zero Trust のダッシュボード。順に）:
 
@@ -96,7 +96,7 @@ SSG は not-found を `404/index.html` に書く（dioxus-server は住所の下
 
 ## 手元から
 
-wrangler は手元に入れていない。配置は CI からだけ行う。どうしても手元から出すなら `npx wrangler@<版> deploy`（版は `.github/workflows/ci.yml` の `WRANGLER_VERSION`。Node が要る。`CLOUDFLARE_API_TOKEN` と `CLOUDFLARE_ACCOUNT_ID` を環境変数で）。恒常の道具にはしない（`docs/philosophy.md`: JS は自分で書かない）。
+wrangler は手元に入れていない。配置は CI からだけ行う。どうしても手元から出すなら `npx wrangler@<版> deploy`（版は `.github/actions/publish/action.yml` の `wranglerVersion`。Node が要る。`CLOUDFLARE_API_TOKEN` と `CLOUDFLARE_ACCOUNT_ID` を環境変数で）。恒常の道具にはしない（`docs/philosophy.md`: JS は自分で書かない）。
 
 ## 困ったとき
 
@@ -105,4 +105,4 @@ wrangler は手元に入れていない。配置は CI からだけ行う。ど�
 - **本番の未知の住所が 200 で `/` の中身になる**: `not_found_handling` が `single-page-application` になっているか、`404.html` が無い（`stage-deploy.sh` が走っていない）
 - **「live」が全住所 403**: ゾーン `matsumok.com` の WAF カスタムルールが GitHub の runner（米国の IP）を弾いている。2026-10-14 にルール「Japan」（国が JP でなければマネージドチャレンジ）がこれを起こし、`http.host ne "rustruct.matsumok.com"` を足して除外した。`check-live.sh` は 200 以外のとき `cf-mitigated` ヘッダと本文の先頭を出すので、そこに `challenge` や Cloudflare の文面があれば防御側。セキュリティ → WAF → カスタムルール と セキュリティ → イベント で突き止める。同じゾーンにあった「AI Audit - Block」（Nextcloud や Immich を置いていたころの名残。bingbot などを UA でブロック）は同日に削除した。検索エンジンに載せる準備は別の Issue（robots.txt、sitemap、ボット設定）
 - **WASM が読めない**: `check-live.sh` の Content-Type の行を見る。`application/wasm` でなければ拡張子か配信側の設定
-- **wrangler の版を上げる**: `.github/workflows/ci.yml` の `WRANGLER_VERSION` 1 箇所。`preview` コマンドと `preview-url` 出力は 4.136.3 以上、wrangler-action は v4.1.3 以上（wrangler-action の action.yml に書かれている）
+- **wrangler の版を上げる**: `.github/actions/publish/action.yml` の `wranglerVersion` 1 箇所。`preview` コマンドと `preview-url` 出力は 4.136.3 以上、wrangler-action は v4.1.3 以上（wrangler-action の action.yml に書かれている）

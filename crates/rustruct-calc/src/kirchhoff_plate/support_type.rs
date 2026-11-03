@@ -49,6 +49,12 @@ impl SupportType {
         (ty, mapping)
     }
 
+    /// 板を支えられる型か。四辺自由（RRRR）と、単純支持 1 辺と自由 3 辺（RRRS）の 2 型だけが不安定で、
+    /// ほかの 19 型は解ける
+    pub fn is_stable(self) -> bool {
+        !matches!(self, Self::RRRR | Self::RRRS)
+    }
+
     /// 代表の向きの組。型の 4 文字がそのまま各辺の支持条件
     pub fn representative(self) -> Supports {
         let mut chars = self
@@ -180,6 +186,14 @@ impl Mapping {
             if self.flip_x { lx - x } else { x },
             if self.flip_y { ly - y } else { y },
         )
+    }
+
+    /// 代表の向きの板の座標（隅が原点）の点を利用者の座標に。[`Self::representative_point`] の逆
+    pub fn user_point(self, x: f64, y: f64, lx: f64, ly: f64) -> (f64, f64) {
+        let (rep_lx, rep_ly) = self.representative_lengths(lx, ly);
+        let x = if self.flip_x { rep_lx - x } else { x };
+        let y = if self.flip_y { rep_ly - y } else { y };
+        if self.transpose { (y, x) } else { (x, y) }
     }
 
     /// 利用者の辺の始点（座標 0 の端）からの距離を、代表の向きの辺の始点からの距離に

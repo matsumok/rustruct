@@ -53,7 +53,7 @@ pub use kirchhoff_plate::{
     Quantity,
 };
 use slab_thickness::SlabThicknessPage;
-pub use slab_thickness::{PointRow, SharedRow, SlabField, SlabInputs, SlabReadout};
+pub use slab_thickness::{PointRow, SharedRow, SlabField, SlabFigure, SlabInputs, SlabReadout};
 #[cfg(feature = "server")]
 pub use ssg::serve_config;
 pub use ssg::{NOT_FOUND_PATH, static_paths};

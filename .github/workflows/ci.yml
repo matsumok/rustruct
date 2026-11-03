@@ -4,7 +4,7 @@ name: CI
 # PR: 同じ検査のあとプレビューへ配置し、URL を PR のコメントと deployment に付ける。PR が閉じたらプレビューを消す。
 # 以前は push ごとに回していたが、プレビューを PR に結ぶには PR の番号が要るので pull_request に変えた。
 # 両方に付けると PR ブランチへの push が二重に走るため、push は main に絞る（PR の無いブランチは回らない）。
-# 各 step のコマンドは scripts/check.sh にある。手元でも同じものを回せる。配置の手順と秘密は docs/deploy.md
+# 各 step のコマンドは scripts/check.sh にある。手元でも同じものを回せる。配置の手順と秘密は docs/deploy.md、配置の step は .github/actions/publish
 on:
   push:
     branches: [main]
@@ -24,8 +24,6 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # preview コマンドと preview-url 出力は wrangler 4.136.3 以上、wrangler-action v4.1.3 以上（action.yml の記述）
-  WRANGLER_VERSION: "4.145.0"
   # PR ごとに 1 つのプレビュー。push のたびに同じ URL が新しい中身になる（push のときは空で、使わない）
   PREVIEW_NAME: pr-${{ github.event.pull_request.number }}
 
@@ -102,6 +100,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # 配置の 3 つの job は .github/actions/publish（artifact を落とす → wrangler → check-live.sh）を呼ぶ。
+  # wrangler の版と認証はそこ 1 か所。job は environment と PR のコメントだけを持つ
   deploy:
     name: 配置 (本番)
     needs: check
@@ -109,27 +109,19 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://rustruct.matsumok.com
+      url: ${{ steps.publish.outputs.url }}
     steps:
-      - uses: actions/checkout@v7 # wrangler.toml と scripts/ のため
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@v7 # action と wrangler.toml と scripts/ のため
+      - name: 配置 → live
+        id: publish
+        uses: ./.github/actions/publish
         with:
-          name: site
-          path: target/deploy
-      # wrangler は npm から落として使うだけ。リポジトリに JS も package.json も持たない
-      - name: wrangler deploy
-        uses: cloudflare/wrangler-action@v4.1.3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: ${{ env.WRANGLER_VERSION }}
           command: deploy
-      - name: live (本番 URL のスモークテスト)
-        # 公開前はサイト全体に Cloudflare Access が掛かっている。サービストークンで通る（docs/deploy.md）
-        env:
-          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
-          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
-        run: sh scripts/check-live.sh https://rustruct.matsumok.com
+          url: https://rustruct.matsumok.com
+          api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          access-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          access-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
 
   preview:
     name: 配置 (プレビュー)
@@ -139,35 +131,28 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: preview
-      url: ${{ steps.preview.outputs.preview-url }}
+      url: ${{ steps.publish.outputs.url }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
+      - name: 配置 → live
+        id: publish
+        uses: ./.github/actions/publish
         with:
-          name: site
-          path: target/deploy
-      - name: wrangler preview
-        id: preview
-        uses: cloudflare/wrangler-action@v4.1.3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: ${{ env.WRANGLER_VERSION }}
           command: preview --name ${{ env.PREVIEW_NAME }}
+          api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          access-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          access-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      # live が落ちても URL があれば書く（落ちたプレビューを開いて見られるように）
       - name: PR にプレビュー URL を書く (コメントは 1 つを書き換える)
+        if: ${{ !cancelled() && steps.publish.outputs.url != '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
-          URL: ${{ steps.preview.outputs.preview-url }}
+          URL: ${{ steps.publish.outputs.url }}
           SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          test -n "$URL" || { echo "wrangler preview が URL を返さなかった"; exit 1; }
           gh pr comment "$PR" --edit-last --create-if-none --body "プレビュー: $URL （$SHA）"
-      - name: live (プレビュー URL のスモークテスト)
-        env:
-          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
-          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
-        run: sh scripts/check-live.sh "${{ steps.preview.outputs.preview-url }}"
 
   cleanup:
     name: プレビューを消す
@@ -175,9 +160,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: cloudflare/wrangler-action@v4.1.3
+      - name: wrangler preview delete
+        uses: ./.github/actions/publish
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: ${{ env.WRANGLER_VERSION }}
           command: preview delete --name ${{ env.PREVIEW_NAME }} --skip-confirmation
+          site: "false"
+          api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

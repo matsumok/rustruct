@@ -1,14 +1,19 @@
 //! Tool「必要スラブ厚さ」（`/tools/slab-thickness`）。言葉は `docs/tools/slab-thickness/GLOSSARY.md`。
-//! 数値はすべて `rustruct-calc` の `shared_values`・`evaluate` から引き、ここでは入力の文字の読み取りと、
-//! 表示の桁だけを決める。計算はブラウザの中で同期に回し、入力を変えるたびに結果を描き直す。
+//! 数値はすべて `rustruct-calc` の `shared_values`・`evaluate`・`iso_curves` から引き、ここでは入力の文字の
+//! 読み取りと、表示の桁と図の範囲だけを決める。計算はブラウザの中で同期に回し、入力を変えるたびに結果と
+//! 等厚曲線の図を描き直す。
 //!
-//! 今は検討点を 1 つだけ入れる。検討点のシートと等厚曲線の図は後の Issue。
+//! 今は検討点を 1 つだけ入れる。検討点のシートは後の Issue。
 
 use dioxus::prelude::*;
 use numerus::fixed;
 use rustruct_calc::slab_thickness::{
     Conditions, CriteriaSet, Criterion, Evaluation, SharedValues, Spans, evaluate, shared_values,
 };
+
+mod figure;
+
+pub use figure::SlabFigure;
 use rustruct_types::concrete::{Concrete, ConcreteKind};
 use rustruct_types::quantity::{AreaLoad, Length, Stress};
 
@@ -172,6 +177,38 @@ pub struct PointRow {
 
 impl SlabReadout {
     pub fn from_inputs(inputs: &SlabInputs) -> Self {
+        let read = SlabRead::from_inputs(inputs);
+        let evaluation = read
+            .conditions
+            .zip(read.spans)
+            .and_then(|(conditions, spans)| evaluate(&conditions, spans).ok());
+        Self {
+            errors: read.errors,
+            no_criteria: read.no_criteria,
+            warning: read.warning,
+            shared: SharedRow::new(read.shared),
+            point: PointRow::new(evaluation),
+        }
+    }
+}
+
+/// 入力を読んだもの。結果の表と等厚曲線の図が同じ読み方を使う
+struct SlabRead {
+    errors: Vec<(SlabField, Reason)>,
+    no_criteria: bool,
+    warning: Option<String>,
+    /// 共有値。Fc と荷重だけで決まるので、ほかの欄が読めなくても出す
+    shared: Option<SharedValues>,
+    /// 条件。条件の欄がすべて読め、クライテリアが 1 つ以上あるときだけ
+    conditions: Option<Conditions>,
+    /// 検討点のスパン。Lx・Ly が読めるときだけ
+    spans: Option<Spans>,
+    /// 検討点の名称
+    name: String,
+}
+
+impl SlabRead {
+    fn from_inputs(inputs: &SlabInputs) -> Self {
         let mut reading = inputs.reading();
         let [fc, finish, live, amplification] = [
             SlabField::Fc,
@@ -201,20 +238,16 @@ impl SlabReadout {
         let loads = finish
             .zip(live)
             .map(|(finish, live)| (AreaLoad::n_per_m2(finish), AreaLoad::n_per_m2(live)));
-        // 共有値は Fc と荷重だけで決まる。ほかの欄が読めなくても出す
         let shared = concrete
             .zip(loads)
             .and_then(|(concrete, (finish, live))| shared_values(concrete, finish, live).ok());
 
-        let evaluation = match (concrete, loads, amplification, span_x, span_y) {
-            (
-                Some(concrete),
-                Some((finish_load, live_load)),
-                Some(amplification),
-                Some(x),
-                Some(y),
-            ) if errors.is_empty() && !no_criteria => {
-                let conditions = Conditions {
+        let conditions_readable = !SlabField::on(SlabSheet::Conditions).any(has_error);
+        let conditions = match (concrete, loads, amplification) {
+            (Some(concrete), Some((finish_load, live_load)), Some(amplification))
+                if conditions_readable && !no_criteria =>
+            {
+                Some(Conditions {
                     concrete,
                     finish_load,
                     live_load,
@@ -224,22 +257,23 @@ impl SlabReadout {
                         deflection_absolute: absolute.map(Length::mm),
                         min_thickness,
                     },
-                };
-                let spans = Spans {
-                    x: Length::mm(x * 1000.0),
-                    y: Length::mm(y * 1000.0),
-                };
-                evaluate(&conditions, spans).ok()
+                })
             }
             _ => None,
         };
+        let spans = span_x.zip(span_y).map(|(x, y)| Spans {
+            x: Length::m(x),
+            y: Length::m(y),
+        });
 
         Self {
             errors,
             no_criteria,
             warning,
-            shared: SharedRow::new(shared),
-            point: PointRow::new(evaluation),
+            shared,
+            conditions,
+            spans,
+            name: inputs.value(SlabField::Name).trim().to_string(),
         }
     }
 }
@@ -279,7 +313,7 @@ impl PointRow {
         Self {
             required_thickness: fixed(ev.required_thickness.as_mm(), 1),
             governing: criterion_name(ev.governing).into(),
-            short_span: fixed(ev.short_span.as_mm() / 1000.0, 2),
+            short_span: fixed(ev.short_span.as_m(), 2),
             aspect_ratio: fixed(ev.aspect_ratio, 2),
             elastic_deflection: mm(ev.elastic_deflection),
             amplified_deflection: mm(ev.amplified_deflection),
@@ -299,12 +333,13 @@ fn criterion_name(criterion: Criterion) -> &'static str {
     }
 }
 
-/// `/tools/slab-thickness`。条件の Sheet と共有値、検討点の Sheet と結果の表を 1 つの列に置く（ADR site-0006）。
-/// 「入力」「結果」の部の見出しは置かず、表の見出しで区切る。
+/// `/tools/slab-thickness`。条件の Sheet と共有値、検討点の Sheet と結果の表を置いた列と、等厚曲線の図の列
+/// （ADR site-0006）。「入力」「結果」の部の見出しは置かず、表の見出しで区切る。
 #[component]
 pub(crate) fn SlabThicknessPage() -> Element {
     let inputs = use_signal(SlabInputs::default);
     let readout = SlabReadout::from_inputs(&inputs.read());
+    let figure = use_memo(move || SlabFigure::from_inputs(&inputs.read()));
     let SharedRow {
         young_modulus,
         rc_unit_weight,
@@ -423,6 +458,39 @@ pub(crate) fn SlabThicknessPage() -> Element {
                         }
                     }
                 }
+                Column {
+                    FigureBlock { figure: figure() }
+                }
+            }
+        }
+    }
+}
+
+/// 等厚曲線の図の一まとまり。図の名前、図、読み方の注記。条件が読めない間やクライテリアが無いときは
+/// 図の代わりに注記だけを置く（理由は条件の Sheet の下が言う）
+#[component]
+fn FigureBlock(figure: Option<SlabFigure>) -> Element {
+    rsx! {
+        Block {
+            Caption { "必要スラブ厚の等厚曲線（mm）" }
+            match figure {
+                Some(figure) => rsx! {
+                    figure { role: "img", "aria-label": figure.label,
+                        div { class: "dark:hidden", dangerous_inner_html: figure.light_svg }
+                        div { class: "hidden dark:block", dangerous_inner_html: figure.dark_svg }
+                    }
+                    Notes {
+                        li { "曲線は 10 mm ごと、色は 20 mm ごと" }
+                        li { "80 mm 未満は塗らない" }
+                        li { "丸の印は検討点" }
+                        li { "左上は条件の要約。α は変形増大係数、δ は増大後たわみ" }
+                    }
+                },
+                None => rsx! {
+                    Notes {
+                        li { "条件が読めるまで図は描かない" }
+                    }
+                },
             }
         }
     }
