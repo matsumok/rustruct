@@ -11,7 +11,7 @@ Dioxus Components（DioxusLabs/components）に当てはまる部品があるも
 
 ## 理由
 
-styled 版は shadcn に倣った見た目で、css_module の CSS とテーマの CSS 変数で組まれている。このサイトの見た目は tokens.json から作る Tailwind の役割名のクラスで書く決まり（ui-decisions）なので、styled 版を入れると見た目の決め事が2系統になる。一方、Esc で閉じる、フォーカスを閉じ込める、読み上げの属性といった振る舞いは、手で組むと抜けやすい。振る舞いだけを借りれば、見た目の決め事を1系統に保ったまま、その抜けを部品に任せられる。
+styled 版は shadcn に倣った見た目で、css_module の CSS とテーマの CSS 変数で組まれている。このサイトの見た目は tokens.json から作る Tailwind の役割名のクラスで書く決まり（`docs/design/README.md`）なので、styled 版を入れると見た目の決め事が2系統になる。一方、Esc で閉じる、フォーカスを閉じ込める、読み上げの属性といった振る舞いは、手で組むと抜けやすい。振る舞いだけを借りれば、見た目の決め事を1系統に保ったまま、その抜けを部品に任せられる。
 
 `dioxus-primitives` は 0.0.1 で、依存（`dioxus-sdk-time`、`time`、`palette` など）も増える。版を固定することで、知らないうちに振る舞いが変わらないようにした。
 
