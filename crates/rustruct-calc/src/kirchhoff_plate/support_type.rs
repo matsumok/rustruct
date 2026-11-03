@@ -33,9 +33,14 @@ support_types! {
 }
 
 impl SupportType {
+    /// 利用者が選んだ組の型。組を回転・裏返し、x と y を入れ替えて、記号が最小になるもの
+    pub fn of(supports: Supports) -> SupportType {
+        Self::with_mapping(supports).0
+    }
+
     /// 利用者が選んだ組の型と、代表の向きからその組への写し方。
     /// 8 通りの写し方で組を代表の向きに移し、記号が最小になるものを型とする。同じ記号なら先の写し方（恒等が最初）
-    pub fn of(supports: Supports) -> (SupportType, Mapping) {
+    pub(crate) fn with_mapping(supports: Supports) -> (SupportType, Mapping) {
         let (mapping, representative) = Mapping::ALL
             .iter()
             .map(|&m| (m, m.representative_of(supports)))
@@ -75,7 +80,7 @@ impl SupportType {
 /// 裏返して代表の座標にする。結果の量の写し（Mx↔My、Qx↔Qy の入れ替えと、裏返しによる Q の符号）も
 /// この値から決まり、型ごとの解き方には散らさない。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Mapping {
+pub(crate) struct Mapping {
     /// x と y を入れ替える（Lx と Ly も入れ替わる）
     pub transpose: bool,
     /// 入れ替えた後の x を裏返す（x = 0 の辺と x = Lx の辺が入れ替わる）
@@ -145,7 +150,8 @@ impl Mapping {
         }
     }
 
-    /// 代表の向きの組から、利用者の組へ
+    /// 代表の向きの組から、利用者の組へ。写しが元の組に戻ることを確かめるテストだけが使う
+    #[cfg(test)]
     pub fn supports(self, representative: Supports) -> Supports {
         Supports {
             x0: representative.at(self.edge(Edge::X0)),
@@ -254,4 +260,96 @@ pub struct RepresentativeResponse {
     pub my: f64,
     pub qx: f64,
     pub qy: f64,
+}
+
+/// 写し方の中を見るテスト。型への分類（81 通り → 21 型）は外から `tests/kirchhoff_plate_support_type.rs`、
+/// 写しが結果の量に効くところは `solve` 越しに `tests/kirchhoff_plate_all_types.rs` が確かめる
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SUPPORTS: [Support; 3] = [Support::Fixed, Support::SimplySupported, Support::Free];
+
+    fn every_combination() -> Vec<Supports> {
+        let mut out = Vec::new();
+        for x0 in SUPPORTS {
+            for y0 in SUPPORTS {
+                for x_lx in SUPPORTS {
+                    for y_ly in SUPPORTS {
+                        out.push(Supports { x0, y0, x_lx, y_ly });
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn the_representative_normalizes_with_the_identity() {
+        for ty in SupportType::ALL {
+            let (again, mapping) = SupportType::with_mapping(ty.representative());
+            assert_eq!(again, ty);
+            assert_eq!(mapping, Mapping::IDENTITY);
+        }
+    }
+
+    #[test]
+    fn the_mapping_carries_the_representative_back_to_the_chosen_supports() {
+        for s in every_combination() {
+            let (ty, mapping) = SupportType::with_mapping(s);
+            assert_eq!(mapping.supports(ty.representative()), s, "{}", s.symbol());
+            // 辺の写しと組の写しは同じことを言う
+            for edge in Edge::ALL {
+                assert_eq!(
+                    s.at(edge),
+                    ty.representative().at(mapping.edge(edge)),
+                    "{} の {edge}",
+                    s.symbol()
+                );
+            }
+            // 隅は会う 2 辺の写しで決まる
+            for corner in Corner::ALL {
+                let (ex, ey) = corner.edges();
+                let mapped = mapping.corner(corner).edges();
+                let pair = [mapping.edge(ex), mapping.edge(ey)];
+                assert!(pair.contains(&mapped.0) && pair.contains(&mapped.1));
+            }
+        }
+    }
+
+    #[test]
+    fn symmetric_combinations_normalize_with_the_identity() {
+        for support in SUPPORTS {
+            let (_, mapping) = SupportType::with_mapping(Supports::all(support));
+            assert_eq!(mapping, Mapping::IDENTITY);
+        }
+    }
+
+    #[test]
+    fn a_rotated_combination_maps_edges_and_positions() {
+        // 固定 1 辺が x = Lx にある組。代表 FRRR は固定を x = 0 に置くので、x を裏返す写し
+        let s = Supports {
+            x0: Support::Free,
+            y0: Support::Free,
+            x_lx: Support::Fixed,
+            y_ly: Support::Free,
+        };
+        let (ty, mapping) = SupportType::with_mapping(s);
+        assert_eq!(ty.symbol(), "FRRR");
+        assert_eq!(mapping.edge(Edge::XLx), Edge::X0);
+        assert_eq!(mapping.edge(Edge::Y0), Edge::Y0);
+        assert!(mapping.flip_x && !mapping.flip_y && !mapping.transpose);
+
+        // 固定 1 辺が y = 0 にある組。x と y を入れ替える写し
+        let s = Supports {
+            x0: Support::Free,
+            y0: Support::Fixed,
+            x_lx: Support::Free,
+            y_ly: Support::Free,
+        };
+        let (ty, mapping) = SupportType::with_mapping(s);
+        assert_eq!(ty.symbol(), "FRRR");
+        assert_eq!(mapping.edge(Edge::Y0), Edge::X0);
+        assert!(mapping.transpose && !mapping.flip_x && !mapping.flip_y);
+    }
 }
