@@ -23,7 +23,8 @@ step() {
     clippy)  cargo clippy --workspace --all-targets --locked -- -D warnings ;;
     server)  cargo clippy -p rustruct-web --features server --locked -- -D warnings ;;
     wasm)    cargo check -p rustruct-web --features web --target wasm32-unknown-unknown --locked ;;
-    test)    cargo test --workspace --locked ;;
+    # #[ignore] の縦横比 2・4 の分割数のテストも回す。参照解との差と時間の報告は値を確かめないので外す
+    test)    cargo test --workspace --locked -- --include-ignored --skip report_deviations_and_timing ;;
     # build.rs が tokens.json から theme.css を作り直す。差分が出たら生成物の commit 忘れ
     theme)   git diff --exit-code -- crates/rustruct-web/theme.css ;;
     # SSG（ADR site-0001）。client → server の順に建てる。並行だと server の SSG が client の index.html（殻）

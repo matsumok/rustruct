@@ -31,6 +31,8 @@
 
 分割数 40 と 80 の差（縦横比 1・2・4、ν = 0.2。各量の板全体の絶対値の最大に対する比の最大。`tests/kirchhoff_plate_all_types.rs` の分割数のテストと、`tests/kirchhoff_plate_series_reference.rs` の報告）は、19 型すべてで、たわみ 3e-6 以下、曲げモーメント 2.6e-4 以下（FFRR・FRRR・FRRS の自由辺の近く）、せん断力と辺の反力 1.7e-3 以下（RRSS）、隅反力 2e-5 以下。許容の 1/10 以下に収まる。
 
+縦横比 2・4 の分割数のテストは `#[ignore]` で、CI と `sh scripts/check.sh test` は `--include-ignored` で回す（2026-11-03、本人が決めた）。CPU の時間の大半を占め、素の `cargo test` を遅くするため。縦横比 1 の 19 型は常時回す。
+
 解く時間（三辺固定一辺自由、ν = 0.2。ネイティブ release と、計算核だけの WASM を node で。WASM は wasm-opt を通していない）:
 
 | 分割数 | ネイティブ 比 1 | 2 | 4 | 8 | WASM 比 1 | 2 | 4 | 8 |
