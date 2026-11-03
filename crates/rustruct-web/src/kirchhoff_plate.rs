@@ -7,7 +7,9 @@
 
 use dioxus::prelude::*;
 use numerus::{at_place, significant};
-use rustruct_calc::kirchhoff_plate::{CORNER_MARGIN, Extreme, PlateError, Solution, solve};
+use rustruct_calc::kirchhoff_plate::{
+    CORNER_MARGIN, Extreme, InvalidInput, PlateError, Solution, solve,
+};
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Plate, Support, Supports};
 use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
 
@@ -16,7 +18,7 @@ mod figure;
 use figure::PlateField;
 pub use figure::{PlateFigure, Quantity};
 
-use crate::inputs::{Definition, Field, InputGroup, Inputs, Kind, Layout, Reason, Sign};
+use crate::inputs::{Definition, Field, InputGroup, Inputs, Kind, Layout, Reading, Reason};
 use crate::table::{Block, Caption, Column, Columns, NO_VALUE, Notes, Table, TableColumn};
 use crate::{Page, Route};
 
@@ -55,17 +57,16 @@ pub enum InputField {
 impl Field for InputField {
     const ALL: &'static [Self] = ROWS.as_flattened();
 
-    /// 名前と種類と初期値（Issue #36）。ν の上限（0.5 未満）は欄の規則の外なので `plate` が見る。
-    /// 荷重 p は負（上向き）も受ける
+    /// 名前と種類と初期値（Issue #36）。値の規則は計算核の入口（`solve`）と、ν は `PoissonRatio` が見る
     fn definition(self) -> Definition {
-        let number = |sign, initial| Kind::number(false, sign, initial);
+        let number = |initial| Kind::number(false, initial);
         let (name, kind) = match self {
-            Self::Lx => ("Lx（m）".into(), number(Sign::Positive, "4.0")),
-            Self::Ly => ("Ly（m）".into(), number(Sign::Positive, "5.0")),
-            Self::Thickness => ("t（mm）".into(), number(Sign::Positive, "150")),
-            Self::YoungModulus => ("E（N/mm²）".into(), number(Sign::Positive, "22700")),
-            Self::PoissonRatio => ("ν".into(), number(Sign::NonNegative, "0")),
-            Self::Load => ("p（kN/m²）".into(), number(Sign::Any, "10")),
+            Self::Lx => ("Lx（m）".into(), number("4.0")),
+            Self::Ly => ("Ly（m）".into(), number("5.0")),
+            Self::Thickness => ("t（mm）".into(), number("150")),
+            Self::YoungModulus => ("E（N/mm²）".into(), number("22700")),
+            Self::PoissonRatio => ("ν".into(), number("0")),
+            Self::Load => ("p（kN/m²）".into(), number("10")),
             Self::Support(edge) => (
                 format!("{edge}（{}）", direction(edge)),
                 Kind::Choice {
@@ -124,43 +125,35 @@ fn support_name(support: Support) -> &'static str {
 /// 入力の Sheet の中身。読めるかは `PlateReadout` が決める
 pub type PlateInputs = Inputs<InputField>;
 
-/// 入力を Model へ。読めない欄はすべて（欄, 理由）で返す
-fn plate(inputs: &PlateInputs) -> Result<Plate, Vec<(InputField, Reason)>> {
-    let mut reading = inputs.reading();
-    let [lx, ly, thickness, young_modulus] = [
-        InputField::Lx,
-        InputField::Ly,
-        InputField::Thickness,
-        InputField::YoungModulus,
-    ]
-    .map(|field| reading.number(field));
-    let poisson_ratio =
-        reading
-            .number(InputField::PoissonRatio)
-            .and_then(|v| match PoissonRatio::new(v) {
-                Ok(ratio) => Some(ratio),
-                Err(_) => {
-                    reading.refuse(InputField::PoissonRatio, "0 以上 0.5 未満で入れる");
-                    None
-                }
-            });
-    let load = reading.number(InputField::Load);
-    let errors = reading.errors();
-    // 読めない欄は None なので、すべて Some なら理由も無い
-    let (Some(lx), Some(ly), Some(thickness), Some(young_modulus), Some(poisson_ratio), Some(load)) =
-        (lx, ly, thickness, young_modulus, poisson_ratio, load)
-    else {
-        return Err(errors);
-    };
-    Ok(Plate {
-        lx: Length::m(lx),
-        ly: Length::m(ly),
-        thickness: Length::mm(thickness),
-        young_modulus: Stress::n_per_mm2(young_modulus),
+/// 入力を Model へ。読めない欄と、`PoissonRatio` が受けない ν は理由を集めて初期値で埋める（`Reading`）
+fn plate(inputs: &PlateInputs, reading: &mut Reading<'_, InputField>) -> Plate {
+    let nu = reading.number(InputField::PoissonRatio);
+    let poisson_ratio = PoissonRatio::new(nu).unwrap_or_else(|_| {
+        reading.refuse(InputField::PoissonRatio, "0 以上 0.5 未満で入れる");
+        let initial = reading.initial(InputField::PoissonRatio);
+        PoissonRatio::new(initial.expect("ν は空欄を受けない"))
+            .expect("ν の初期値は 0 以上 0.5 未満")
+    });
+    Plate {
+        lx: Length::m(reading.number(InputField::Lx)),
+        ly: Length::m(reading.number(InputField::Ly)),
+        thickness: Length::mm(reading.number(InputField::Thickness)),
+        young_modulus: Stress::n_per_mm2(reading.number(InputField::YoungModulus)),
         poisson_ratio,
-        load: AreaLoad::kn_per_m2(load),
+        load: AreaLoad::kn_per_m2(reading.number(InputField::Load)),
         supports: supports(inputs),
-    })
+    }
+}
+
+/// 計算核の入口が返す不正な欄を、画面の欄へ
+fn field_of(reason: InvalidInput) -> InputField {
+    match reason {
+        InvalidInput::Lx => InputField::Lx,
+        InvalidInput::Ly => InputField::Ly,
+        InvalidInput::Thickness => InputField::Thickness,
+        InvalidInput::YoungModulus => InputField::YoungModulus,
+        InvalidInput::Load => InputField::Load,
+    }
 }
 
 /// 4 辺の支持条件の組。選択の欄は選択肢の記号しか持たないので、必ず支持条件に戻る
@@ -380,27 +373,33 @@ impl PlateOutcome {
             readout: PlateReadout::not_computed(Some(notice)),
             field: None,
         };
-        match plate(inputs) {
-            Err(errors) => Self {
+        let mut reading = inputs.reading();
+        let solved = solve(&plate(inputs, &mut reading));
+        if let Err(PlateError::InvalidInput(invalid)) = &solved {
+            for &reason in invalid {
+                reading.refuse(field_of(reason), reason.to_string());
+            }
+        }
+        let errors = reading.errors();
+        if !errors.is_empty() {
+            return Self {
                 readout: PlateReadout {
                     errors,
                     ..PlateReadout::not_computed(None)
                 },
                 field: None,
+            };
+        }
+        match solved {
+            Ok(solution) => Self {
+                readout: PlateReadout::computed(&solution),
+                field: Some(PlateField::new(&solution)),
             },
-            Ok(plate) => match solve(&plate) {
-                Ok(solution) => Self {
-                    readout: PlateReadout::computed(&solution),
-                    field: Some(PlateField::new(&solution)),
-                },
-                Err(PlateError::Unstable(_)) => {
-                    not_computed("この支持条件の組では板を支えられない")
-                }
-                // 入力は手前で読んだので来ない。来たら解けないことだけを言う
-                Err(PlateError::InvalidInput(_) | PlateError::Singular) => {
-                    not_computed("この入力では解けない")
-                }
-            },
+            Err(PlateError::Unstable(_)) => not_computed("この支持条件の組では板を支えられない"),
+            // 不正な欄は上で欄に写したので来ない。来たら解けないことだけを言う
+            Err(PlateError::InvalidInput(_) | PlateError::Singular) => {
+                not_computed("この入力では解けない")
+            }
         }
     }
 }

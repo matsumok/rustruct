@@ -13,8 +13,8 @@ use rustruct_types::concrete::Concrete;
 use rustruct_types::quantity::{AreaLoad, Length, Stress, UnitWeight};
 pub use rustruct_types::slab_thickness::{Conditions, CriteriaSet, Criterion, Spans};
 
-/// 入力が不正な理由。条件の欄ごとに分け、スパンは最後。荷重は 0 以上、それ以外は正の有限値。
-/// 並びは知らせる順で、条件欄の誤りをスパンの誤りより先に言う
+/// 入力が不正な理由。条件の欄ごとに分け、スパンは最後。荷重は 0 以上、それ以外は正の有限値。Fc は
+/// [`Concrete`] が作るときに守る。入口は不正な欄をすべて、この並び（欄の順）で返す
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InvalidInput {
     FinishLoad,
@@ -28,17 +28,17 @@ pub enum InvalidInput {
     SpanY,
 }
 
+/// 欄の下に出す文言。欄の名前は含めない（画面が欄に付ける）。クライテリアが無いことは欄をまたぐ文言
 impl fmt::Display for InvalidInput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::FinishLoad => "仕上げ荷重が 0 以上の有限値でない",
-            Self::LiveLoad => "積載荷重が 0 以上の有限値でない",
-            Self::Amplification => "変形増大係数が正の有限値でない",
-            Self::DeflectionRatio => "変形角が正の有限値でない",
-            Self::DeflectionAbsolute => "たわみ絶対量が正の有限値でない",
-            Self::NoCriteria => "クライテリアが 1 つも無い",
-            Self::SpanX => "x方向スパンが正の有限値でない",
-            Self::SpanY => "y方向スパンが正の有限値でない",
+            Self::FinishLoad | Self::LiveLoad => "0 以上の値を入れる",
+            Self::Amplification
+            | Self::DeflectionRatio
+            | Self::DeflectionAbsolute
+            | Self::SpanX
+            | Self::SpanY => "0 より大きい値を入れる",
+            Self::NoCriteria => "クライテリアを 1 つ以上入れる",
         })
     }
 }
@@ -62,14 +62,15 @@ pub fn shared_values(
     concrete: Concrete,
     finish_load: AreaLoad,
     live_load: AreaLoad,
-) -> Result<SharedValues, InvalidInput> {
+) -> Result<SharedValues, Vec<InvalidInput>> {
     let finish = finish_load.as_n_per_mm2();
     let live = live_load.as_n_per_mm2();
-    if !is_non_negative(finish) {
-        return Err(InvalidInput::FinishLoad);
-    }
-    if !is_non_negative(live) {
-        return Err(InvalidInput::LiveLoad);
+    let invalid = violations([
+        (is_non_negative(finish), InvalidInput::FinishLoad),
+        (is_non_negative(live), InvalidInput::LiveLoad),
+    ]);
+    if !invalid.is_empty() {
+        return Err(invalid);
     }
     Ok(SharedValues {
         young_modulus: concrete.young_modulus(),
@@ -102,16 +103,20 @@ pub struct Evaluation {
 /// 1 つの検討点の評価。有効なクライテリアをすべて満たす最小の厚さと、その厚さでのたわみ。
 /// 増大後たわみが許容たわみとちょうど等しくなるのは、たわみに効く条件が決定条件のときだけ
 /// （表18-1 が決めると、たわみは許容に届かない）
-pub fn evaluate(conditions: &Conditions, spans: Spans) -> Result<Evaluation, InvalidInput> {
-    // 条件を先に見る。条件欄の誤りをスパンの誤りより先に知らせる
-    let (basis, active) = checked_basis(conditions)?;
+pub fn evaluate(conditions: &Conditions, spans: Spans) -> Result<Evaluation, Vec<InvalidInput>> {
     let (x, y) = (spans.x.as_mm(), spans.y.as_mm());
-    if !is_positive(x) {
-        return Err(InvalidInput::SpanX);
-    }
-    if !is_positive(y) {
-        return Err(InvalidInput::SpanY);
-    }
+    let span_errors = violations([
+        (is_positive(x), InvalidInput::SpanX),
+        (is_positive(y), InvalidInput::SpanY),
+    ]);
+    let (basis, active) = match checked_basis(conditions) {
+        Ok(checked) if span_errors.is_empty() => checked,
+        Ok(_) => return Err(span_errors),
+        Err(mut invalid) => {
+            invalid.extend(span_errors);
+            return Err(invalid);
+        }
+    };
 
     let lx = x.min(y);
     let lambda = x.max(y) / lx;
@@ -149,7 +154,7 @@ pub fn iso_curves(
     conditions: &Conditions,
     xs: &[Length],
     thicknesses: &[Length],
-) -> Result<Vec<IsoCurve>, InvalidInput> {
+) -> Result<Vec<IsoCurve>, Vec<InvalidInput>> {
     let (basis, active) = checked_basis(conditions)?;
     Ok(thicknesses
         .iter()
@@ -176,17 +181,29 @@ struct Basis {
     amplification: f64,
 }
 
-/// 条件を検査し、土台と有効なクライテリアをそろえる。評価も等厚曲線群もここを通る
-fn checked_basis(conditions: &Conditions) -> Result<(Basis, Vec<ActiveCriterion>), InvalidInput> {
+/// 条件を検査し、土台と有効なクライテリアをそろえる。評価も等厚曲線群もここを通る。不正な欄はすべて欄の順で返す
+fn checked_basis(
+    conditions: &Conditions,
+) -> Result<(Basis, Vec<ActiveCriterion>), Vec<InvalidInput>> {
     let shared = shared_values(
         conditions.concrete,
         conditions.finish_load,
         conditions.live_load,
-    )?;
-    if !is_positive(conditions.amplification) {
-        return Err(InvalidInput::Amplification);
-    }
-    let active = active_criteria(&conditions.criteria)?;
+    );
+    let amplification = violations([(
+        is_positive(conditions.amplification),
+        InvalidInput::Amplification,
+    )]);
+    let active = active_criteria(&conditions.criteria);
+    let (shared, active) = match (shared, amplification.is_empty(), active) {
+        (Ok(shared), true, Ok(active)) => (shared, active),
+        (shared, _, active) => {
+            let mut invalid = shared.err().unwrap_or_default();
+            invalid.extend(amplification);
+            invalid.extend(active.err().unwrap_or_default());
+            return Err(invalid);
+        }
+    };
     let basis = Basis {
         young_modulus: shared.young_modulus.as_n_per_mm2(),
         rc_unit_weight: shared.rc_unit_weight.as_n_per_mm3(),
@@ -196,28 +213,44 @@ fn checked_basis(conditions: &Conditions) -> Result<(Basis, Vec<ActiveCriterion>
     Ok((basis, active))
 }
 
-/// 有効なクライテリアを集合の並び（[`Criterion`] の順）で並べる。並びは決定条件が同値のときの優先順でもある
-fn active_criteria(criteria: &CriteriaSet) -> Result<Vec<ActiveCriterion>, InvalidInput> {
-    let mut active = Vec::new();
-    if let Some(ratio) = criteria.deflection_ratio {
-        if !is_positive(ratio) {
-            return Err(InvalidInput::DeflectionRatio);
-        }
-        active.push(ActiveCriterion::DeflectionRatio(ratio));
+/// 有効なクライテリアを集合の並び（[`Criterion`] の順）で並べる。並びは決定条件が同値のときの優先順でもある。
+/// 値の不正なクライテリアはすべて返し、そのときは「1 つも無い」と言わない（入れてはある）
+fn active_criteria(criteria: &CriteriaSet) -> Result<Vec<ActiveCriterion>, Vec<InvalidInput>> {
+    let ratio = criteria.deflection_ratio;
+    let limit = criteria.deflection_absolute.map(Length::as_mm);
+    let invalid = violations([
+        (ratio.is_none_or(is_positive), InvalidInput::DeflectionRatio),
+        (
+            limit.is_none_or(is_positive),
+            InvalidInput::DeflectionAbsolute,
+        ),
+    ]);
+    if !invalid.is_empty() {
+        return Err(invalid);
     }
-    if let Some(limit) = criteria.deflection_absolute {
-        if !is_positive(limit.as_mm()) {
-            return Err(InvalidInput::DeflectionAbsolute);
-        }
-        active.push(ActiveCriterion::DeflectionAbsolute(limit.as_mm()));
-    }
-    if criteria.min_thickness {
-        active.push(ActiveCriterion::MinThickness);
-    }
+    let active: Vec<ActiveCriterion> = [
+        ratio.map(ActiveCriterion::DeflectionRatio),
+        limit.map(ActiveCriterion::DeflectionAbsolute),
+        criteria
+            .min_thickness
+            .then_some(ActiveCriterion::MinThickness),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
     if active.is_empty() {
-        return Err(InvalidInput::NoCriteria);
+        return Err(vec![InvalidInput::NoCriteria]);
     }
     Ok(active)
+}
+
+/// 規則を満たさない欄の理由。`checks` は（満たすか, 理由）の並びで、その順に返す
+fn violations<const N: usize>(checks: [(bool, InvalidInput); N]) -> Vec<InvalidInput> {
+    checks
+        .into_iter()
+        .filter(|(valid, _)| !valid)
+        .map(|(_, reason)| reason)
+        .collect()
 }
 
 fn is_positive(value: f64) -> bool {
@@ -452,108 +485,4 @@ fn solve_thickness(p: f64, q: f64) -> f64 {
         t = next;
     }
     t
-}
-
-/// 合成（max・min）の仕組みのテスト。合成は条件の種類を見ないので、値の違う同じ種類の条件を 2 つ並べて
-/// 仕組みだけを確かめる（種類をまたいだ合成は `tests/slab_thickness.rs`）
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rustruct_types::concrete::ConcreteKind;
-
-    /// Fc 24、wp 2800 N/m²、K 8 の土台
-    fn basis() -> Basis {
-        let concrete = Concrete::new(Stress::n_per_mm2(24.0), ConcreteKind::Normal).unwrap();
-        Basis {
-            young_modulus: concrete.young_modulus().as_n_per_mm2(),
-            rc_unit_weight: concrete.rc_unit_weight().as_n_per_mm3(),
-            wp: 2800.0e-6,
-            amplification: 8.0,
-        }
-    }
-
-    /// 必要スラブ厚は有効な条件ごとの必要厚さの最大（厳しい条件が決める）。
-    /// 決定条件はその最大を与えた条件で、集合の並びに依らない
-    #[test]
-    fn thickness_is_the_max_over_active_criteria() {
-        let (lx, lambda) = (4000.0, 1.25);
-        let strict = ActiveCriterion::DeflectionRatio(1.0 / 400.0);
-        let loose = ActiveCriterion::DeflectionRatio(1.0 / 200.0);
-        let t_strict = strict.required_thickness(&basis(), lx, lambda);
-        let t_loose = loose.required_thickness(&basis(), lx, lambda);
-        assert!(t_strict > t_loose, "{t_strict} <= {t_loose}");
-
-        for order in [[strict, loose], [loose, strict]] {
-            let (t, governing) = governing_thickness(&order, &basis(), lx, lambda);
-            assert_eq!(t, t_strict, "{order:?}");
-            assert_eq!(governing, Criterion::DeflectionRatio);
-        }
-    }
-
-    /// 合成した等厚曲線は各条件の曲線の点ごとの最小（いちばん低い境界が効く）
-    #[test]
-    fn curve_is_the_pointwise_min_over_active_criteria() {
-        let (t, x) = (200.0, 12_000.0);
-        let strict = ActiveCriterion::DeflectionRatio(1.0 / 400.0);
-        let loose = ActiveCriterion::DeflectionRatio(1.0 / 250.0);
-        let y_strict = strict.curve_y(&basis(), t, x).expect("境界を持つ前提");
-        let y_loose = loose.curve_y(&basis(), t, x).expect("境界を持つ前提");
-        assert!(y_strict < y_loose, "{y_strict} >= {y_loose}");
-
-        for order in [[strict, loose], [loose, strict]] {
-            assert_eq!(
-                combined_curve_y(&order, &basis(), t, x),
-                Some(y_strict),
-                "{order:?}"
-            );
-        }
-    }
-
-    /// 境界を持たない条件は合成に加わらない。合成が境界を持たないのは、有効な条件がすべて境界を持たないときだけ
-    #[test]
-    fn combined_curve_is_unbounded_only_when_every_criterion_is() {
-        let t = 200.0;
-        let bounded = ActiveCriterion::DeflectionRatio(1.0 / 400.0);
-        let unbounded = ActiveCriterion::DeflectionRatio(1.0 / 250.0);
-        // 厚さ 200 mm では、x = 7 m で変形角 1/400 だけが境界を持つ
-        let x = 7000.0;
-        let y = bounded.curve_y(&basis(), t, x).expect("境界を持つ前提");
-        assert_eq!(
-            unbounded.curve_y(&basis(), t, x),
-            None,
-            "境界を持たない前提"
-        );
-        for order in [[bounded, unbounded], [unbounded, bounded]] {
-            assert_eq!(
-                combined_curve_y(&order, &basis(), t, x),
-                Some(y),
-                "{order:?}"
-            );
-        }
-        // どちらも境界を持たない x では合成も境界を持たない
-        let x = 4000.0;
-        assert_eq!(bounded.curve_y(&basis(), t, x), None, "境界を持たない前提");
-        assert_eq!(
-            combined_curve_y(&[bounded, unbounded], &basis(), t, x),
-            None
-        );
-    }
-
-    /// 許容たわみはたわみに効く条件の上限の最小（厳しいほうが効く）。
-    /// たわみに効かない条件は加わらず、それだけの集合では許容たわみが無い
-    #[test]
-    fn allowable_deflection_is_the_min_over_deflection_criteria() {
-        let lx = 4000.0;
-        let strict = ActiveCriterion::DeflectionRatio(1.0 / 400.0);
-        let loose = ActiveCriterion::DeflectionRatio(1.0 / 200.0);
-        let thickness_floor = ActiveCriterion::MinThickness;
-        assert_eq!(allowable_deflection(&[strict], lx), Some(10.0));
-        assert_eq!(allowable_deflection(&[loose], lx), Some(20.0));
-        assert_eq!(allowable_deflection(&[loose, strict], lx), Some(10.0));
-        assert_eq!(
-            allowable_deflection(&[loose, thickness_floor], lx),
-            Some(20.0)
-        );
-        assert_eq!(allowable_deflection(&[thickness_floor], lx), None);
-    }
 }

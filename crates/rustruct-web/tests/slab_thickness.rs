@@ -2,7 +2,7 @@
 //! 言葉は `docs/tools/slab-thickness/GLOSSARY.md`。数値は `rustruct-calc` が出し、ここでは表示の文字列を見る。
 
 mod common;
-use common::{assert_in_order, element, text_of};
+use common::{assert_in_order, element, reasons, text_of};
 use rustruct_web::{
     PointRow, SharedRow, SlabField, SlabFigure, SlabInputs, SlabReadout, render_path,
 };
@@ -178,7 +178,7 @@ fn an_unreadable_span_leaves_the_shared_values_and_dashes_the_point() {
         i.set(SlabField::SpanY, "abc");
     });
     assert_eq!(
-        r.errors,
+        reasons(&r.errors),
         [
             (SlabField::SpanX, "0 より大きい値を入れる"),
             (SlabField::SpanY, "数値で入れる"),
@@ -202,7 +202,7 @@ fn unreadable_conditions_are_named_with_their_reasons() {
         i.set(SlabField::DeflectionAbsolute, "-20");
     });
     assert_eq!(
-        r.errors,
+        reasons(&r.errors),
         [
             (SlabField::Fc, "値を入れる"),
             (SlabField::FinishLoad, "0 以上の値を入れる"),
@@ -443,4 +443,17 @@ fn the_color_edge_curves_around_the_point_are_numbered_even_where_the_mark_sits_
             assert!(numbers.contains(&t), "Lx {lx}: {t} が無い {numbers:?}");
         }
     }
+}
+
+#[test]
+fn an_unreadable_criterion_is_not_called_missing() {
+    let r = readout(|i| {
+        i.set(SlabField::DeflectionRatio, "");
+        i.set(SlabField::DeflectionAbsolute, "x");
+    });
+    assert_eq!(
+        reasons(&r.errors),
+        [(SlabField::DeflectionAbsolute, "数値で入れる")]
+    );
+    assert!(!r.no_criteria, "読めないクライテリアは入れてはある");
 }

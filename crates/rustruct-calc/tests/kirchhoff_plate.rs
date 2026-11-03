@@ -1,13 +1,11 @@
-//! Kirchhoff 板の計算核の入口（不安定な型と不正な入力を弾く、分割数、グリッドと辺の評価の並び）と、四辺固定
+//! Kirchhoff 板の計算核の入口（不安定な型と不正な入力を弾く、グリッドと辺の評価の並び）と、四辺固定
 //! （FFFF）の板の辺の値。入口 `solve`（有限要素）からだけ確かめる。19 型すべてに共通の照合（境界条件、釣り合い、
 //! 対称、分割数を倍にしたときの変化、帯板の極限、ν の換算）は `kirchhoff_plate_all_types.rs`、級数解との照合は
 //! `kirchhoff_plate_series_reference.rs`
 
 mod common;
 use common::{assert_within, at, integrated_reaction, plate};
-use rustruct_calc::kirchhoff_plate::{
-    DIVISIONS, EdgeSample, Plate, PlateError, SupportType, mesh_divisions, solve,
-};
+use rustruct_calc::kirchhoff_plate::{EdgeSample, Plate, PlateError, SupportType, solve};
 use rustruct_types::kirchhoff_plate::{Edge, Support, Supports};
 use rustruct_types::quantity::{AreaLoad, Length, Stress};
 
@@ -61,44 +59,27 @@ fn invalid_inputs_are_refused() {
     };
     assert_eq!(
         bad(|p| p.lx = Length::mm(0.0)),
-        Some(PlateError::InvalidInput(InvalidInput::Lx))
+        Some(PlateError::InvalidInput(vec![InvalidInput::Lx]))
     );
     assert_eq!(
         bad(|p| p.ly = Length::mm(-1.0)),
-        Some(PlateError::InvalidInput(InvalidInput::Ly))
+        Some(PlateError::InvalidInput(vec![InvalidInput::Ly]))
     );
     assert_eq!(
         bad(|p| p.thickness = Length::mm(f64::NAN)),
-        Some(PlateError::InvalidInput(InvalidInput::Thickness))
+        Some(PlateError::InvalidInput(vec![InvalidInput::Thickness]))
     );
     assert_eq!(
         bad(|p| p.young_modulus = Stress::n_per_mm2(0.0)),
-        Some(PlateError::InvalidInput(InvalidInput::YoungModulus))
+        Some(PlateError::InvalidInput(vec![InvalidInput::YoungModulus]))
     );
     assert_eq!(
         bad(|p| p.load = AreaLoad::n_per_mm2(f64::INFINITY)),
-        Some(PlateError::InvalidInput(InvalidInput::Load))
+        Some(PlateError::InvalidInput(vec![InvalidInput::Load]))
     );
     // 荷重 0 と負（上向き）は不正ではない
     assert!(bad(|p| p.load = AreaLoad::n_per_mm2(0.0)).is_none());
     assert!(bad(|p| p.load = AreaLoad::n_per_mm2(-1.0)).is_none());
-}
-
-#[test]
-fn mesh_divisions_grow_with_the_aspect_ratio_and_stay_even() {
-    assert_eq!(mesh_divisions(1.0, DIVISIONS), (DIVISIONS, DIVISIONS));
-    let (nx, ny) = mesh_divisions(2.0, DIVISIONS);
-    assert_eq!(nx, DIVISIONS);
-    assert!(ny > DIVISIONS && ny.is_multiple_of(2));
-    let (nx4, ny4) = mesh_divisions(4.0, DIVISIONS);
-    assert_eq!(nx4, DIVISIONS);
-    assert!(ny4 > ny);
-    assert_eq!(mesh_divisions(0.25, DIVISIONS), (ny4, nx4));
-    // 縦横比が大きいと長い辺の分割数は上限で止まる
-    let (_, ny100) = mesh_divisions(100.0, DIVISIONS);
-    let (_, ny1000) = mesh_divisions(1000.0, DIVISIONS);
-    assert_eq!(ny100, ny1000);
-    assert!(ny100.is_multiple_of(2));
 }
 
 #[test]
@@ -445,4 +426,37 @@ fn equal_maxima_on_opposite_free_edges_give_the_one_nearer_the_origin() {
             "反対の自由辺の中央",
         );
     }
+}
+
+/// 不正な欄が 2 つ以上あれば、最初の 1 つでなく全部を欄の順に返す（ページは読めない欄を全部いっぺんに出す）
+#[test]
+fn every_invalid_input_is_returned_in_the_order_of_the_fields() {
+    use rustruct_calc::kirchhoff_plate::InvalidInput;
+    let mut p = fixed(1000.0, 1000.0, 0.0, 1.0);
+    p.load = AreaLoad::n_per_mm2(f64::NAN);
+    p.thickness = Length::mm(-150.0);
+    p.lx = Length::mm(0.0);
+    assert_eq!(
+        solve(&p).err(),
+        Some(PlateError::InvalidInput(vec![
+            InvalidInput::Lx,
+            InvalidInput::Thickness,
+            InvalidInput::Load,
+        ]))
+    );
+}
+
+/// 理由の文言は欄の下に出すもの。欄の名前は含めない（ページが欄に付ける）
+#[test]
+fn an_invalid_input_reads_as_what_to_enter() {
+    use rustruct_calc::kirchhoff_plate::InvalidInput;
+    for reason in [
+        InvalidInput::Lx,
+        InvalidInput::Ly,
+        InvalidInput::Thickness,
+        InvalidInput::YoungModulus,
+    ] {
+        assert_eq!(reason.to_string(), "0 より大きい値を入れる", "{reason:?}");
+    }
+    assert_eq!(InvalidInput::Load.to_string(), "数値で入れる");
 }

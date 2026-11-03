@@ -6,6 +6,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// 読めない欄と理由を、理由の文字で比べられる形に
+pub fn reasons<F: Copy>(errors: &[(F, String)]) -> Vec<(F, &str)> {
+    errors
+        .iter()
+        .map(|(field, reason)| (*field, reason.as_str()))
+        .collect()
+}
+
 /// タグを外し、文字参照（`<` の `&#60;` など）を戻した本文。
 pub fn text_of(html: &str) -> String {
     let mut out = String::new();

@@ -463,8 +463,18 @@ fn assert_doubling_the_divisions_changes_nothing(ratio: f64, part: usize, parts:
 
 // 1 つの型で粗い解と倍の分割の解を求めると、縦横比 1 で約 0.8 s、4 で約 2.4 s かかる（rustruct-calc は
 // opt-level 2）。
-// 縦横比と型の組でテストを分け、並行に走らせる。組の数は 1 つのテストが数秒に収まるように選んだ
+// 縦横比と型の組でテストを分け、並行に走らせる。組の数は 1 つのテストが数秒に収まるように選んだ。
+// 先頭に属性を 1 つ書くと、その組のテストすべてに付く
 macro_rules! doubling_tests {
+    (#[$attr:meta] $($name:ident: $ratio:expr, $part:expr, $parts:expr;)+) => {
+        $(
+            #[test]
+            #[$attr]
+            fn $name() {
+                assert_doubling_the_divisions_changes_nothing($ratio, $part, $parts);
+            }
+        )+
+    };
     ($($name:ident: $ratio:expr, $part:expr, $parts:expr;)+) => {
         $(
             #[test]
@@ -478,6 +488,11 @@ macro_rules! doubling_tests {
 doubling_tests! {
     doubling_the_divisions_changes_nothing_at_aspect_ratio_1_part_0: 1.0, 0, 2;
     doubling_the_divisions_changes_nothing_at_aspect_ratio_1_part_1: 1.0, 1, 2;
+}
+
+// 縦横比 2・4 は CPU の時間の大半を占めるので、素の cargo test では回さない（ADR kirchhoff-plate-0006）
+doubling_tests! {
+    #[ignore = "縦横比 2・4 の分割数のテスト。sh scripts/check.sh test（CI も）が --include-ignored で回す"]
     doubling_the_divisions_changes_nothing_at_aspect_ratio_2_part_0: 2.0, 0, 4;
     doubling_the_divisions_changes_nothing_at_aspect_ratio_2_part_1: 2.0, 1, 4;
     doubling_the_divisions_changes_nothing_at_aspect_ratio_2_part_2: 2.0, 2, 4;
@@ -634,27 +649,36 @@ fn assert_strip(s: &Solution, strip: Strip, span: f64, v: f64, what: &str) {
     }
 }
 
-#[test]
-fn a_long_plate_approaches_the_strip_across_its_short_span() {
-    // 長い板の長い向きの中央の断面は、短い向きに架かる帯板（梁の解を板の曲げ剛性で）になる。ν = 0.2 なら
-    // 直交する向きの曲げモーメントは ν·M。長い板は短い辺長の 12 倍で、両端の辺の乱れは中央まで短い辺長ごとに
-    // 指数的に減る。減り方がいちばん遅いのは固定と自由が向かい合う帯（片持ち）の板で、12 倍で中央に最大の
-    // 6e-4 程度が残る（ほかの帯は 1e-5 未満）。許容は照合と同じ（w・M は 0.5 %、Q・V は 2 %）で、この残りを含む。
-    //
-    // 帯板の極限が当てはまるのは、帯の両端（向かい合う 2 辺）が梁として支えられる組（固定どうし、単純支持
-    // どうし、固定と単純支持、固定と自由）のときだけ。単純支持と自由・自由どうしが向かい合う向きには帯が
-    // 架からない（梁が不安定）ので見ない。両方の向きがそうなる RRSS（向かい合う 2 組がどちらも単純支持と
-    // 自由）には、帯板の極限が無い
+/// 帯の両端（向かい合う 2 辺）が梁として支えられる向き。単純支持と自由・自由どうしが向かい合う向きには
+/// 帯が架からない（梁が不安定）
+fn strips_with_a_beam(supports: Supports) -> impl Iterator<Item = Strip> {
+    [Strip::AcrossX, Strip::AcrossY]
+        .into_iter()
+        .filter(move |strip| {
+            let (a, b) = strip.ends(supports);
+            beam(a, b, 1.0, 1.0, 0.5).is_some()
+        })
+}
+
+/// 長い板の長い向きの中央の断面は、短い向きに架かる帯板（梁の解を板の曲げ剛性で）になる。ν = 0.2 なら
+/// 直交する向きの曲げモーメントは ν·M。長い板は短い辺長の 12 倍で、両端の辺の乱れは中央まで短い辺長ごとに
+/// 指数的に減る。減り方がいちばん遅いのは固定と自由が向かい合う帯（片持ち）の板で、12 倍で中央に最大の
+/// 6e-4 程度が残る（ほかの帯は 1e-5 未満）。許容は照合と同じ（w・M は 0.5 %、Q・V は 2 %）で、この残りを含む。
+///
+/// 帯板の極限が当てはまるのは、帯の両端が梁として支えられる組（固定どうし、単純支持どうし、固定と単純支持、
+/// 固定と自由）のときだけ（`strips_with_a_beam`）。
+/// 19 型を `parts` 組に分けた `part` 番目の組（型の一覧の位置で `parts` おき）だけを見る
+fn assert_a_long_plate_approaches_the_strip(part: usize, parts: usize) {
     let span = 2000.0;
     let length = 12.0 * span;
-    let mut checked = Vec::new();
-    for ty in SupportType::ALL.into_iter().filter(|t| t.is_stable()) {
+    for ty in SupportType::ALL
+        .into_iter()
+        .filter(|t| t.is_stable())
+        .skip(part)
+        .step_by(parts)
+    {
         let supports = ty.representative();
-        for strip in [Strip::AcrossX, Strip::AcrossY] {
-            let (a, b) = strip.ends(supports);
-            if beam(a, b, 1.0, 1.0, 0.5).is_none() {
-                continue;
-            }
+        for strip in strips_with_a_beam(supports) {
             let (lx, ly) = strip.point(span, length);
             let s = solve(&plate(lx, ly, 0.2, 10.0, supports)).unwrap();
             assert_strip(
@@ -664,13 +688,40 @@ fn a_long_plate_approaches_the_strip_across_its_short_span() {
                 length / 2.0,
                 &format!("{} の {strip:?}", ty.symbol()),
             );
-            checked.push(ty);
         }
     }
+}
+
+// 長い板を 18 型すべて解くと 1 スレッドで約 22 s かかる（rustruct-calc は opt-level 2）。分割数のテストと同じく
+// 型の組でテストを分け、並行に走らせる。組の数は 1 つのテストが数秒に収まるように選んだ
+macro_rules! long_plate_tests {
+    ($($name:ident: $part:expr, $parts:expr;)+) => {
+        $(
+            #[test]
+            fn $name() {
+                assert_a_long_plate_approaches_the_strip($part, $parts);
+            }
+        )+
+    };
+}
+
+long_plate_tests! {
+    a_long_plate_approaches_the_strip_across_its_short_span_part_0: 0, 6;
+    a_long_plate_approaches_the_strip_across_its_short_span_part_1: 1, 6;
+    a_long_plate_approaches_the_strip_across_its_short_span_part_2: 2, 6;
+    a_long_plate_approaches_the_strip_across_its_short_span_part_3: 3, 6;
+    a_long_plate_approaches_the_strip_across_its_short_span_part_4: 4, 6;
+    a_long_plate_approaches_the_strip_across_its_short_span_part_5: 5, 6;
+}
+
+/// 両方の向きに帯が架からないのは RRSS（向かい合う 2 組がどちらも単純支持と自由）だけで、その型には帯板の
+/// 極限が無い。ほかの 18 型は長い板のテストでどちらかの向きを見る
+#[test]
+fn only_rrss_has_no_strip_limit() {
     let without: Vec<SupportType> = SupportType::ALL
         .into_iter()
         .filter(|t| t.is_stable())
-        .filter(|t| !checked.contains(t))
+        .filter(|t| strips_with_a_beam(t.representative()).next().is_none())
         .collect();
     assert_eq!(without, [SupportType::RRSS], "帯板の極限の無い型");
 }

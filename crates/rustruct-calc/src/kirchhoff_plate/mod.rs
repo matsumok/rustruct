@@ -15,7 +15,7 @@
 
 mod band;
 mod finite_element;
-pub mod series;
+mod series;
 mod solver;
 mod support_type;
 
@@ -26,12 +26,12 @@ pub use rustruct_types::kirchhoff_plate::Plate;
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Support};
 use rustruct_types::quantity::{Force, ForcePerLength, Length, MomentPerLength};
 
-pub use finite_element::mesh_divisions;
+pub use series::TERMS;
 use solver::{Derivatives, EdgePoint, Solver};
-use support_type::RepresentativeResponse;
-pub use support_type::{Mapping, SupportType};
+pub use support_type::SupportType;
+use support_type::{Mapping, RepresentativeResponse};
 
-/// 有限要素の短い辺の分割数。長い辺は辺長に合わせて増やす（[`mesh_divisions`]）。利用者の入力にも Model にも
+/// 有限要素の短い辺の分割数。長い辺は辺長に合わせて増やす（`finite_element`）。利用者の入力にも Model にも
 /// 持たない定数で、値は分割数を倍にしたときの変化が収まることで決めた（ADR kirchhoff-plate-0006）
 pub const DIVISIONS: usize = 40;
 
@@ -46,7 +46,8 @@ fn near_end(fraction: f64) -> bool {
     fraction < CORNER_MARGIN - ROUNDING || fraction > 1.0 - CORNER_MARGIN + ROUNDING
 }
 
-/// 入力が不正な理由。辺長・板厚・ヤング係数は正の有限値、荷重は有限値（0 と上向きも可）
+/// 入力が不正な理由。欄ごとに 1 つで、並びは欄の順。辺長・板厚・ヤング係数は正の有限値、荷重は有限値（0 と
+/// 上向きも可）。ν は [`PoissonRatio`](rustruct_types::quantity::PoissonRatio) が作るときに守る
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InvalidInput {
     Lx,
@@ -56,22 +57,21 @@ pub enum InvalidInput {
     Load,
 }
 
+/// 欄の下に出す文言。欄の名前は含めない（画面が欄に付ける）
 impl fmt::Display for InvalidInput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::Lx => "x方向の辺長が正の有限値でない",
-            Self::Ly => "y方向の辺長が正の有限値でない",
-            Self::Thickness => "板厚が正の有限値でない",
-            Self::YoungModulus => "ヤング係数が正の有限値でない",
-            Self::Load => "等分布荷重が有限値でない",
+            Self::Lx | Self::Ly | Self::Thickness | Self::YoungModulus => "0 より大きい値を入れる",
+            Self::Load => "数値で入れる",
         })
     }
 }
 
 /// 解を求められない理由。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlateError {
-    InvalidInput(InvalidInput),
+    /// 不正な欄のすべて。欄の順で、空にはならない
+    InvalidInput(Vec<InvalidInput>),
     /// 板を支えきれない支持条件の組（四辺自由、単純支持 1 辺と自由 3 辺）
     Unstable(SupportType),
     /// 連立一次方程式が解けない。支持の足りない組は手前で弾くので、有限要素なら拘束の組み立て、参照解の級数なら
@@ -82,7 +82,13 @@ pub enum PlateError {
 impl fmt::Display for PlateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidInput(reason) => write!(f, "{reason}"),
+            Self::InvalidInput(reasons) => {
+                let reasons: Vec<String> = reasons
+                    .iter()
+                    .map(|reason| format!("{reason:?}: {reason}"))
+                    .collect();
+                write!(f, "入力が不正（{}）", reasons.join("、"))
+            }
             Self::Unstable(ty) => write!(f, "支持条件の型 {} は不安定", ty.symbol()),
             Self::Singular => f.write_str("連立一次方程式が解けない"),
         }
@@ -112,7 +118,9 @@ pub struct EdgeSample {
     pub along: Length,
     /// 辺に直交する方向の曲げモーメント（x の辺なら Mx）
     pub moment: MomentPerLength,
-    /// 辺に直交する断面のせん断力（x の辺なら Qx）
+    /// 辺に直交する断面のせん断力（x の辺なら Qx）。符号は [`PointResponse`] の Qx・Qy と同じ板理論の向き
+    /// （ADR kirchhoff-plate-0004）で、辺の反力のように支える向きを正にしていない。下向きの荷重を支える辺では、
+    /// x = 0・y = 0 の辺で正、x = Lx・y = Ly の辺で負になる
     pub shear: ForcePerLength,
     /// 辺の反力（支える向きが正）
     pub reaction: ForcePerLength,
@@ -156,7 +164,11 @@ pub fn solve(plate: &Plate) -> Result<Solution, PlateError> {
 }
 
 /// 短い辺の分割数を指定して有限要素で解く。分割数を倍にしたときの変化を見るテスト（ADR kirchhoff-plate-0006）のためにあり、
-/// 画面は [`solve`] を使う
+/// 画面は [`solve`] を使う。
+///
+/// # Panics
+///
+/// `divisions` が 4 以上の偶数でないとき。分割数は呼び手（テスト）が決める定数で、利用者の入力ではない
 pub fn solve_with_divisions(plate: &Plate, divisions: usize) -> Result<Solution, PlateError> {
     let (support_type, mapping, b) = normalize(plate)?;
     let nu = plate.poisson_ratio.value();
@@ -171,7 +183,7 @@ pub fn solve_with_divisions(plate: &Plate, divisions: usize) -> Result<Solution,
 }
 
 /// 参照解。画面からは呼ばない。照合テストが、有限要素の解を級数解と比べるのに使う。四辺固定と四辺単純支持
-/// だけに級数解があり、ほかの型は `Ok(None)`。`terms` は級数の項数で、参照解の値は [`series::TERMS`]
+/// だけに級数解があり、ほかの型は `Ok(None)`。`terms` は級数の項数で、参照解の値は [`TERMS`]
 pub fn solve_with_series(plate: &Plate, terms: usize) -> Result<Option<Solution>, PlateError> {
     let (support_type, mapping, b) = normalize(plate)?;
     let nu = plate.poisson_ratio.value();
@@ -189,7 +201,7 @@ pub fn solve_with_series(plate: &Plate, terms: usize) -> Result<Option<Solution>
 /// 不安定な型はここで弾く
 fn normalize(plate: &Plate) -> Result<(SupportType, Mapping, f64), PlateError> {
     validate(plate)?;
-    let (support_type, mapping) = SupportType::of(plate.supports);
+    let (support_type, mapping) = SupportType::with_mapping(plate.supports);
     if !support_type.is_stable() {
         return Err(PlateError::Unstable(support_type));
     }
@@ -197,29 +209,28 @@ fn normalize(plate: &Plate) -> Result<(SupportType, Mapping, f64), PlateError> {
     Ok((support_type, mapping, rep_ly / rep_lx))
 }
 
-fn validate(plate: &Plate) -> Result<(), InvalidInput> {
+/// 値の規則を欄ごとに見て、不正な欄を欄の順にすべて集める
+fn validate(plate: &Plate) -> Result<(), PlateError> {
     let positive = |v: f64| v.is_finite() && v > 0.0;
-    if !positive(plate.lx.as_mm()) {
-        return Err(InvalidInput::Lx);
-    }
-    if !positive(plate.ly.as_mm()) {
-        return Err(InvalidInput::Ly);
-    }
-    if !positive(plate.thickness.as_mm()) {
-        return Err(InvalidInput::Thickness);
-    }
-    if !positive(plate.young_modulus.as_n_per_mm2()) {
-        return Err(InvalidInput::YoungModulus);
-    }
-    if !plate.load.as_n_per_mm2().is_finite() {
-        return Err(InvalidInput::Load);
-    }
-    Ok(())
-}
-
-impl From<InvalidInput> for PlateError {
-    fn from(reason: InvalidInput) -> Self {
-        Self::InvalidInput(reason)
+    let checks = [
+        (positive(plate.lx.as_mm()), InvalidInput::Lx),
+        (positive(plate.ly.as_mm()), InvalidInput::Ly),
+        (positive(plate.thickness.as_mm()), InvalidInput::Thickness),
+        (
+            positive(plate.young_modulus.as_n_per_mm2()),
+            InvalidInput::YoungModulus,
+        ),
+        (plate.load.as_n_per_mm2().is_finite(), InvalidInput::Load),
+    ];
+    let invalid: Vec<InvalidInput> = checks
+        .into_iter()
+        .filter(|(valid, _)| !valid)
+        .map(|(_, reason)| reason)
+        .collect();
+    if invalid.is_empty() {
+        Ok(())
+    } else {
+        Err(PlateError::InvalidInput(invalid))
     }
 }
 
@@ -232,7 +243,11 @@ impl Solution {
         self.support_type
     }
 
-    /// 板の上の点の応答。板の外（0 ≤ x ≤ Lx、0 ≤ y ≤ Ly を外れる点）は `None`
+    /// 板の上の点の応答。板の外（0 ≤ x ≤ Lx、0 ≤ y ≤ Ly を外れる点）は `None`。
+    ///
+    /// 呼ぶたびに、その点の曲げモーメントとせん断力の元になる 2 階・3 階の導関数を、点の周りの要素の中央の値から
+    /// 回復する。結果は覚えないので、同じ点を何度も呼ぶとそのたびに計算する。[`Self::grid`] と [`Self::edge`] も
+    /// 点の数だけこれを繰り返す
     pub fn at(&self, x: Length, y: Length) -> Option<PointResponse> {
         let (x_mm, y_mm) = (x.as_mm(), y.as_mm());
         let (lx, ly) = (self.plate.lx.as_mm(), self.plate.ly.as_mm());
@@ -457,7 +472,10 @@ impl Solution {
     }
 
     /// 隅反力（板を下に押さえる向きが正）。R = 2 D (1 − ν) s_x s_y w_xy。s_x・s_y は隅の座標の符号
-    /// （原点の隅と対角で +1、ほかの 2 つで −1）で、w_xy の符号が隅ごとに逆になるのを揃える
+    /// （原点の隅と対角で +1、ほかの 2 つで −1）で、w_xy の符号が隅ごとに逆になるのを揃える。
+    ///
+    /// 固定辺を含む隅（辺の上で傾きが 0 なので w_xy も 0）と、自由辺どうしの隅（支持が無い）では、構造で
+    /// ちょうど 0 を返す。ほかの隅（単純支持の辺どうし、単純支持の辺と自由辺）は w_xy から求める
     pub fn corner_reaction(&self, corner: Corner) -> Force {
         let rep = self.mapping.corner(corner);
         let w_xy = self.solver.corner_w_xy(rep);
