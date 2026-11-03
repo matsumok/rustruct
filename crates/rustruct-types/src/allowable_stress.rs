@@ -1,4 +1,4 @@
-//! 許容応力度（言葉は `docs/materials/GLOSSARY.md`、値と出典は `docs/materials/adr/0003`）。
+//! 許容応力度（言葉は `docs/materials/GLOSSARY.md`、値と出典は ADR materials-0003）。
 
 use crate::quantity::Stress;
 

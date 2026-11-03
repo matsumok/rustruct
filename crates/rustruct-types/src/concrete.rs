@@ -1,4 +1,4 @@
-//! コンクリート。言葉は `docs/materials/GLOSSARY.md`、値と判断は `docs/materials/adr/0001`。
+//! コンクリート。言葉は `docs/materials/GLOSSARY.md`、値と判断は ADR materials-0001。
 //! 持つのは Fc と種類だけで、単位体積重量とヤング係数はそこから導く。
 
 use std::fmt;
@@ -49,7 +49,7 @@ macro_rules! unit_weight_table {
     };
 }
 
-// 普通コンクリートの気乾単位体積重量（慣例の値、`docs/materials/adr/0001`）。
+// 普通コンクリートの気乾単位体積重量（慣例の値、ADR materials-0001）。
 // Fc の区分の上限 [N/mm²] => γ [kN/m³]。表は「無筋コンクリートの単位容積重量」の列
 unit_weight_table! {
     NORMAL_UNIT_WEIGHT_TABLE, normal_unit_weight,

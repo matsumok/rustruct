@@ -1,6 +1,6 @@
 //! Lévy 型の単一級数の部品。局所座標 (s, t) で書く: s は三角関数の向き（|s| ≤ half_along、両端は単純支持）、
 //! t は双曲線関数の向き（|t| ≤ half_across）。型ごとの解き方はこの部品を向きを変えて組み合わせ、無次元の
-//! たわみの導関数（p = 1、D = 1）だけを返す（ADR-0002）。
+//! たわみの導関数（p = 1、D = 1）だけを返す（ADR kirchhoff-plate-0002）。
 //!
 //! 項 n の波数は β = (2n − 1)π/(2 half_along)。cos βs は s = ±half_along で 0 になる（s についてたわみ 0 の辺）。
 //! 双曲線関数は比の形（`hyperbolic`）だけで、k = β·half_across に対する C = cosh βt / cosh k、S = sinh βt / cosh k。

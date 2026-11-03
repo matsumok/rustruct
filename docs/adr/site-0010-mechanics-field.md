@@ -1,6 +1,6 @@
 # 材料に依らない梁・板の弾性解の Tool を並べる分野として Mechanics を足す
 
-Tools の一覧の分野に Mechanics を足し、RC・Steel・Timber・Dynamics・Mechanics の 5 つにする（2026-10-22、本人が決めた）。Mechanics には、材料に依らない梁や板の弾性解の公式を使う Tool を並べる。最初の Tool は Kirchhoff 板の曲げ（`/tools/kirchhoff-plate/`）で、単純梁の三角形・台形荷重のたわみのような公式の Tool もここに入る。分野は一覧の見出しでしかなく、URL は平らなまま（ADR-0005）なので、足しても既存のリンクは変わらない。
+Tools の一覧の分野に Mechanics を足し、RC・Steel・Timber・Dynamics・Mechanics の 5 つにする（2026-10-22、本人が決めた）。Mechanics には、材料に依らない梁や板の弾性解の公式を使う Tool を並べる。最初の Tool は Kirchhoff 板の曲げ（`/tools/kirchhoff-plate/`）で、単純梁の三角形・台形荷重のたわみのような公式の Tool もここに入る。分野は一覧の見出しでしかなく、URL は平らなまま（ADR site-0005）なので、足しても既存のリンクは変わらない。
 
 Kirchhoff 板の曲げは RC スラブの応力を見るために作り始めたが、計算はヤング係数・ポアソン比・板厚だけで決まり、コンクリートに固有の式を含まない。RC に置くと、鋼板や木質の床の板として使えることが一覧から読めず、材料の値（Fc から E を導くなど）を Tool の中に持ちたくなって、材料に依らない Tool でなくなる。RC スラブとしての判断（規準の式、配筋）は、スラブ設計のような RC の Tool が、この Tool の計算核を使って持つ。
 

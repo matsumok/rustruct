@@ -2,7 +2,7 @@
 
 `main` への push で GitHub Actions がビルドして本番（https://rustruct.matsumok.com）に置き、PR を開くとプレビュー URL が付く（Issue #13）。
 ここには「人が一度だけやること」と「困ったときに見るところ」を書く。秘密（トークンの値）は書かない。
-何に決めたかは `docs/stack.md` の配信の節、なぜ静的アセットだけなのかは ADR-0002。
+何に決めたかは `docs/stack.md` の配信の節、なぜ静的アセットだけなのかは ADR site-0002。
 
 ## 全体像
 
@@ -66,7 +66,7 @@ GitHub の Environments（`production`、`preview`）は最初の run が自動�
 
 ## 公開前の非公開
 
-公開するまでは、本番（`rustruct.matsumok.com`）とプレビュー（`*.workers.dev`）の全体に Cloudflare Access を掛け、root だけが見られるようにする（2026-10-14 に決めた）。ADR-0002 の「Access は `/private/` だけ」は公開後の形で、これはそれまでの一時的な措置。#15（検索エンジンに載せる準備）は公開まで寝かせる。
+公開するまでは、本番（`rustruct.matsumok.com`）とプレビュー（`*.workers.dev`）の全体に Cloudflare Access を掛け、root だけが見られるようにする（2026-10-14 に決めた）。ADR site-0002 の「Access は `/private/` だけ」は公開後の形で、これはそれまでの一時的な措置。#15（検索エンジンに載せる準備）は公開まで寝かせる。
 
 CI の live（`scripts/check-live.sh`）は Access のサービストークンで通る。Secrets の `CF_ACCESS_CLIENT_ID` と `CF_ACCESS_CLIENT_SECRET` を環境変数で渡すと、curl がそのヘッダを付ける。無いと Access のログインへ転送され、live が「Cloudflare Access のログインへ転送された」と言って落ちる。
 

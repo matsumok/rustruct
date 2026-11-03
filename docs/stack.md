@@ -9,18 +9,18 @@
 
 | クレート | 役割 | 依存 |
 |---|---|---|
-| `rustruct-types` | 共有型。物理量（ADR-0004）、材料とその性質を求めるメソッド（`docs/materials/`）、Model と保存形式 | serde、rust_decimal（JIS の丸めを 10 進で正確に。`docs/materials/adr/0002`） |
+| `rustruct-types` | 共有型。物理量（ADR site-0004）、材料とその性質を求めるメソッド（`docs/materials/`）、Model と保存形式 | serde、rust_decimal（JIS の丸めを 10 進で正確に。ADR materials-0002） |
 | `rustruct-calc` | 計算核。I/O も非同期も持たない純粋関数 | `rustruct-types` |
 | `rustruct-web` | Dioxus fullstack アプリ。`web` / `server` feature で切替。SSG のプリレンダーもここ | 上2つ、`charta`、`numerus` |
 | `charta` | グラフ描画クレート。汎用。`rustruct-types` に依存しない。後で別リポジトリに出せる。設計メモは `docs/ui-decisions.md` のグラフ描画ライブラリの節 | `numerus`（tokens.json を読む `build.rs` だけ serde_json） |
-| `numerus` | 表と図に書く数の書き方（有効数字、3 桁区切り、E、列の小数点揃え。`docs/adr/0013`）。汎用。`rustruct-types` に依存しない | なし |
+| `numerus` | 表と図に書く数の書き方（有効数字、3 桁区切り、E、列の小数点揃え。ADR site-0013）。汎用。`rustruct-types` に依存しない | なし |
 
-招待者向けサーバー（旧 `rustruct-server`）は作らない。必要になったら ADR-0002 を書き直してから足す。
+招待者向けサーバー（旧 `rustruct-server`）は作らない。必要になったら ADR site-0002 を書き直してから足す。
 
 ## UI
 
 - Dioxus 0.7 系（0.8 は alpha のため見送り）。Web ターゲット
-- 全ページを `dx build --ssg` でプリレンダーし、ブラウザで hydration する（ADR-0001）
+- 全ページを `dx build --ssg` でプリレンダーし、ブラウザで hydration する（ADR site-0001）
 - ブラウザでしか決まらない値は初回描画で読まず、起動後に `use_effect` で読む
 - CSS は Tailwind v4。`dx` 内蔵の単体 CLI を使い、Node は入れない
 - 値の源は `docs/design/tokens.json` の一箇所。Tailwind の `@theme` ブロック（色・文字・余白・角丸）は Rust の小さなビルド工程で tokens.json から生成し、手では書かない。`charta` も同じ JSON から色を読む（`crates/charta/build.rs` が色と書体の表を `$OUT_DIR` に写し、役割名で引く。配信物に JSON は入らない）
@@ -42,24 +42,24 @@
 - GitHub Actions で `dx build --ssg` し、wrangler で配置。`main` への push で本番（`wrangler deploy`、カスタムドメイン `rustruct.matsumok.com`。workers.dev の本番 URL は作らない）、PR で `wrangler preview --name pr-<番号>` のプレビュー URL（workers.dev）。PR を閉じるとプレビューを消す。wrangler は CI が npm から落として使う道具で、リポジトリに JS も package.json も置かない
 - 配信物は `scripts/stage-deploy.sh` が SSG の出力から作る `target/deploy`。違いは not-found だけで、SSG の `404/index.html` を配信側が探すルートの `404.html` に移す（`not_found_handling = "404-page"`）。`html_handling = "auto-trailing-slash"` で `/tools` は `/tools/` に転送され、SSG の `tools/index.html` が届く
 - 配置の直後に `scripts/check-live.sh <URL>` が本番とプレビューを外から見る（住所ごとの HTML、転送、未知の住所の 404、CSS・WASM と Content-Type）。hydration と見た目は人の目（`docs/deploy.md`）
-- 公開面にサーバープロセスは置かない。計算はブラウザ内で完結する（ADR-0002）
+- 公開面にサーバープロセスは置かない。計算はブラウザ内で完結する（ADR site-0002）
 
 ## 認証と制限
 
-- 認証は Cloudflare Access のみ。アプリにログイン実装は持たない（ADR-0002）
+- 認証は Cloudflare Access のみ。アプリにログイン実装は持たない（ADR site-0002）
 - 登録者: Access の「Everyone + メールのワンタイム PIN」。無料枠 50 人
 - root: Access の許可リストに自分のメールを入れた `/root/` パス。骨組みでは中身は空
 - 限定データ: `/private/` 配下の静的 JSON を Access で守る。実体は非公開リポジトリ `rustruct-data` に置き、CI がデプロイキーで取得して同梱する
 
 ## 保存
 
-- 形式は整数バージョン付き JSON（ADR-0003）
+- 形式は整数バージョン付き JSON（ADR site-0003）
 - 骨組みではブラウザ内（localStorage）とファイル（ダウンロード／読込）の2層だけ
 - サーバー保存と、知らない人向けの保存は作らない
 
 ## 最初の一本
 
-上のバーに wordmark、トップに Tools / Studies / Notes の一覧（名前＋一行＋パス）、各セクションの空ページ。この骨組みが SSG と hydration を通して rustruct.matsumok.com で表示されるところまで。計算機能はゼロ、サイドバーなし。SSG が通らなければ ADR-0001 の (B) に落とす。
+上のバーに wordmark、トップに Tools / Studies / Notes の一覧（名前＋一行＋パス）、各セクションの空ページ。この骨組みが SSG と hydration を通して rustruct.matsumok.com で表示されるところまで。計算機能はゼロ、サイドバーなし。SSG が通らなければ ADR site-0001 の (B) に落とす。
 
 ## 旧 ADR
 

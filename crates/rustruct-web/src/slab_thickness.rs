@@ -298,7 +298,7 @@ fn criterion_name(criterion: Criterion) -> &'static str {
     }
 }
 
-/// `/tools/slab-thickness`。条件の Sheet と共有値、検討点の Sheet と結果の表を 1 つの列に置く（ADR-0006）。
+/// `/tools/slab-thickness`。条件の Sheet と共有値、検討点の Sheet と結果の表を 1 つの列に置く（ADR site-0006）。
 /// 「入力」「結果」の部の見出しは置かず、表の見出しで区切る。
 #[component]
 pub(crate) fn SlabThicknessPage() -> Element {

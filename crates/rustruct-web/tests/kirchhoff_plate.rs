@@ -157,7 +157,7 @@ fn an_unstable_combination_shows_dashes_and_says_the_plate_is_not_held() {
 
 #[test]
 fn a_combination_with_a_free_edge_is_solved_and_balances() {
-    // 不安定な組以外はすべて解ける（kirchhoff-plate の ADR-0002）。自由辺の反力は 0 で、残る辺が荷重を受ける
+    // 不安定な組以外はすべて解ける（ADR kirchhoff-plate-0002）。自由辺の反力は 0 で、残る辺が荷重を受ける
     let r = readout(|i| i.set(InputField::Support(Edge::XLx), Support::Free.symbol()));
     assert_eq!(r.notice, None);
     assert!(r.errors.is_empty());
@@ -168,7 +168,7 @@ fn a_combination_with_a_free_edge_is_solved_and_balances() {
 
 #[test]
 fn a_simply_supported_plate_balances_with_its_corner_reactions_pressing_down() {
-    // 辺の反力の合計は荷重を超え、超えた分を隅反力が押さえる（kirchhoff-plate の ADR-0007）
+    // 辺の反力の合計は荷重を超え、超えた分を隅反力が押さえる（ADR kirchhoff-plate-0007）
     let r = readout(|i| set_all(i, Support::SimplySupported));
     assert_eq!(r.notice, None);
     assert_eq!([&r.balance.reactions, &r.balance.load], ["200", "200"]);
@@ -371,7 +371,7 @@ fn three_fixed_one_free() -> PlateInputs {
 #[test]
 fn the_edge_shear_and_reaction_of_a_plate_with_a_free_edge_skip_five_percent_at_each_end() {
     // 固定辺と自由辺の隅ではせん断力と辺の反力が発散する。辺の最大値は両端から辺長の 5 % を除いて取る
-    // （kirchhoff-plate の ADR-0008）。曲げモーメントは隅まで含める
+    // （ADR kirchhoff-plate-0008）。曲げモーメントは隅まで含める
     let r = PlateReadout::from_inputs(&three_fixed_one_free());
     for (row, length) in r.edges.iter().zip([4.0, 4.0, 5.0, 5.0]) {
         for m in [&row.max_shear, &row.max_reaction] {
@@ -409,7 +409,7 @@ fn a_plate_without_a_free_edge_has_no_notes_on_the_corners() {
 #[test]
 fn the_shear_figure_of_a_plate_with_a_free_edge_is_read_inside_the_plate() {
     // 隅の発散で色の幅を決めると、刻みが粗くなって板の中に等値線がほとんど引かれない。色の幅は隅から
-    // 辺長の 5 % 以内の点を除いて決める（ADR-0008）ので、板の中の Qx に正の水準が 3 つ以上読める
+    // 辺長の 5 % 以内の点を除いて決める（ADR kirchhoff-plate-0008）ので、板の中の Qx に正の水準が 3 つ以上読める
     let figure = PlateFigure::from_inputs(&three_fixed_one_free(), Quantity::Qx).unwrap();
     let mut positive: Vec<f64> = figure_numbers(&figure.light_svg)
         .into_iter()

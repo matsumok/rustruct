@@ -1,4 +1,4 @@
-//! コンクリートの単位体積重量とヤング係数。期待値は `docs/materials/adr/0001` の表と、式の手計算。
+//! コンクリートの単位体積重量とヤング係数。期待値は ADR materials-0001 の表と、式の手計算。
 
 mod common;
 use common::assert_close;

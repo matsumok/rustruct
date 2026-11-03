@@ -1,5 +1,5 @@
 //! 計算のページ（Data と Tool）の表示用の表と本文の列の部品。
-//! 決め事は `docs/adr/0006` と `docs/ui-decisions.md`「列の単位と表」で、部品がそれを守るので使う側は書かない:
+//! 決め事は ADR site-0006 と `docs/ui-decisions.md`「列の単位と表」で、部品がそれを守るので使う側は書かない:
 //!
 //! - 表は横罫だけ。見出しの行と本体の各行の下に `line`。縦罫・塗り・交互の背景は使わない（入力の Sheet と分ける）
 //! - 単位は表の名前（`Caption`）か列の見出し（`HeadCell`）に括弧で書き、数字の後には付けない
@@ -23,7 +23,7 @@ pub(crate) fn Columns(children: Element) -> Element {
     }
 }
 
-/// 本文の1列。スマホでは画面いっぱい、iPad からは1単位の幅（`docs/adr/0007`）。中の組（`Block` など）の間は `space-7`。
+/// 本文の1列。スマホでは画面いっぱい、iPad からは1単位の幅（ADR site-0007）。中の組（`Block` など）の間は `space-7`。
 /// `id` を付けると住所の `#id` でその列へ飛べる。
 #[component]
 pub(crate) fn Column(#[props(default)] id: &'static str, children: Element) -> Element {

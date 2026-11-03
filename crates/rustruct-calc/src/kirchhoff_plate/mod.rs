@@ -2,10 +2,10 @@
 //!
 //! 公開の入口は [`solve`] 一つ。入力（[`Plate`]）から [`Solution`] を得て、点の応答、等間隔グリッドの
 //! 応答、辺に沿った辺の反力の分布とその合計、辺の最大値、隅ごとの隅反力を取る。公開の座標は隅が原点
-//! （x は 0 から Lx、y は 0 から Ly）。符号は ADR-0004。
+//! （x は 0 から Lx、y は 0 から Ly）。符号は ADR kirchhoff-plate-0004。
 //!
-//! 内部では、支持条件の組を 21 種の型と写し方に分け（[`SupportType`]、ADR-0003）、代表の向きの板を
-//! 中央原点・x の半辺長 1 の無次元の板として、長方形の共形要素の有限要素（`finite_element`）で解く（ADR-0002）。
+//! 内部では、支持条件の組を 21 種の型と写し方に分け（[`SupportType`]、ADR kirchhoff-plate-0003）、代表の向きの板を
+//! 中央原点・x の半辺長 1 の無次元の板として、長方形の共形要素の有限要素（`finite_element`）で解く（ADR kirchhoff-plate-0002）。
 //! 解き方（`solver`）が返すのは無次元のたわみの導関数（と辺の反力）だけで、曲げモーメント・せん断力・隅反力への
 //! 換算はこのファイルの一箇所。四辺固定と四辺単純支持の級数解（`series`）は参照解で、照合テストだけが
 //! [`solve_with_series`] から呼ぶ。
@@ -29,7 +29,7 @@ use support_type::RepresentativeResponse;
 pub use support_type::{Mapping, SupportType};
 
 /// 有限要素の短い辺の分割数。長い辺は辺長に合わせて増やす（[`mesh_divisions`]）。利用者の入力にも Model にも
-/// 持たない定数で、値は分割数を倍にしたときの変化が収まることで決めた（`docs/tools/kirchhoff-plate/adr/0006`）
+/// 持たない定数で、値は分割数を倍にしたときの変化が収まることで決めた（ADR kirchhoff-plate-0006）
 pub const DIVISIONS: usize = 40;
 
 /// 入力が不正な理由。辺長・板厚・ヤング係数は正の有限値、荷重は有限値（0 と上向きも可）
@@ -61,7 +61,7 @@ pub enum PlateError {
     /// 板を支えきれない支持条件の組（四辺自由、単純支持 1 辺と自由 3 辺）
     Unstable(SupportType),
     /// 連立一次方程式が解けない。支持の足りない組は手前で弾くので、有限要素なら拘束の組み立て、参照解の級数なら
-    /// 式か項数の取り方の誤り（サイト ADR-0009）
+    /// 式か項数の取り方の誤り（ADR site-0009）
     Singular,
 }
 
@@ -133,7 +133,7 @@ pub fn solve(plate: &Plate) -> Result<Solution, PlateError> {
     solve_with_divisions(plate, DIVISIONS)
 }
 
-/// 短い辺の分割数を指定して有限要素で解く。分割数を倍にしたときの変化を見るテスト（ADR-0006）のためにあり、
+/// 短い辺の分割数を指定して有限要素で解く。分割数を倍にしたときの変化を見るテスト（ADR kirchhoff-plate-0006）のためにあり、
 /// 画面は [`solve`] を使う
 pub fn solve_with_divisions(plate: &Plate, divisions: usize) -> Result<Solution, PlateError> {
     let (support_type, mapping, b) = normalize(plate)?;
@@ -293,7 +293,7 @@ impl Solution {
     }
 
     /// 辺の反力の合計 [N]（辺に沿った積分、支える向きが正）。辺の反力の合計 − 隅反力の合計 = 荷重の合計
-    /// （ADR-0004）。有限要素は節点の反力の和そのもので、参照解の級数は辺の反力の数値積分
+    /// （ADR kirchhoff-plate-0004）。有限要素は節点の反力の和そのもので、参照解の級数は辺の反力の数値積分
     pub fn total_reaction(&self, edge: Edge) -> Force {
         let rep_edge = self.mapping.edge(edge);
         let (rep_lx, rep_ly) = self.representative_lengths();
@@ -359,7 +359,7 @@ impl Solution {
     fn half_x(&self) -> f64 {
         self.representative_lengths().0 / 2.0
     }
-    /// 曲げ剛性 D = E t³ / (12 (1 − ν²)) [N·mm]。内部でしか使わないので型にしない（サイト ADR-0004）
+    /// 曲げ剛性 D = E t³ / (12 (1 − ν²)) [N·mm]。内部でしか使わないので型にしない（ADR site-0004）
     fn rigidity(&self) -> f64 {
         let t = self.plate.thickness.as_mm();
         let nu = self.nu();

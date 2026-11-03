@@ -1,4 +1,4 @@
-//! 支持条件の組（81 通り）を 21 種の型に正規化し、写し方で元に戻せる（ADR-0003）。
+//! 支持条件の組（81 通り）を 21 種の型に正規化し、写し方で元に戻せる（ADR kirchhoff-plate-0003）。
 //! 型の 4 文字は、その型に属する組の記号のうち F < R < S の辞書順で最小のもの（GLOSSARY「支持条件の型」）。
 
 use std::collections::BTreeSet;
@@ -22,7 +22,7 @@ fn every_combination() -> Vec<Supports> {
     out
 }
 
-/// GLOSSARY と ADR-0002 が挙げる 21 種（18 種 ＋ 後回しの FRFR ＋ 不安定な RRRR・RRRS）
+/// GLOSSARY と ADR kirchhoff-plate-0002 が挙げる 21 種（18 種 ＋ 後回しの FRFR ＋ 不安定な RRRR・RRRS）
 const TYPES: [&str; 21] = [
     "FFFF", "FFFR", "FFFS", "FFRR", "FFRS", "FFSS", "FRFR", "FRFS", "FRRR", "FRRS", "FRSR", "FRSS",
     "FSFS", "FSRS", "FSSS", "RRRR", "RRRS", "RRSS", "RSRS", "RSSS", "SSSS",

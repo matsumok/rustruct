@@ -59,7 +59,7 @@ pub struct StudyPoint {
     pub spans: Spans,
 }
 
-/// スラブの x方向スパン Lx と y方向スパン Ly。どちらも内法（`docs/slab/adr/0001`）で、
+/// スラブの x方向スパン Lx と y方向スパン Ly。どちらも内法（ADR slab-0001）で、
 /// 短辺・長辺のどちらであるかは問わない。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Spans {

@@ -1,4 +1,4 @@
-# Cloudflare Workers Static Assets の設定（Issue #13、ADR-0002）。配信物は HTML・WASM・CSS だけで、
+# Cloudflare Workers Static Assets の設定（Issue #13、ADR site-0002）。配信物は HTML・WASM・CSS だけで、
 # Worker のスクリプト（main）は持たない。wrangler は CI（.github/workflows/ci.yml）が道具として使うだけ。
 # 手順は docs/deploy.md
 name = "rustruct"

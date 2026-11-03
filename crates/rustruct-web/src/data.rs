@@ -1,4 +1,4 @@
-//! Data（`GLOSSARY.md`、`docs/adr/0005`）: 材料や規格の値を、表と、値を導く式で示すページ。
+//! Data（`GLOSSARY.md`、ADR site-0005）: 材料や規格の値を、表と、値を導く式で示すページ。
 //! 数値はすべて `rustruct-types` から引き、ここでは表示の桁だけを決める（Issue #19）。
 
 use dioxus::prelude::*;
@@ -154,7 +154,7 @@ impl Allowable {
     }
 }
 
-/// 許容応力度の表の1行。値は有効数字 3 桁の文字（`docs/materials/adr/0003`）。
+/// 許容応力度の表の1行。値は有効数字 3 桁の文字（ADR materials-0003）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct AllowableRow {
     pub name: &'static str,

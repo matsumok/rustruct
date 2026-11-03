@@ -1,5 +1,5 @@
 //! Tool「Kirchhoff 板の曲げ」（`/tools/kirchhoff-plate`）。言葉は `docs/tools/kirchhoff-plate/GLOSSARY.md`、
-//! 符号と座標は同じ所の ADR-0004。数値はすべて `rustruct-calc` の `solve` から引き、ここでは入力の文字の
+//! 符号と座標は ADR kirchhoff-plate-0004。数値はすべて `rustruct-calc` の `solve` から引き、ここでは入力の文字の
 //! 読み取りと、表示の桁だけを決める。計算はブラウザの中で同期に回し、入力を変えるたびに結果を描き直す。
 //!
 //! 辺は座標で呼ぶ（x = 0 の辺など）。画面の上下左右は図の向き（x は右、y は上）でここが決め、入力の
@@ -29,7 +29,7 @@ const NOT_COMPUTED: &str = "—";
 const EDGE_DIVISIONS: usize = 100;
 
 /// 隅の近くとして、分布図の色の幅と辺のせん断力・反力の最大値から除く幅。辺長に対する比
-/// （kirchhoff-plate の ADR-0008）
+/// （ADR kirchhoff-plate-0008）
 const CORNER_MARGIN: f64 = 0.05;
 
 /// 注記に書く `CORNER_MARGIN`（「5 %」）
@@ -37,7 +37,7 @@ fn corner_margin_text() -> String {
     format!("{} %", at_place(CORNER_MARGIN * 100.0, 0))
 }
 
-/// 自由辺のある組の、辺の最大値の注記（ADR-0008）
+/// 自由辺のある組の、辺の最大値の注記（ADR kirchhoff-plate-0008）
 fn corner_notes() -> Vec<String> {
     vec![
         "固定辺と自由辺の隅では、せん断力と辺の反力が発散する".into(),
@@ -48,7 +48,7 @@ fn corner_notes() -> Vec<String> {
     ]
 }
 
-/// 隅の近くの値の見せ方（ADR-0008）が効く組。固定辺と自由辺の隅でせん断力と辺の反力が発散するので、
+/// 隅の近くの値の見せ方（ADR kirchhoff-plate-0008）が効く組。固定辺と自由辺の隅でせん断力と辺の反力が発散するので、
 /// 自由辺のある組では隅から辺長の 5 % を除いて見せる
 fn has_free_edge(supports: Supports) -> bool {
     Edge::ALL
@@ -212,7 +212,7 @@ pub struct PlateReadout {
     pub center: CenterRow,
     /// 辺ごとの行。`EDGES` の順
     pub edges: Vec<EdgeRow>,
-    /// 辺の最大値の表に足す注記。自由辺のある組だけ（ADR-0008）
+    /// 辺の最大値の表に足す注記。自由辺のある組だけ（ADR kirchhoff-plate-0008）
     pub edge_notes: Vec<String>,
     /// 隅ごとの隅反力（kN）。`Corner::ALL` の順
     pub corners: Vec<(String, String)>,
@@ -428,7 +428,7 @@ fn figures(value: f64) -> String {
     significant(value, 3)
 }
 
-/// `/tools/kirchhoff-plate`。入力の Sheet のすぐ下に結果の表を続けた列と、分布図の列（ADR-0006）。
+/// `/tools/kirchhoff-plate`。入力の Sheet のすぐ下に結果の表を続けた列と、分布図の列（ADR site-0006）。
 /// 「入力」「結果」の部の見出しは置かず、表の見出しで区切る。解くのは入力が変わったときだけで、
 /// 分布図の量を切り替えても解き直さない。
 #[component]

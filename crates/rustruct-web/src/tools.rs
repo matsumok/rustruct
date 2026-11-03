@@ -1,5 +1,5 @@
-//! Tools（`GLOSSARY.md`）: Tool の一覧。Tool は分野（`docs/adr/0010`）の見出しの下に並べ、住所は平ら
-//! （`/tools/kirchhoff-plate`。`docs/adr/0005`）。分野は見出しでしかないので、住所にもルートにも入れない。
+//! Tools（`GLOSSARY.md`）: Tool の一覧。Tool は分野（ADR site-0010）の見出しの下に並べ、住所は平ら
+//! （`/tools/kirchhoff-plate`。ADR site-0005）。分野は見出しでしかないので、住所にもルートにも入れない。
 
 use dioxus::prelude::*;
 
@@ -10,7 +10,7 @@ use crate::{Page, Route, RouteList};
 pub(crate) enum Field {
     /// 鉄筋コンクリート
     Rc,
-    /// 材料に依らない梁・板の弾性解（`docs/adr/0010`）
+    /// 材料に依らない梁・板の弾性解（ADR site-0010）
     Mechanics,
 }
 

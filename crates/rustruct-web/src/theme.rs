@@ -139,7 +139,7 @@ pub fn theme_css(tokens_json: &str) -> Result<String, Error> {
 
     out.push_str("}\n\n");
 
-    out.push_str("/* 768px から: 大きな文字と Notes の本文だけ大きくする（docs/adr/0007） */\n");
+    out.push_str("/* 768px から: 大きな文字と Notes の本文だけ大きくする（ADR site-0007） */\n");
     out.push_str(":root {\n  @variant md {\n");
     for s in &tokens.text_styles {
         if let Some(md) = &s.md {
@@ -263,7 +263,7 @@ struct TextSize {
 }
 
 /// 本文の箱の最大幅（px）。2列（`width-column` × 2）と、間の区切りの線（1px）と、線の左右の空き
-/// （`space-<gap>` × 2）。2列が収まる幅そのものなので、tokens.json には持たずに導く（`docs/adr/0007`）。
+/// （`space-<gap>` × 2）。2列が収まる幅そのものなので、tokens.json には持たずに導く（ADR site-0007）。
 fn page_width(tokens: &Tokens, gap: &str) -> Result<u32, Error> {
     let px = |list: &[(String, String)], name: &str, what: &str| -> Result<u32, Error> {
         list.iter()

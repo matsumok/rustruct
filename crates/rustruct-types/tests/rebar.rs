@@ -1,4 +1,4 @@
-//! 鉄筋の呼び名の諸元が JIS G 3112 の表と一致する。期待値は `docs/materials/adr/0002` の表の写し。
+//! 鉄筋の呼び名の諸元が JIS G 3112 の表と一致する。期待値は ADR materials-0002 の表の写し。
 
 mod common;
 use common::assert_close;

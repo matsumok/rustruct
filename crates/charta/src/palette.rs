@@ -1,4 +1,4 @@
-//! 帯の色。正負のない量は `seq`、正負のある量は `div`（`docs/adr/0011`）。
+//! 帯の色。正負のない量は `seq`、正負のある量は `div`（ADR site-0011）。
 //! どちらも tokens.json の 12 段で、段数が違えば 12 色の間を補間して取る。
 
 use crate::scene::Paint;
@@ -12,7 +12,7 @@ pub enum Palette {
 }
 
 impl Palette {
-    /// 段数の目安の既定。たわみ（seq）は 10、曲げモーメントとせん断力（div）は 16（`docs/adr/0011`）。
+    /// 段数の目安の既定。たわみ（seq）は 10、曲げモーメントとせん断力（div）は 16（ADR site-0011）。
     pub fn default_steps(self) -> usize {
         match self {
             Palette::Seq => 10,
