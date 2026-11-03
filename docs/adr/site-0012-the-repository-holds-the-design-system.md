@@ -10,4 +10,5 @@
 
 - 見た目の決め事は `docs/design/README.md`・`docs/design/tokens.json`・`docs/ui-decisions.md`・ADR に書けば済む。アーティファクトへの反映は要らない
 - ADR site-0006・site-0007・site-0011 の「アーティファクトへの反映が残っている」は、これで要らなくなった
+- 書き分けは、`docs/design/README.md` と `docs/design/tokens.json` が今の規則、ADR が決定と理由、`docs/ui-decisions.md` は手順と指し先（2026-11-04、#97）
 - アーティファクトの URL と ID を公開リポジトリに書かない規則（`AGENTS.md`）は、アーティファクトが残る限りそのまま
