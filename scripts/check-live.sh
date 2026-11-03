@@ -1,11 +1,13 @@
 #!/usr/bin/env sh
-# 配置後のスモークテスト（Issue #13）。本番やプレビューの URL を外から見る。CI が配置の直後に回す。
-#   sh scripts/check-live.sh URL
-#   例: sh scripts/check-live.sh https://rustruct.matsumok.com
-# 見るもの: 住所ごとの HTML が 200 で届き、末尾スラッシュ無しは 307 で揃えられ、未知の住所は 404 で not-found の
-# 本文が返り、HTML が参照する CSS・読込スクリプト・WASM が届き、WASM の Content-Type が application/wasm
-# （ストリーミング compile の条件）。フォントの link とダーク追従の CSS も、配信物に入っていることだけ見る。
-# 配置直後の接続できない間（最大 3 分）と、ページ・アセットの 404 の間（合わせて最大 2 分）は待ってから見る。
+# 配置後のスモークテスト（Issue #13・#94）。本番やプレビューの URL を外から見る。CI が配置の直後に回す。
+#   sh scripts/check-live.sh URL 配信用ディレクトリ
+#   例: sh scripts/check-live.sh https://rustruct.matsumok.com target/deploy
+#   手元では sh scripts/check.sh live URL（配信用ディレクトリは sh scripts/stage-deploy.sh の出力 target/deploy）
+# 期待は配信用ディレクトリ（配置したもの）から取り、ここに住所も文言も書かない。ディレクトリのファイルを 1 つずつ
+# 取得し、どれも 200 で届き、HTML は <title> がディレクトリのものと同じで、WASM の Content-Type が application/wasm
+# （ストリーミング compile の条件）。住所は index.html のある場所（末尾スラッシュ付き）。末尾スラッシュ無しは
+# 307 で揃えられ、未知の住所は 404 で not-found の本文（<title> がディレクトリの 404.html のもの）が返ること。
+# 配置直後の接続できない間（最大 3 分）と、ファイルの 404 の間（合わせて最大 2 分）は待ってから見る。
 # hydration の成否はブラウザが要るので見ない（scripts/hydrate-check.sh に URL を渡す）。
 # 公開前はサイト全体に Cloudflare Access が掛かっている（docs/deploy.md の「公開前の非公開」）。環境変数
 # CF_ACCESS_CLIENT_ID と CF_ACCESS_CLIENT_SECRET（Access のサービストークン）があれば、そのヘッダを付けて通る。
@@ -13,6 +15,8 @@
 set -u
 url=${1:?URL を渡す（例: https://rustruct.matsumok.com）}
 url=${url%/}
+deploy=${2:?配信用ディレクトリを渡す（例: target/deploy）}
+[ -d "$deploy" ] || { echo "NG: $deploy が無い（先に sh scripts/stage-deploy.sh）"; exit 1; }
 dir=${TMPDIR:-/tmp}/check-live
 rm -rf "$dir"; mkdir -p "$dir"
 fail=0
@@ -47,7 +51,7 @@ token_shape() {
 
 # fetch 住所 保存先 → 標準出力に status、Location は $dir/location に
 fetch() {
-  curl -sS -K "$auth" -o "$2" -D "$dir/headers" -w '%{http_code}' "$url$1"
+  curl -sS -K "$auth" -o "$2" -D "$dir/headers" -w '%{http_code}' "$url$1" </dev/null
   sed -n 's/^[Ll]ocation: *//p' "$dir/headers" | tr -d '\r' >"$dir/location"
 }
 # 直前の fetch が弾かれた理由の手がかり。Cloudflare の防御（Bot Fight Mode、WAF）は cf-mitigated を付ける。
@@ -56,14 +60,14 @@ why() {
   m=$(sed -n 's/^[Cc][Ff]-[Mm]itigated: *//p' "$dir/headers" | tr -d '\r')
   [ -n "$m" ] && printf ' (cf-mitigated: %s)' "$m"
   grep -q 'cloudflareaccess\.com' "$dir/location" && printf ' (Cloudflare Access のログインへ転送された。%s)' "$(token_shape)"
-  [ -s "$dir/page.html" ] && printf ' 本文: %s' "$(tr -d '\n' <"$dir/page.html" | head -c 120)"
+  [ -s "$dir/got" ] && printf ' 本文: %s' "$(tr -d '\n' <"$dir/got" | head -c 120)"
   return 0
 }
 
 # 配置で上書きした直後は、しばらく古い版が返ることがある。新しい HTML が届いても、そこから参照する新しい CSS・
 # 読込スクリプト・WASM が 404 になり（Issue #21。PR #20 のプレビューで 2 回続けて起きた）、新しく足したページが
 # not-found の 404 になる（Issue #24。PR #20 のマージ後の本番で /data の 3 ページ）。どちらも再実行すると通った。
-# ページとアセットは 404 の間だけ 10 秒おきに取り直す。取り直しは全部合わせて 12 回、最大 2 分（1 つ目で使い切ったら
+# ファイルは 404 の間だけ 10 秒おきに取り直す。取り直しは全部合わせて 12 回、最大 2 分（1 つ目で使い切ったら
 # 2 つ目は待たない）。間隔は CHECK_LIVE_RETRY_SECONDS で変えられる（tests/live_check.rs が縮めて回す）。
 # 持ち時間を残すため $(…) のサブシェルで呼ばず、結果は $status に置く。404 以外（200 も 5xx も）はそのまま返し、
 # 待っても 404 なら NG
@@ -89,60 +93,56 @@ while [ "$(fetch / "$dir/probe.html" 2>/dev/null)" = 000 ] && [ "$waited" -lt 18
 done
 [ "$waited" -gt 0 ] && echo "   $waited 秒待った"
 
-# 住所ごとの HTML。一覧は crates/rustruct-web/src/ssg.rs の static_paths と同じ（check-ssg.sh と同様、not-found は別に見る）。
-# /root/ に Cloudflare Access を掛けたら（docs/stack.md）、サービストークンを通さない限りここは 200 でなくなる
-for p in / /tools/ /tools/kirchhoff-plate/ /tools/slab-thickness/ /data/ /data/concrete/ /data/rebar/ /studies/ /notes/ /root/; do
-  fetch_fresh "$p" "$dir/page.html"
-  [ "$status" = 200 ] || ng "$p が 200 でない: $status$(why)"
-  grep -qF '>rustruct<' "$dir/page.html" || ng "$p に wordmark が無い"
-  [ "$p" = / ] || grep -qF '<h1' "$dir/page.html" || ng "$p に見出し（h1）が無い"
-done
+# HTML の <title> の行（無ければ空）。配信用ディレクトリのものと届いたものを突き合わせる
+title() { grep -o '<title>[^<]*</title>' "$1" | head -n 1; }
 
-# 末尾スラッシュ無しは揃えられる（html_handling = "auto-trailing-slash"。文書では 307。308 も転送として受ける）
-status=$(fetch /tools "$dir/redirect.html")
-case "$status" in
-  307|308) grep -q '/tools/$' "$dir/location" || ng "/tools の転送先が /tools/ でない: $(cat "$dir/location")" ;;
-  *) ng "/tools が転送されない: $status" ;;
-esac
+# 配信用ディレクトリのファイルを名前順に 1 つずつ。404.html は住所を持たないので下の未知の住所で見る。
+# /root/ に Cloudflare Access を掛けたら（docs/stack.md）、サービストークンをそのポリシーにも入れない限り
+# root/index.html の住所は 200 でなくなる
+(cd "$deploy" && find . -type f | LC_ALL=C sort) >"$dir/files"
+redirect=
+while read -r file; do
+  file=${file#./}
+  case "$file" in
+    404.html) continue ;;
+    index.html) address=/ ;;
+    */index.html) address=/${file%index.html}; [ -n "$redirect" ] || redirect=${address%/} ;;
+    *.html) address=/${file%.html} ;; # auto-trailing-slash は x.html を /x で配る
+    *) address=/$file ;;
+  esac
+  fetch_fresh "$address" "$dir/got"
+  [ "$status" = 200 ] || { ng "$address が 200 でない: $status$(why)"; continue; }
+  case "$file" in
+    *.html)
+      want=$(title "$deploy/$file")
+      [ "$(title "$dir/got")" = "$want" ] || ng "$address の <title> が配信用ディレクトリと違う。期待: $want / 実際: $(title "$dir/got")" ;;
+    *.wasm)
+      grep -qi '^content-type: *application/wasm' "$dir/headers" || ng "WASM $address の Content-Type が application/wasm でない: $(grep -i '^content-type' "$dir/headers")" ;;
+  esac
+done <"$dir/files"
 
-# 未知の住所は 404 で not-found の本文（not_found_handling = "404-page"）。文言は tests/render.rs・check-ssg.sh と同じ。
+# 末尾スラッシュ無しは揃えられる（html_handling = "auto-trailing-slash"。文書では 307。308 も転送として受ける）。
+# 見るのは index.html のある最初の下層の住所
+if [ -n "$redirect" ]; then
+  status=$(fetch "$redirect" "$dir/redirect.html")
+  case "$status" in
+    307|308) grep -qF "$redirect/" "$dir/location" || ng "$redirect の転送先が $redirect/ でない: $(cat "$dir/location")" ;;
+    *) ng "$redirect が転送されない: $status" ;;
+  esac
+fi
+
+# 未知の住所は 404 で not-found の本文（not_found_handling = "404-page"）。本文は配信用ディレクトリの 404.html と <title> で見る。
 # workers.dev のプレビューでは wrangler preview が not_found_handling を落とし、本文の無い 404 が返る
 # （cloudflare/workers-sdk#16047、2026-10-14 時点で open）。そこだけ NG にせず注意に留める。本番は厳しいまま
 status=$(fetch "/no-such-address-$$/" "$dir/notfound.html")
 [ "$status" = 404 ] || ng "未知の住所が 404 でない: $status"
-if ! grep -qF 'ページが見つからない。' "$dir/notfound.html"; then
+want=$(title "$deploy/404.html" 2>/dev/null)
+if [ -z "$want" ] || [ "$(title "$dir/notfound.html")" != "$want" ]; then
   case "$url" in
     *.workers.dev) echo "注意: プレビューでは not-found の本文が届かない（workers-sdk#16047 が直るまで）" ;;
-    *) ng "未知の住所に not-found の本文が無い" ;;
+    *) ng "未知の住所に not-found の本文が無い（期待する <title>: ${want:-配信用ディレクトリに 404.html が無い}）" ;;
   esac
 fi
 
-# HTML → CSS、読込スクリプト → WASM
-fetch / "$dir/index.html" >/dev/null
-css=$(sed -n 's/.*<link rel="stylesheet" href="\(\/assets\/[^"]*\.css\)".*/\1/p' "$dir/index.html" | head -n 1)
-js=$(sed -n 's/.*<script type="module" async src="\([^"]*\)".*/\1/p' "$dir/index.html" | head -n 1)
-[ -n "$css" ] || ng "/ が CSS を参照していない"
-[ -n "$js" ] || ng "/ に WASM の読込スクリプトが無い"
-if [ -n "$css" ]; then
-  fetch_fresh "$css" "$dir/site.css"
-  [ "$status" = 200 ] || ng "CSS $css が 200 でない: $status"
-  grep -qF 'prefers-color-scheme' "$dir/site.css" || ng "CSS にダーク追従（prefers-color-scheme）が無い"
-fi
-if [ -n "$js" ]; then
-  js=/${js#/}
-  fetch_fresh "$js" "$dir/loader.js"
-  [ "$status" = 200 ] || ng "読込スクリプト $js が 200 でない: $status"
-  # 読込スクリプトは WASM を "/./assets/<名前>-<ハッシュ>.wasm" の形で指す（住所でない素の名前も別に 1 つ現れる）
-  wasm=$(grep -o '"/[A-Za-z0-9_./-]*\.wasm"' "$dir/loader.js" | tr -d '"' | head -n 1)
-  if [ -z "$wasm" ]; then
-    ng "読込スクリプト $js が WASM を住所で参照していない"
-  else
-    fetch_fresh "/assets/$(basename "$wasm")" "$dir/app.wasm"
-    [ "$status" = 200 ] || ng "WASM $wasm が 200 でない: $status"
-    grep -qi '^content-type: *application/wasm' "$dir/headers" || ng "WASM の Content-Type が application/wasm でない: $(grep -i '^content-type' "$dir/headers")"
-  fi
-fi
-grep -qF 'fonts.googleapis.com' "$dir/index.html" || ng "/ にフォントの link が無い"
-
-[ "$fail" -eq 0 ] && echo "OK: $url は住所ごとの HTML・not-found・CSS・WASM を配っている（取得物は $dir）"
+[ "$fail" -eq 0 ] && echo "OK: $url は配信用ディレクトリ $deploy のファイルと not-found を配っている（取得物は $dir）"
 exit "$fail"

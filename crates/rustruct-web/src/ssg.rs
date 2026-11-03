@@ -1,4 +1,5 @@
-//! SSG（ADR site-0001）。`dx build --ssg` に「どの住所を書き出すか」と「どこへ書くか」を教える。
+//! SSG（ADR site-0001）。書く側は `dx build --ssg` に「どの住所を書き出すか」と「どこへ書くか」を教え、
+//! 読む側（`output`）は書き出されたものを検査する。SSG の出力の形の知識はこのファイルに置く。
 //!
 //! dx は server の実行ファイルを起こし、`POST /api/static_routes` が返す住所を順に GET する。
 //! 描いた HTML をファイルに残すのはサーバー側の仕事で、`serve_config` がその置き場を指す。
@@ -47,3 +48,205 @@ pub fn serve_config() -> dioxus::server::ServeConfig {
         .expect("server の実行ファイルの場所が分からない");
     config.incremental(IncrementalRendererConfig::new().static_dir(public))
 }
+
+/// 読む側。SSG の出力（`dx build --ssg --release --force-sequential` が出す `public/`）を外から見る。
+/// 見るのは、住所ごとの HTML が静的なファイルとしてあり（SPA のフォールバックに頼らない）、`<title>` がその
+/// ルートのもので、CSS と WASM が 1 つずつあり、HTML → CSS と HTML → 読込スクリプト → WASM の参照が揃うこと。
+/// 本文の文言は `render_path` 越しに tests/render.rs が見るので、ここは見ない。hydration はブラウザが要るので見ない。
+/// HTML と読込スクリプトを読むところは純粋関数（文字列 → 住所）で、フォルダを歩くのは `check_ssg_output`。
+#[cfg(not(target_arch = "wasm32"))]
+mod output {
+    use std::path::{Path, PathBuf};
+    use std::str::FromStr;
+
+    use super::static_paths;
+    use crate::Route;
+
+    /// HTML の `<title>` の中身。
+    pub fn page_title(html: &str) -> Option<&str> {
+        let start = html.find("<title>")? + "<title>".len();
+        let len = html[start..].find("</title>")?;
+        Some(&html[start..start + len])
+    }
+
+    /// HTML が読むサイトの CSS の住所（`<link rel="stylesheet" href="/…">`）。外のフォントの CSS は除く。
+    pub fn stylesheet(html: &str) -> Option<&str> {
+        tags(html, "link")
+            .filter(|tag| attr(tag, "rel") == Some("stylesheet"))
+            .filter_map(|tag| attr(tag, "href"))
+            .find(|href| is_site_address(href))
+    }
+
+    /// HTML が WASM を読ませるスクリプトの住所。dx は本文の後に `<script type="module" async src="…">` を置く
+    /// （同じ住所の preload の link や、別の素の script も並ぶ）。
+    pub fn loader_script(html: &str) -> Option<&str> {
+        tags(html, "script")
+            .filter(|tag| attr(tag, "type") == Some("module"))
+            .filter_map(|tag| attr(tag, "src"))
+            .find(|src| is_site_address(src))
+    }
+
+    /// 読込スクリプトが取りに行く WASM の住所（`"/./assets/<名前>-<ハッシュ>.wasm"` の文字列）。
+    /// 住所でない素の名前（`new URL("<名前>.wasm", import.meta.url)`）も現れるが、それは除く。
+    pub fn loader_wasm(js: &str) -> Option<&str> {
+        js.match_indices(".wasm\"")
+            .filter_map(|(at, _)| {
+                let end = at + ".wasm".len();
+                let start = js[..end].rfind('"')? + 1;
+                Some(&js[start..end])
+            })
+            .find(|address| is_site_address(address))
+    }
+
+    /// `<name …>` の開きタグを順に。
+    fn tags<'a>(html: &'a str, name: &str) -> impl Iterator<Item = &'a str> {
+        let open = format!("<{name} ");
+        html.match_indices(&open)
+            .map(|(at, _)| at)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .filter_map(move |at| html[at..].find('>').map(|len| &html[at..at + len]))
+    }
+
+    /// 開きタグの `name="…"` の値。
+    fn attr<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+        let key = format!(" {name}=\"");
+        let start = tag.find(&key)? + key.len();
+        let len = tag[start..].find('"')?;
+        Some(&tag[start..start + len])
+    }
+
+    /// このサイトの住所（`/` で始まり、`//` で他のホストを指さない）。
+    fn is_site_address(address: &str) -> bool {
+        address.starts_with('/') && !address.starts_with("//")
+    }
+
+    /// 住所が指す出力の中のファイル。dx は `/./assets/…` の形でも指す。
+    fn file_of(out: &Path, address: &str) -> PathBuf {
+        out.join(address.trim_start_matches('/').trim_start_matches("./"))
+    }
+
+    /// SSG の出力 `out` を検査し、食い違いを 1 つ 1 行で返す。空なら通る。
+    pub fn check_ssg_output(out: &Path) -> Vec<String> {
+        if !out.is_dir() {
+            return vec![format!(
+                "{} が無い（先に dx build --ssg --release --force-sequential）",
+                out.display()
+            )];
+        }
+        let mut problems = Vec::new();
+        let files = files_under(out);
+
+        let mut expected = static_paths();
+        expected.sort();
+        let mut found: Vec<String> = files
+            .iter()
+            .filter(|f| f.file_name().is_some_and(|n| n == "index.html"))
+            .filter_map(|f| f.parent()?.strip_prefix(out).ok())
+            .map(|dir| format!("/{}", dir.to_string_lossy()))
+            .collect();
+        found.sort();
+        if found != expected {
+            problems.push(format!(
+                "住所ごとの HTML が期待と違う。期待: {} / 実際: {}",
+                expected.join(" "),
+                found.join(" ")
+            ));
+        }
+
+        // CSS と WASM は 1 つずつ。手元で dx build を重ねると前のビルドのアセットが残って 2 つになる
+        // （check.sh の build は先に消す）。1 つでなければ参照の検査は飛ばす（同じ原因で NG を重ねない）
+        let mut only_file_with_extension = |label: &str, extension: &str| {
+            let hits: Vec<&PathBuf> = files
+                .iter()
+                .filter(|f| f.extension().is_some_and(|e| e == extension))
+                .collect();
+            match hits.as_slice() {
+                [only] => Some((*only).clone()),
+                _ => {
+                    let names: Vec<String> = hits.iter().map(|f| f.display().to_string()).collect();
+                    problems.push(format!("{label} が 1 つでない: {}", names.join(" ")));
+                    None
+                }
+            }
+        };
+        let css = only_file_with_extension("CSS", "css");
+        let wasm = only_file_with_extension("WASM", "wasm");
+
+        for path in &expected {
+            let Ok(html) =
+                std::fs::read_to_string(out.join(path.trim_start_matches('/')).join("index.html"))
+            else {
+                continue; // 住所の集合の検査で既に NG
+            };
+            problems.extend(title_problem(path, &html));
+            if let Some(css) = &css
+                && stylesheet(&html).map(|href| file_of(out, href)) != Some(css.clone())
+            {
+                problems.push(format!("{path} が CSS {} を参照していない", css.display()));
+            }
+            let Some(js) = loader_script(&html) else {
+                problems.push(format!("{path} の HTML に WASM の読込スクリプトが無い"));
+                continue;
+            };
+            let Ok(loader) = std::fs::read_to_string(file_of(out, js)) else {
+                problems.push(format!("{path} が参照するスクリプトが無い: {js}"));
+                continue;
+            };
+            if let Some(wasm) = &wasm
+                && loader_wasm(&loader).map(|address| file_of(out, address)) != Some(wasm.clone())
+            {
+                problems.push(format!(
+                    "{path} のスクリプト {js} が WASM {} を参照していない",
+                    wasm.display()
+                ));
+            }
+        }
+        problems
+    }
+
+    /// 住所 `path` の HTML の `<title>` がそのルートのものでなければ、食い違いの 1 行。
+    /// 住所がルートとして読めないのも食い違い（照合を黙って飛ばさない）。
+    fn title_problem(path: &str, html: &str) -> Option<String> {
+        let found = page_title(html);
+        let shown = found.unwrap_or("（無し）");
+        let Ok(route) = Route::from_str(path) else {
+            return Some(format!(
+                "{path} がルートとして読めず、<title> を照合できない: {shown}"
+            ));
+        };
+        let want = route.title();
+        (found != Some(want.as_str()))
+            .then(|| format!("{path} の <title> が「{want}」でない: {shown}"))
+    }
+
+    /// `dir` の下のファイルすべて（深さ優先、名前順）。
+    fn files_under(dir: &Path) -> Vec<PathBuf> {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return Vec::new();
+        };
+        let mut paths: Vec<PathBuf> = entries.filter_map(|e| Some(e.ok()?.path())).collect();
+        paths.sort();
+        paths
+            .into_iter()
+            .flat_map(|p| if p.is_dir() { files_under(&p) } else { vec![p] })
+            .collect()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::title_problem;
+
+        #[test]
+        fn an_address_that_is_not_a_route_is_a_problem_not_skipped() {
+            // static_paths の住所はどれもルートとして読めるので、check_ssg_output 越しには作れない
+            let html = "<head><title>Tools · rustruct.matsumok.com</title></head>";
+            let problem = title_problem("tools", html).expect("読めない住所が通った");
+            assert!(problem.contains("ルートとして読めず"), "{problem}");
+            assert_eq!(title_problem("/tools", html), None);
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use output::{check_ssg_output, loader_script, loader_wasm, page_title, stylesheet};

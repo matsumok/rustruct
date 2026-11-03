@@ -1,6 +1,6 @@
 name: publish
 description: >-
-  配信物（check job の artifact「site」）を落とし、wrangler で Cloudflare に置き、その URL を check-live.sh で見る。
+  配信物（check job の artifact「site」）を落とし、wrangler で Cloudflare に置き、その URL を、落とした配信物（target/deploy）と照らして check-live.sh で見る。
   deploy・preview・cleanup の job が呼び、wrangler の呼び方（版と認証）はここ 1 か所に置く（Issue #99）。
   site を false にすると wrangler だけを回す（cleanup の preview delete）。配置の手順と秘密は docs/deploy.md
 
@@ -86,4 +86,4 @@ runs:
         CF_ACCESS_CLIENT_ID: ${{ inputs.access-id }}
         CF_ACCESS_CLIENT_SECRET: ${{ inputs.access-secret }}
         URL: ${{ steps.url.outputs.url }}
-      run: sh scripts/check-live.sh "$URL"
+      run: sh scripts/check-live.sh "$URL" target/deploy

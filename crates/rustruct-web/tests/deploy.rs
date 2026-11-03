@@ -4,26 +4,12 @@
 //! Workers Static Assets が未知の住所に返すのは `404.html`（`not_found_handling = "404-page"`）。
 //! このスクリプトがその置き換えを行う。外から見えるのは出来上がったディレクトリだけなので、それを見る。
 
+mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-fn workspace_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
-
-/// 空の一時ディレクトリ。テストごとに別の名前にして、並列に走っても混ざらない。
-fn temp_dir(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("rustruct-deploy-{name}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
-fn write(path: PathBuf, content: &str) {
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, content).unwrap();
-}
+use common::{temp_dir, workspace_root, write};
 
 /// SSG 出力の形をした小さな見本。
 fn ssg_fixture(root: &Path) -> PathBuf {
@@ -46,7 +32,7 @@ fn stage(ssg_out: &Path, deploy: &Path) -> std::process::Output {
 
 #[test]
 fn not_found_moves_to_root_404_html_and_the_rest_is_kept() {
-    let root = temp_dir("stage");
+    let root = temp_dir("deploy-stage");
     let ssg_out = ssg_fixture(&root);
     let deploy = root.join("deploy");
 
@@ -86,7 +72,7 @@ fn not_found_moves_to_root_404_html_and_the_rest_is_kept() {
 
 #[test]
 fn staging_twice_replaces_the_previous_deploy_dir() {
-    let root = temp_dir("twice");
+    let root = temp_dir("deploy-twice");
     let ssg_out = ssg_fixture(&root);
     let deploy = root.join("deploy");
     write(deploy.join("stale/index.html"), "前回の残り");
@@ -103,7 +89,7 @@ fn staging_twice_replaces_the_previous_deploy_dir() {
 
 #[test]
 fn fails_when_the_ssg_output_has_no_not_found_page() {
-    let root = temp_dir("missing");
+    let root = temp_dir("deploy-missing");
     let ssg_out = root.join("public");
     write(ssg_out.join("index.html"), "<title>Home</title>");
     let deploy = root.join("deploy");

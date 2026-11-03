@@ -49,7 +49,7 @@ Secrets が無いと、`check` job は通り、`deploy` / `preview` job が wran
 
 - Worker `rustruct` が無ければ作る
 - `wrangler.toml` の `routes`（`custom_domain = true`）で `rustruct.matsumok.com` を Worker に結び、DNS レコードを Cloudflare が作る。証明書も自動
-- 同じ action（`.github/actions/publish`）の中の step「live」が、続けて `scripts/check-live.sh https://rustruct.matsumok.com` で、住所ごとの HTML、`/tools` → `/tools/` の転送、未知の住所の 404、CSS・WASM、WASM の Content-Type を見る
+- 同じ action（`.github/actions/publish`）の中の step「live」が、続けて `scripts/check-live.sh https://rustruct.matsumok.com target/deploy`（`target/deploy` は action が artifact を落とした先）で、配信用ディレクトリのファイルを 1 つずつ取り（200、HTML の `<title>`、WASM の Content-Type）、末尾スラッシュ無しの転送と未知の住所の 404 を見る。手元からは `sh scripts/check.sh live <URL>`
 - 初回は DNS レコードと証明書の発行に数十秒かかる（2026-10-14 の初回配置で、直後の curl が全部接続できず「live」だけ落ちた）。`check-live.sh` は応答が返るまで最大 3 分待つ。それでも落ちたら、Actions の「Re-run failed jobs」で `deploy` job をやり直す
 
 GitHub の Environments（`production`、`preview`）は最初の run が自動で作る。手で作る必要は無い。
@@ -60,7 +60,7 @@ GitHub の Environments（`production`、`preview`）は最初の run が自動�
 - URL は `https://pr-<番号>-rustruct.matsumok-digital.workers.dev`。PR の「deployments」からも辿れる
 - 本番は `workers_dev = false` で workers.dev に出さず、プレビューは `preview_urls = true` で workers.dev に出す。この組み合わせで本当にプレビュー URL が出るかは Cloudflare の文書に明記が無いので、最初の PR で確かめる（出なければ下の「困ったとき」）
 - workers.dev のプレビューは `X-Robots-Tag: noindex` 付きで配られ、検索エンジンには載らない
-- 同じプレビューを上書きした直後は、新しい HTML が届くのに、そこから参照する新しい CSS・読込スクリプト・WASM がしばらく 404 になることがある（#21）。新しく足したページも、本番の配置直後に not-found の 404 になったことがある（#24）。`check-live.sh` はページとアセットが 404 の間だけ、合わせて最大 2 分待って取り直す（本番も同じ。間隔と経緯はスクリプトのコメント）。Workers Static Assets の既知の遅れかは、2026-10-14 に workers-sdk を探した範囲では見つからなかった。配置の手順（`wrangler versions upload` など）の側で避けられるかは未確認
+- 同じプレビューを上書きした直後は、新しい HTML が届くのに、そこから参照する新しい CSS・読込スクリプト・WASM がしばらく 404 になることがある（#21）。新しく足したページも、本番の配置直後に not-found の 404 になったことがある（#24）。`check-live.sh` はファイルが 404 の間だけ、合わせて最大 2 分待って取り直す（本番も同じ。間隔と経緯はスクリプトのコメント）。Workers Static Assets の既知の遅れかは、2026-10-14 に workers-sdk を探した範囲では見つからなかった。配置の手順（`wrangler versions upload` など）の側で避けられるかは未確認
 - PR を閉じる（merge を含む）と `cleanup` job がプレビューを消す。無料枠は Worker ごと 100 プレビューまで
 - **既知の制限**: プレビューでは未知の住所が本文の無い 404 になる（`wrangler preview` が `not_found_handling` を落とす。cloudflare/workers-sdk#16047、2026-10-14 時点で open）。`check-live.sh` は workers.dev に限りこれを注意に留める。not-found の見た目はプレビューでは確かめられないので本番で見る。直ったら `check-live.sh` のその分岐を消す
 
@@ -86,7 +86,7 @@ CI が見ないのは hydration と見た目。本番とプレビューの URL �
 - OS をダークにして配色が変わる。和文が Plex Sans JP、パスと wordmark が Plex Mono
 - 存在しない住所で not-found の見出しと一文が出る
 
-公開後に `/root/` だけに Cloudflare Access を掛けるなら（`docs/stack.md`）、サービストークンをそのポリシーにも入れるか、`scripts/check-live.sh` の住所一覧から `/root/` を外す。どちらも無いと本番の「live」が落ちる。公開前は上の「公開前の非公開」で全体を閉じている。
+公開後に `/root/` だけに Cloudflare Access を掛けるなら（`docs/stack.md`）、サービストークンをそのポリシーにも入れる。`scripts/check-live.sh` は配信用ディレクトリのページをすべて取りに行くので、入れないと `/root/` が 200 でなくなり本番の「live」が落ちる。公開前は上の「公開前の非公開」で全体を閉じている。
 
 headless Chrome で DOM の印を見るなら `sh scripts/hydrate-check.sh https://rustruct.matsumok.com / /tools/ /404/`（サンドボックスの外で）。結果は Issue #8 に記録する。
 

@@ -16,7 +16,7 @@ mod prerender;
 #[cfg(not(target_arch = "wasm32"))]
 pub use prerender::render_path;
 
-/// SSG: 書き出す住所の列挙と、書く場所の設定。
+/// SSG: 書き出す住所の列挙と、書く場所の設定。書き出したものを読む検査。
 mod ssg;
 
 /// 計算のページ（Data と Tool）の表示用の表と列の部品。
@@ -57,6 +57,8 @@ pub use slab_thickness::{PointRow, SharedRow, SlabField, SlabFigure, SlabInputs,
 #[cfg(feature = "server")]
 pub use ssg::serve_config;
 pub use ssg::{NOT_FOUND_PATH, static_paths};
+#[cfg(not(target_arch = "wasm32"))]
+pub use ssg::{check_ssg_output, loader_script, loader_wasm, page_title, stylesheet};
 use tools::{Field, ToolsIndex};
 
 include!(concat!(env!("OUT_DIR"), "/fonts.rs"));

@@ -29,7 +29,7 @@
   - `dx serve` は `docs/` を監視しないので、tokens.json を変えたら `.rs` を保存し直すか `dx serve` を再起動する
 - Dioxus 0.7 でコードから読めない挙動（router の feature、SSG の書込先、並行ビルドの順、dx のツール置き場など）は `docs/dioxus-0.7.md`。無いことは vendored ソースを grep する
 - not-found は `/404` に 1 ファイルだけ書き出す（`NOT_FOUND_PATH`）。配信側が未知の住所すべてにこれを返す。どの住所で開かれても同じ中身が届くので、求められた住所は初回描画に入れず、起動後に `use_effect` で出す（上の規則の適用例）
-- CI は `dx build --ssg --release --force-sequential` の出力を `scripts/check-ssg.sh` で検査する（住所ごとの HTML、本文と `<title>`・description、1 つの WASM、HTML → 読込スクリプト → WASM の参照）。hydration の成否はブラウザが要るので CI では見ない
+- CI は `dx build --ssg --release --force-sequential` の出力を `scripts/check-ssg.sh` で検査する（住所ごとの HTML とその `<title>`、1 つずつの CSS と WASM、HTML → CSS と HTML → 読込スクリプト → WASM の参照）。SSG の出力の読み方は書く側と同じ `src/ssg.rs` にあり、スクリプトは example `check-ssg` を呼ぶだけ。本文の文言は `render_path` 越しに tests が見る。hydration の成否はブラウザが要るので CI では見ない
 - ライトとダークを最初から両方作る。色は役割名トークンで指定し、`@custom-variant dark` の1行で切り替える
 - コントラスト検査は Rust のテストとして tokens.json を読んで行い、CI で回す。WCAG 比（usage に書かれた 3:1 / 4.5:1）を必須、APCA を警告として出す。最初の一本には含めない
 - フォントは IBM Plex Sans JP と Plex Mono。まず Google Fonts CDN
@@ -41,7 +41,7 @@
 - Cloudflare Workers Static Assets に配置する（Pages は維持モードのため使わない）。設定は `wrangler.toml` 1 枚で、Worker のスクリプトは無く `assets` だけ。手順と困ったときは `docs/deploy.md`
 - GitHub Actions で `dx build --ssg` し、wrangler で配置。`main` への push で本番（`wrangler deploy`、カスタムドメイン `rustruct.matsumok.com`。workers.dev の本番 URL は作らない）、PR で `wrangler preview --name pr-<番号>` のプレビュー URL（workers.dev）。PR を閉じるとプレビューを消す。wrangler は CI が npm から落として使う道具で、リポジトリに JS も package.json も置かない
 - 配信物は `scripts/stage-deploy.sh` が SSG の出力から作る `target/deploy`。違いは not-found だけで、SSG の `404/index.html` を配信側が探すルートの `404.html` に移す（`not_found_handling = "404-page"`）。`html_handling = "auto-trailing-slash"` で `/tools` は `/tools/` に転送され、SSG の `tools/index.html` が届く
-- 配置の直後に `scripts/check-live.sh <URL>` が本番とプレビューを外から見る（住所ごとの HTML、転送、未知の住所の 404、CSS・WASM と Content-Type）。hydration と見た目は人の目（`docs/deploy.md`）
+- 配置の直後に `scripts/check-live.sh <URL> target/deploy` が本番とプレビューを外から見る。期待は配信用ディレクトリから取る（ファイルごとに 200、HTML の `<title>` の一致、WASM の Content-Type、末尾スラッシュ無しの転送、未知の住所の 404 と 404.html の `<title>`）。配置の job に Rust は無いので shell のまま。手元では `sh scripts/check.sh live <URL>`。hydration と見た目は人の目（`docs/deploy.md`）
 - 公開面にサーバープロセスは置かない。計算はブラウザ内で完結する（ADR site-0002）
 
 ## 認証と制限
