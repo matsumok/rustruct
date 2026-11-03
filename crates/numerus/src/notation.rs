@@ -6,21 +6,26 @@ const DECIMAL_EXPONENTS: std::ops::Range<i32> = -3..6;
 /// 有効数字 `figures` 桁で書く。末尾の 0 も桁として残す（0.560）。整数部が桁を超えるときは整数で（1,140）。
 /// 0 は「0」。規格の丸め（JIS の丸めなど）は呼ぶ側で済ませ、ここは表示の桁をそろえて書くだけにする
 pub fn significant(x: f64, figures: u32) -> String {
-    mantissa(x, 0, figures)
+    with_figures(x, figures, Form::ByRange)
 }
 
-/// x を 10^`exponent` の倍数として、仮数を有効数字 `figures` 桁で書き、×10ⁿ まで付ける
-/// （`scaled(22_669.0, 4, 3)` は「2.27×10⁴」）。丸めは [`significant`] と同じ。0 は「0」
-pub fn scaled(x: f64, exponent: i32, figures: u32) -> String {
-    let m = mantissa(x, exponent, figures);
-    if x == 0.0 || !x.is_finite() {
-        return m;
-    }
-    format!("{m}×10{}", superscript(exponent))
+/// 有効数字 `figures` 桁で、範囲によらず E で書く（`exponential(22_669.0, 3)` は「2.27E+04」）。
+/// 仮数の丸めは [`significant`] と同じ、E の書き方は範囲の外の数と同じ。0 は「0」
+pub fn exponential(x: f64, figures: u32) -> String {
+    with_figures(x, figures, Form::E)
 }
 
-/// x を 10^`exponent` で割った仮数を、有効数字 `figures` 桁で書く。割り算はせずに末位の位をずらす
-fn mantissa(x: f64, exponent: i32, figures: u32) -> String {
+/// 小数か E か
+#[derive(Clone, Copy, PartialEq)]
+enum Form {
+    /// 0.001 ≦ |x| < 1,000,000 は小数、外は E
+    ByRange,
+    /// 常に E
+    E,
+}
+
+/// 有効数字 `figures` 桁で、`form` の形に書く
+fn with_figures(x: f64, figures: u32, form: Form) -> String {
     if x == 0.0 || !x.is_finite() {
         return at_place(x, 0);
     }
@@ -29,9 +34,9 @@ fn mantissa(x: f64, exponent: i32, figures: u32) -> String {
     let units = units(x.abs(), place);
     if units >= 10u128.pow(figures as u32) {
         // 9.996 → 10.0 のように丸めで桁が上がった。末位を 1 つ上げて桁の数を保つ
-        return write(x.is_sign_negative(), units / 10, place + 1 - exponent);
+        return write(x.is_sign_negative(), units / 10, place + 1, form);
     }
-    write(x.is_sign_negative(), units, place - exponent)
+    write(x.is_sign_negative(), units, place, form)
 }
 
 /// 小数 `decimals` 桁で書く（`format!("{:.1}")` と同じ桁）。丸めて 0 になれば「0.0」のように 0 を並べる
@@ -45,7 +50,12 @@ pub fn at_place(x: f64, place: i32) -> String {
     if !x.is_finite() {
         return x.to_string();
     }
-    write(x.is_sign_negative(), units(x.abs(), place), place)
+    write(
+        x.is_sign_negative(),
+        units(x.abs(), place),
+        place,
+        Form::ByRange,
+    )
 }
 
 /// |x| を 10^`place` 単位の整数に丸める。2 進の誤差を落としてから四捨五入する
@@ -55,12 +65,12 @@ fn units(abs: f64, place: i32) -> u128 {
     ((scaled * 1e6).round() / 1e6).round() as u128
 }
 
-/// 数字の並び `units` × 10^`place` を書く。0 に負号は付けない
-fn write(negative: bool, units: u128, place: i32) -> String {
+/// 数字の並び `units` × 10^`place` を `form` の形に書く。0 に負号は付けない
+fn write(negative: bool, units: u128, place: i32, form: Form) -> String {
     let sign = if negative && units != 0 { "-" } else { "" };
     let digits = units.to_string();
     let exponent = digits.len() as i32 - 1 + place;
-    if units != 0 && !DECIMAL_EXPONENTS.contains(&exponent) {
+    if units != 0 && (form == Form::E || !DECIMAL_EXPONENTS.contains(&exponent)) {
         let (head, tail) = digits.split_at(1);
         let point = if tail.is_empty() { "" } else { "." };
         let exponent_sign = if exponent < 0 { '-' } else { '+' };
@@ -80,19 +90,6 @@ fn write(negative: bool, units: u128, place: i32) -> String {
     let digits = format!("{digits:0>width$}", width = decimals + 1);
     let (whole, fraction) = digits.split_at(digits.len() - decimals);
     format!("{sign}{}.{fraction}", grouped(whole))
-}
-
-/// 整数を上付きの文字で書く（4 → 「⁴」、-6 → 「⁻⁶」）
-fn superscript(n: i32) -> String {
-    const DIGITS: [char; 10] = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'];
-    let sign = if n < 0 { "⁻" } else { "" };
-    let digits: String = n
-        .unsigned_abs()
-        .to_string()
-        .bytes()
-        .map(|b| DIGITS[(b - b'0') as usize])
-        .collect();
-    format!("{sign}{digits}")
 }
 
 /// 整数部を 3 桁ごとに「,」で区切る（1140 → 1,140）
@@ -190,20 +187,22 @@ mod tests {
     }
 
     #[test]
-    fn scaled_writes_the_mantissa_and_ten_to_the_n() {
-        assert_eq!(scaled(22_669.0, 4, 3), "2.27×10⁴");
-        assert_eq!(scaled(33_500.0, 4, 3), "3.35×10⁴");
-        assert_eq!(scaled(-15_512.0, 3, 3), "-15.5×10³");
-        assert_eq!(scaled(0.0000152, -6, 3), "15.2×10⁻⁶");
+    fn exponential_writes_e_inside_the_decimal_range_too() {
+        assert_eq!(exponential(22_669.0, 3), "2.27E+04");
+        assert_eq!(exponential(33_500.0, 3), "3.35E+04");
+        assert_eq!(exponential(-15_512.0, 3), "-1.55E+04");
+        assert_eq!(exponential(1.5, 2), "1.5E+00");
+        assert_eq!(exponential(0.0123, 3), "1.23E-02");
     }
 
     #[test]
-    fn scaled_rounds_like_significant() {
-        // 2.2650 は四捨五入で上がる。0.0034650 も 2 進の誤差を落としてから丸める
-        assert_eq!(scaled(22_650.0, 4, 3), "2.27×10⁴");
-        assert_eq!(scaled(0.003465, -3, 3), "3.47×10⁻³");
-        assert_eq!(scaled(99_960.0, 4, 3), "10.0×10⁴");
-        assert_eq!(scaled(0.0, 4, 3), "0");
+    fn exponential_rounds_like_significant() {
+        // 2.2650 は四捨五入で上がる。3.465 も 2 進の誤差を落としてから丸める
+        assert_eq!(exponential(22_650.0, 3), "2.27E+04");
+        assert_eq!(exponential(0.003465, 3), "3.47E-03");
+        assert_eq!(exponential(99_960.0, 3), "1.00E+05");
+        assert_eq!(exponential(1_234_567.0, 3), significant(1_234_567.0, 3));
+        assert_eq!(exponential(0.0, 3), "0");
     }
 
     #[test]
