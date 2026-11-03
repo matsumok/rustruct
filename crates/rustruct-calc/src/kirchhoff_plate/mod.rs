@@ -1,7 +1,8 @@
 //! Kirchhoff 板の曲げ。言葉は `docs/tools/kirchhoff-plate/GLOSSARY.md`、判断は同じ所の ADR。
 //!
 //! 公開の入口は [`solve`] 一つ。入力（[`Plate`]）から [`Solution`] を得て、点の応答、等間隔グリッドの
-//! 応答、辺に沿った辺の反力の分布とその合計、辺の最大値、隅ごとの隅反力、荷重の合計と釣り合いを取る。
+//! 応答、辺に沿った辺の反力の分布とその合計、辺の最大値、最大たわみ（ADR-0009）、隅ごとの隅反力、荷重の合計と
+//! 釣り合いを取る。
 //! 隅の近くの値の見せ方（ADR-0008）の規則もここが持ち（[`CORNER_MARGIN`]、[`Solution::edge_maximum`]、
 //! [`Solution::near_corner`]）、画面と照合はそれを呼ぶ。公開の座標は隅が原点
 //! （x は 0 から Lx、y は 0 から Ly）。符号は ADR-0004。
@@ -130,6 +131,14 @@ pub struct EdgeMaximum {
     pub moment: Extreme<MomentPerLength>,
     pub shear: Extreme<ForcePerLength>,
     pub reaction: Extreme<ForcePerLength>,
+}
+
+/// たわみの最大（GLOSSARY）。板全体の |w| の最大の点のたわみ（下向き正）と、その位置（隅が原点）
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DeflectionMaximum {
+    pub x: Length,
+    pub y: Length,
+    pub w: Length,
 }
 
 /// 解。入力と、正規化で決まった型と写し方、代表の向きの板の解き方（係数を持つ）。
@@ -361,6 +370,42 @@ impl Solution {
                 value: reaction.reaction,
                 along: reaction.along,
             },
+        }
+    }
+
+    /// たわみの最大。有限要素の節点の w から |w| が最大の節点を選び、その節点に接する要素の中を形状関数の w で
+    /// 詰めた点（ADR-0009）。同じ大きさの最大が板を辺に平行な中心線で折り返した点にもあるとき（対辺がともに
+    /// 自由な板など）は、原点に近い側（y、次に x の小さいほう）を返す
+    pub fn deflection_maximum(&self) -> DeflectionMaximum {
+        let (lx, ly) = (self.plate.lx.as_mm(), self.plate.ly.as_mm());
+        let (rep_lx, rep_ly) = self.representative_lengths();
+        let (xi, eta) = self.solver.deflection_maximum();
+        // 辺長に対する比で戻す。辺の上の点（ξ = ±1、η = ±b）が丸めで板の外や辺のすぐ内に出ない
+        let b = rep_ly / rep_lx;
+        let (x, y) = self.mapping.user_point(
+            rep_lx * (xi + 1.0) / 2.0,
+            rep_ly * (eta / b + 1.0) / 2.0,
+            lx,
+            ly,
+        );
+        let w = |x: f64, y: f64| {
+            self.at(Length::mm(x), Length::mm(y))
+                .expect("板の上の点")
+                .w
+                .as_mm()
+        };
+        let found = w(x, y);
+        // 折り返した点の |w| が丸めの幅で等しければ同じ大きさの最大とみなす
+        const SAME: f64 = 1e-9;
+        let (x, y) = [(x, y), (lx - x, y), (x, ly - y), (lx - x, ly - y)]
+            .into_iter()
+            .filter(|&(px, py)| (w(px, py).abs() - found.abs()).abs() <= SAME * found.abs())
+            .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.total_cmp(&b.0)))
+            .expect("見つけた点そのものは残る");
+        DeflectionMaximum {
+            x: Length::mm(x),
+            y: Length::mm(y),
+            w: Length::mm(w(x, y)),
         }
     }
 

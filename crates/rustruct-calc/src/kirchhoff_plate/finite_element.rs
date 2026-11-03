@@ -27,7 +27,7 @@ use std::f64::consts::PI;
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Support, Supports};
 
 use super::band::BandMatrix;
-use super::solver::{Derivatives, EdgePoint, Solver};
+use super::solver::{Derivatives, EdgePoint, Solver, deflection_maximum};
 
 /// 長い辺の分割数の上限。縦横比がこれを超える板は長い辺の要素が粗くなるが、連立の大きさを抑える
 const MAX_DIVISIONS: usize = 512;
@@ -771,6 +771,11 @@ impl Solver for FiniteElement {
         }
         let (i, j) = self.corner_node(corner);
         self.u[4 * self.node(i, j) + 3]
+    }
+
+    /// 節点の w から最大の節点を選び、接する要素の中を形状関数の w（要素の中の双 3 次式）で詰める
+    fn deflection_maximum(&self) -> (f64, f64) {
+        deflection_maximum(|x, y| self.averaged(x, y, 0, 0), &self.xs, &self.ys)
     }
 }
 
