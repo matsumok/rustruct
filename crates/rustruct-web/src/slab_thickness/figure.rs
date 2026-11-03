@@ -15,7 +15,6 @@ use numerus::at_place;
 use rustruct_calc::slab_thickness::{Conditions, Spans, evaluate, iso_curves, shared_values};
 use rustruct_types::quantity::Length;
 
-use super::{SlabInputs, SlabRead};
 use crate::COLUMN_WIDTH;
 
 /// 検討点が無いときの範囲（両軸、m）
@@ -44,6 +43,14 @@ const INSET: f64 = 6.0;
 const MARK_RADIUS: f64 = 3.5;
 const MARK_WIDTH: f64 = 1.0;
 
+/// 等厚曲線を引く素。条件と、検討点の名称とスパン。入力から一度だけ作る
+#[derive(Debug, Clone, PartialEq)]
+pub struct SlabCurves {
+    pub(super) conditions: Conditions,
+    /// スパンが読めないときは無し。範囲は検討点の無いもので、印を置かない
+    pub(super) point: Option<(String, Spans)>,
+}
+
 /// 等厚曲線の図。図の名前はページが置く
 #[derive(Debug, Clone, PartialEq)]
 pub struct SlabFigure {
@@ -54,17 +61,12 @@ pub struct SlabFigure {
 }
 
 impl SlabFigure {
-    /// 入力から、結果の表と同じ読み方で。条件が読めないか、クライテリアが 1 つも無ければ図は無い。
-    /// 検討点のスパンが読めないときは、検討点の無い範囲に印を置かずに描く
-    pub fn from_inputs(inputs: &SlabInputs) -> Option<Self> {
-        let read = SlabRead::from_inputs(inputs);
-        let conditions = read.conditions?;
-        let point = read.spans.map(|spans| (read.name.as_str(), spans));
-        Some(Self::new(&conditions, point))
-    }
-
-    fn new(conditions: &Conditions, point: Option<(&str, Spans)>) -> Self {
-        let scene = scene(conditions, point);
+    pub fn new(curves: &SlabCurves) -> Self {
+        let point = curves
+            .point
+            .as_ref()
+            .map(|(name, spans)| (name.as_str(), *spans));
+        let scene = scene(&curves.conditions, point);
         let svg = |theme| to_svg(&scene, &theme).expect("役割名は tokens.json にある");
         let label = match point {
             Some((name, _)) if !name.is_empty() => {

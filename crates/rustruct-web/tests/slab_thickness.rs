@@ -3,9 +3,7 @@
 
 mod common;
 use common::{assert_in_order, element, reasons, text_of};
-use rustruct_web::{
-    PointRow, SharedRow, SlabField, SlabFigure, SlabInputs, SlabReadout, render_path,
-};
+use rustruct_web::{SlabField, SlabFigure, SlabInputs, SlabOutcome, SlabReadout, render_path};
 
 #[test]
 fn tools_lists_slab_thickness_under_the_rc_heading_before_mechanics() {
@@ -102,10 +100,11 @@ fn the_page_shows_the_shared_values_and_the_point_results_in_order() {
 fn readout(change: impl FnOnce(&mut SlabInputs)) -> SlabReadout {
     let mut inputs = SlabInputs::default();
     change(&mut inputs);
-    SlabReadout::from_inputs(&inputs)
+    SlabOutcome::from_inputs(&inputs).readout
 }
 
-fn point_values(p: &PointRow) -> [Option<&str>; 7] {
+fn point_values(r: &SlabReadout) -> [Option<&str>; 7] {
+    let p = &r.point;
     [
         &p.required_thickness,
         &p.governing,
@@ -118,7 +117,8 @@ fn point_values(p: &PointRow) -> [Option<&str>; 7] {
     .map(Option::as_deref)
 }
 
-fn shared_values(s: &SharedRow) -> [Option<&str>; 3] {
+fn shared_values(r: &SlabReadout) -> [Option<&str>; 3] {
+    let s = &r.shared;
     [&s.young_modulus, &s.rc_unit_weight, &s.wp].map(Option::as_deref)
 }
 
@@ -163,10 +163,10 @@ fn blank_criteria_with_the_table_off_is_an_error_and_nothing_is_evaluated() {
     let r = readout(|i| i.set(SlabField::DeflectionRatio, ""));
     assert!(r.no_criteria);
     assert!(r.errors.is_empty());
-    assert!(point_values(&r.point).iter().all(Option::is_none), "{r:#?}");
+    assert!(point_values(&r).iter().all(Option::is_none), "{r:#?}");
     // 共有値は条件だけで決まるので出る
     assert_eq!(
-        shared_values(&r.shared),
+        shared_values(&r),
         [Some("2.27E+04"), Some("24.0"), Some("2,800")]
     );
 }
@@ -184,9 +184,9 @@ fn an_unreadable_span_leaves_the_shared_values_and_dashes_the_point() {
             (SlabField::SpanY, "数値で入れる"),
         ]
     );
-    assert!(point_values(&r.point).iter().all(Option::is_none), "{r:#?}");
+    assert!(point_values(&r).iter().all(Option::is_none), "{r:#?}");
     assert_eq!(
-        shared_values(&r.shared),
+        shared_values(&r),
         [Some("2.27E+04"), Some("24.0"), Some("2,800")]
     );
 }
@@ -212,8 +212,8 @@ fn unreadable_conditions_are_named_with_their_reasons() {
         ]
     );
     assert!(!r.no_criteria, "読めない欄があるときは「無い」と言わない");
-    assert!(shared_values(&r.shared).iter().all(Option::is_none));
-    assert!(point_values(&r.point).iter().all(Option::is_none));
+    assert!(shared_values(&r).iter().all(Option::is_none));
+    assert!(point_values(&r).iter().all(Option::is_none));
 }
 
 #[test]
@@ -231,7 +231,8 @@ fn fc_above_36_uses_the_heavier_rc_unit_weight_and_warns_outside_the_range() {
 fn figure(change: impl FnOnce(&mut SlabInputs)) -> Option<SlabFigure> {
     let mut inputs = SlabInputs::default();
     change(&mut inputs);
-    SlabFigure::from_inputs(&inputs)
+    let curves = SlabOutcome::from_inputs(&inputs).curves?;
+    Some(SlabFigure::new(&curves))
 }
 
 /// SVG の文字（白抜きの数値、目盛りの数値、軸の名前、条件の要約、検討点の名前）

@@ -14,7 +14,7 @@ use rustruct_calc::slab_thickness::{
 
 mod figure;
 
-pub use figure::SlabFigure;
+pub use figure::{SlabCurves, SlabFigure};
 use rustruct_types::concrete::{Concrete, ConcreteKind};
 use rustruct_types::quantity::{AreaLoad, Length, Stress};
 
@@ -119,7 +119,7 @@ impl Field for SlabField {
     }
 }
 
-/// 入力の中身。読めるかは `SlabReadout` が決める
+/// 入力の中身。読めるかは `SlabOutcome` が決める
 pub type SlabInputs = Inputs<SlabField>;
 
 /// 計算核の入口が返す不正な欄を、画面の欄へ。クライテリアが 1 つも無いことは欄をまたぐので `None`
@@ -179,40 +179,19 @@ pub struct PointRow {
     pub allowable_deflection: Option<String>,
 }
 
-impl SlabReadout {
-    pub fn from_inputs(inputs: &SlabInputs) -> Self {
-        let read = SlabRead::from_inputs(inputs);
-        Self {
-            errors: read.errors,
-            no_criteria: read.no_criteria,
-            warning: read.warning,
-            shared: SharedRow::new(read.shared),
-            point: PointRow::new(read.evaluation),
-        }
-    }
+/// 計算の結果。入力を 1 回読んで計算核を呼び、結果の表と等厚曲線の素にしたもの。この Tool の入口はここだけ
+#[derive(Debug, Clone, PartialEq)]
+pub struct SlabOutcome {
+    /// 結果の表。読めない欄と、警告も
+    pub readout: SlabReadout,
+    /// 等厚曲線の素。条件の欄がすべて読め、クライテリアが 1 つ以上あるときだけ
+    pub curves: Option<SlabCurves>,
 }
 
-/// 入力を読んだもの。結果の表と等厚曲線の図が同じ読み方を使う
-struct SlabRead {
-    errors: Vec<(SlabField, Reason)>,
-    no_criteria: bool,
-    warning: Option<String>,
-    /// 共有値。Fc と荷重だけで決まるので、ほかの欄が読めなくても出す
-    shared: Option<SharedValues>,
-    /// 条件。条件の欄がすべて読め、クライテリアが 1 つ以上あるときだけ
-    conditions: Option<Conditions>,
-    /// 検討点のスパン。Lx・Ly が読めるときだけ
-    spans: Option<Spans>,
-    /// 検討点の評価。すべての欄が読めるときだけ
-    evaluation: Option<Evaluation>,
-    /// 検討点の名称
-    name: String,
-}
-
-impl SlabRead {
+impl SlabOutcome {
     /// 読めない欄と、`Concrete` が受けない Fc は理由を集めて初期値で埋め（`Reading`）、計算核の入口が返す
     /// 不正な欄を足す
-    fn from_inputs(inputs: &SlabInputs) -> Self {
+    pub fn from_inputs(inputs: &SlabInputs) -> Self {
         let mut reading = inputs.reading();
         let fc = reading.number(SlabField::Fc);
         let concrete = concrete(fc).unwrap_or_else(|| {
@@ -258,6 +237,7 @@ impl SlabRead {
         let errors = reading.errors();
         let has_error = |field: SlabField| errors.iter().any(|(e, _)| *e == field);
 
+        // 共有値は Fc と荷重だけで決まるので、ほかの欄が読めなくても出す
         let shared_fields = [SlabField::Fc, SlabField::FinishLoad, SlabField::LiveLoad];
         let shared = shared_values(concrete, finish_load, live_load)
             .ok()
@@ -270,15 +250,20 @@ impl SlabRead {
         let conditions_valid = !SlabField::on(SlabSheet::Conditions).any(has_error) && !no_criteria;
         let spans_valid = !has_error(SlabField::SpanX) && !has_error(SlabField::SpanY);
 
+        let name = inputs.value(SlabField::Name).trim().to_string();
+
         Self {
-            evaluation: evaluated.ok().filter(|_| errors.is_empty()),
-            errors,
-            no_criteria,
-            warning,
-            shared,
-            conditions: conditions_valid.then_some(conditions),
-            spans: spans_valid.then_some(spans),
-            name: inputs.value(SlabField::Name).trim().to_string(),
+            curves: conditions_valid.then(|| SlabCurves {
+                conditions,
+                point: spans_valid.then_some((name, spans)),
+            }),
+            readout: SlabReadout {
+                point: PointRow::new(evaluated.ok().filter(|_| errors.is_empty())),
+                errors,
+                no_criteria,
+                warning,
+                shared: SharedRow::new(shared),
+            },
         }
     }
 }
@@ -341,12 +326,14 @@ fn criterion_name(criterion: Criterion) -> &'static str {
 }
 
 /// `/tools/slab-thickness`。条件の Sheet と共有値、検討点の Sheet と結果の表を置いた列と、等厚曲線の図の列
-/// （ADR site-0006）。「入力」「結果」の部の見出しは置かず、表の見出しで区切る。
+/// （ADR site-0006）。「入力」「結果」の部の見出しは置かず、表の見出しで区切る。入力を読むのは入力が
+/// 変わったときの 1 回だけで、結果の表と図が同じ計算の結果を使う。
 #[component]
 pub(crate) fn SlabThicknessPage() -> Element {
     let inputs = use_signal(SlabInputs::default);
-    let readout = SlabReadout::from_inputs(&inputs.read());
-    let figure = use_memo(move || SlabFigure::from_inputs(&inputs.read()));
+    let outcome = use_memo(move || SlabOutcome::from_inputs(&inputs.read()));
+    let figure = use_memo(move || outcome.read().curves.as_ref().map(SlabFigure::new));
+    let readout = outcome.read().readout.clone();
     let SharedRow {
         young_modulus,
         rc_unit_weight,
