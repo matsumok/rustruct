@@ -1,9 +1,9 @@
 //! 入力の組（`GLOSSARY.md`「欄」「入力の組」）。決め事は `docs/ui-decisions.md`「入力と表示の区別」「エラーと警告」。
 //!
 //! ページは欄の enum に [`Field`] を実装して、欄ごとの名前・種類・初期値を宣言する。値は [`Inputs`] が
-//! 打ったままの文字で持ち、種類に応じた型で読む。読み取りの規則は 5 つ（空欄、3 桁区切りの「,」、0 と負、
-//! 有限でない数、選択肢に無い記号）、読めない理由の文言は 4 つ（「値を入れる」「数値で入れる」
-//! 「0 以上の値を入れる」「0 より大きい値を入れる」）で、crate は使わない。
+//! 打ったままの文字で持ち、種類に応じた型で読む。読み取りの規則は文字の話の 4 つ（空欄、3 桁区切りの「,」、
+//! 有限でない数、選択肢に無い記号）、読めない理由の文言は 2 つ（「値を入れる」「数値で入れる」）で、crate は
+//! 使わない。0 や負を受けるかの値の規則は計算核の入口が持ち、ページはその理由を欄に写す（[`Reading::refuse`]）。
 //! 描くのは [`InputGroup`]: Sheet → 注記 → 読めない欄の理由 → 警告の順に `space-1` で積み、
 //! その下に結果の表を `space-6` 空けて置く。ng の印（見出しと欄の枠）と `aria-label` もここが付ける。
 
@@ -16,8 +16,8 @@ use crate::sheet::{
 };
 use crate::table::Notes;
 
-/// 読めない欄の理由
-pub type Reason = &'static str;
+/// 読めない欄の理由。文字の規則の文言か、計算核の入口が返す理由の文言
+pub type Reason = String;
 
 /// ページの欄の enum が実装する。`ALL` は欄の並び（値の置き場の順）
 pub trait Field: Copy + Eq + std::fmt::Debug + 'static {
@@ -41,7 +41,7 @@ pub enum Kind {
     Number {
         /// 空欄を受ける（空欄は「無し」と読む）
         blank: bool,
-        sign: Sign,
+        /// 読める値。読めない欄の埋め草にもなる（[`Reading`]）
         initial: &'static str,
     },
     Text {
@@ -57,25 +57,10 @@ pub enum Kind {
     },
 }
 
-/// 数値の欄が受ける符号
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Sign {
-    /// 0 より大きい値だけ
-    Positive,
-    /// 0 以上
-    NonNegative,
-    /// 負も（上向きの荷重など）
-    Any,
-}
-
 impl Kind {
     /// 数値の欄
-    pub const fn number(blank: bool, sign: Sign, initial: &'static str) -> Self {
-        Self::Number {
-            blank,
-            sign,
-            initial,
-        }
+    pub const fn number(blank: bool, initial: &'static str) -> Self {
+        Self::Number { blank, initial }
     }
 
     /// 置き場に入れる初期値の文字
@@ -145,29 +130,13 @@ impl<F: Field> Inputs<F> {
         }
     }
 
-    /// 数値の欄。空欄を受ける欄の空欄は `None`。3 桁区切りの「,」は読み飛ばす
+    /// 数値の欄。空欄を受ける欄の空欄は `None`。3 桁区切りの「,」は読み飛ばす。0 や負も読む
+    /// （値の規則は計算核の入口が見る）
     pub fn optional_number(&self, field: F) -> Result<Option<f64>, Reason> {
-        let Kind::Number { blank, sign, .. } = field.definition().kind else {
+        let Kind::Number { blank, .. } = field.definition().kind else {
             panic!("{field:?} は数値の欄でない");
         };
-        let text = self.value(field).trim().replace(',', "");
-        if text.is_empty() {
-            return if blank {
-                Ok(None)
-            } else {
-                Err("値を入れる")
-            };
-        }
-        let value: f64 = text
-            .parse()
-            .ok()
-            .filter(|v: &f64| v.is_finite())
-            .ok_or("数値で入れる")?;
-        match sign {
-            Sign::Positive if value <= 0.0 => Err("0 より大きい値を入れる"),
-            Sign::NonNegative if value < 0.0 => Err("0 以上の値を入れる"),
-            _ => Ok(Some(value)),
-        }
+        read_number(self.value(field), blank).map_err(Reason::from)
     }
 
     /// 空欄を受けない数値の欄
@@ -198,41 +167,73 @@ impl<F: Field> Inputs<F> {
     }
 }
 
-/// 欄を順に読んだ記録。読めない欄は読んだ順に理由と並ぶ
+/// 数値の文字を読む。空欄は `blank` なら `None`。読めなければ理由の文言
+fn read_number(text: &str, blank: bool) -> Result<Option<f64>, &'static str> {
+    let text = text.trim().replace(',', "");
+    if text.is_empty() {
+        return if blank {
+            Ok(None)
+        } else {
+            Err("値を入れる")
+        };
+    }
+    text.parse()
+        .ok()
+        .filter(|v: &f64| v.is_finite())
+        .map(Some)
+        .ok_or("数値で入れる")
+}
+
+/// 欄を読んだ記録。読めない欄と理由を集める。
+///
+/// 読めない欄は、理由を集めたうえで欄の初期値で埋める。ページは埋めた値ごと計算核の入口を呼び、読めた欄の
+/// 値の規則を確かめさせて（読めない欄と読めても不正な欄をいっぺんに出すため）、返った理由を [`Self::refuse`] で
+/// 足す。理由が 1 つでもあるあいだ、その結果は使わない
 pub struct Reading<'a, F: Field> {
     inputs: &'a Inputs<F>,
     errors: Vec<(F, Reason)>,
 }
 
 impl<F: Field> Reading<'_, F> {
-    /// 空欄を受けない数値の欄。読めなければ理由を集めて `None`
-    pub fn number(&mut self, field: F) -> Option<f64> {
-        let result = self.inputs.number(field);
-        self.collect(field, result)
+    /// 空欄を受けない数値の欄。読めなければ理由を集めて初期値
+    pub fn number(&mut self, field: F) -> f64 {
+        self.optional_number(field)
+            .unwrap_or_else(|| panic!("{field:?} は空欄を受ける欄"))
     }
 
-    /// 数値の欄。空欄も読めない欄も `None`（読めない欄は理由を集める）
+    /// 数値の欄。空欄は `None`。読めなければ理由を集めて初期値（初期値が空欄なら `None`）
     pub fn optional_number(&mut self, field: F) -> Option<f64> {
-        let result = self.inputs.optional_number(field);
-        self.collect(field, result).flatten()
-    }
-
-    fn collect<T>(&mut self, field: F, result: Result<T, Reason>) -> Option<T> {
-        match result {
-            Ok(value) => Some(value),
+        match self.inputs.optional_number(field) {
+            Ok(value) => value,
             Err(reason) => {
                 self.refuse(field, reason);
-                None
+                self.initial(field)
             }
         }
     }
 
-    /// ページが決める理由（欄の規則の外の範囲など）を足す
-    pub fn refuse(&mut self, field: F, reason: Reason) {
-        self.errors.push((field, reason));
+    /// 数値の欄の初期値。読めた値を計算核の型（ν、Fc など）が受けないときの埋め草
+    pub fn initial(&self, field: F) -> Option<f64> {
+        let Kind::Number { blank, initial } = field.definition().kind else {
+            panic!("{field:?} は数値の欄でない");
+        };
+        read_number(initial, blank).unwrap_or_else(|_| panic!("{field:?} の初期値は読める"))
     }
 
-    pub fn errors(self) -> Vec<(F, Reason)> {
+    /// 理由を足す。計算核の入口が返した理由と、ページが決める理由（計算核の型が受けない値など）
+    pub fn refuse(&mut self, field: F, reason: impl Into<Reason>) {
+        self.errors.push((field, reason.into()));
+    }
+
+    /// 理由のある欄か
+    pub fn refused(&self, field: F) -> bool {
+        self.errors.iter().any(|(f, _)| *f == field)
+    }
+
+    /// 読めない欄と理由。欄の並び（`F::ALL`）の順
+    pub fn errors(mut self) -> Vec<(F, Reason)> {
+        self.errors
+            .sort_by_key(|(field, _)| Inputs::<F>::index(*field));
         self.errors
     }
 }
@@ -272,7 +273,7 @@ pub(crate) fn InputGroup<F: Field>(
     let own: Vec<(F, Reason)> = layout
         .fields()
         .into_iter()
-        .flat_map(|field| errors.iter().filter(move |(f, _)| *f == field).copied())
+        .flat_map(|field| errors.iter().filter(move |(f, _)| *f == field).cloned())
         .collect();
     let has_error = |field: F| own.iter().any(|(f, _)| *f == field);
     let head_error =
@@ -323,11 +324,11 @@ pub(crate) fn InputGroup<F: Field>(
                         }
                     }
                 }
-                for (field , reason) in own.iter().copied() {
+                for (field , reason) in own.iter() {
                     p { class: "text-label text-ng", "{field.definition().name}: {reason}" }
                 }
                 for (_ , message) in across.iter() {
-                    p { class: "text-label text-ng", {*message} }
+                    p { class: "text-label text-ng", "{message}" }
                 }
                 if let Some(warning) = warning {
                     p { class: "text-label", "! {warning}" }
@@ -377,13 +378,13 @@ mod tests {
     /// 4 種類の欄を 1 つずつ持つ試験用の欄
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum Test {
-        /// 0 より大きい数値
+        /// 数値
         Positive,
-        /// 0 以上の数値
+        /// 数値（初期値に 3 桁区切り）
         Load,
-        /// 負も受ける数値
+        /// 数値
         Pressure,
-        /// 空欄を受ける、0 より大きい数値
+        /// 空欄を受ける数値
         Ratio,
         Name,
         Table,
@@ -407,7 +408,6 @@ mod tests {
                     "Lx（m）",
                     Kind::Number {
                         blank: false,
-                        sign: Sign::Positive,
                         initial: "4.0",
                     },
                 ),
@@ -415,7 +415,6 @@ mod tests {
                     "積載荷重（N/m²）",
                     Kind::Number {
                         blank: false,
-                        sign: Sign::NonNegative,
                         initial: "1,800",
                     },
                 ),
@@ -423,7 +422,6 @@ mod tests {
                     "p（kN/m²）",
                     Kind::Number {
                         blank: false,
-                        sign: Sign::Any,
                         initial: "10",
                     },
                 ),
@@ -431,7 +429,6 @@ mod tests {
                     "変形角 1/",
                     Kind::Number {
                         blank: true,
-                        sign: Sign::Positive,
                         initial: "",
                     },
                 ),
@@ -476,24 +473,25 @@ mod tests {
     fn a_blank_or_unparsable_number_names_its_reason() {
         let mut inputs = Inputs::<Test>::new();
         inputs.set(Test::Positive, "  ");
-        assert_eq!(inputs.number(Test::Positive), Err("値を入れる"));
+        assert_eq!(inputs.number(Test::Positive), Err("値を入れる".into()));
         for text in ["abc", "inf", "NaN", "1e400", "1,2,3x"] {
             inputs.set(Test::Positive, text);
-            assert_eq!(inputs.number(Test::Positive), Err("数値で入れる"), "{text}");
+            assert_eq!(
+                inputs.number(Test::Positive),
+                Err("数値で入れる".into()),
+                "{text}"
+            );
         }
     }
 
+    /// 0 や負を受けるかは計算核の入口が見る。欄は数値として読むだけ
     #[test]
-    fn zero_is_refused_or_accepted_by_the_definition() {
+    fn zero_and_negative_numbers_are_read_as_they_are() {
         let mut inputs = Inputs::<Test>::new();
         inputs.set(Test::Positive, "0");
-        assert_eq!(inputs.number(Test::Positive), Err("0 より大きい値を入れる"));
-        inputs.set(Test::Positive, "-1");
-        assert_eq!(inputs.number(Test::Positive), Err("0 より大きい値を入れる"));
-        inputs.set(Test::Load, "0");
-        assert_eq!(inputs.number(Test::Load), Ok(0.0));
+        assert_eq!(inputs.number(Test::Positive), Ok(0.0));
         inputs.set(Test::Load, "-0.5");
-        assert_eq!(inputs.number(Test::Load), Err("0 以上の値を入れる"));
+        assert_eq!(inputs.number(Test::Load), Ok(-0.5));
         inputs.set(Test::Pressure, "-10");
         assert_eq!(inputs.number(Test::Pressure), Ok(-10.0));
     }
@@ -504,15 +502,15 @@ mod tests {
         assert_eq!(inputs.optional_number(Test::Ratio), Ok(None));
         inputs.set(Test::Ratio, "400");
         assert_eq!(inputs.optional_number(Test::Ratio), Ok(Some(400.0)));
-        inputs.set(Test::Ratio, "0");
+        inputs.set(Test::Ratio, "x");
         assert_eq!(
             inputs.optional_number(Test::Ratio),
-            Err("0 より大きい値を入れる")
+            Err("数値で入れる".into())
         );
         // 空欄を受けない欄も同じ読み方で、空欄だけが理由になる
         assert_eq!(inputs.optional_number(Test::Load), Ok(Some(1800.0)));
         inputs.set(Test::Load, "");
-        assert_eq!(inputs.optional_number(Test::Load), Err("値を入れる"));
+        assert_eq!(inputs.optional_number(Test::Load), Err("値を入れる".into()));
     }
 
     #[test]
@@ -551,11 +549,11 @@ mod tests {
                 ]),
                 notes: vec!["注記".into()],
                 errors: vec![
-                    (Test::Load, "値を入れる"),
-                    (Test::Positive, "数値で入れる"),
-                    (Test::Name, "この Sheet に無い欄"),
+                    (Test::Load, "値を入れる".into()),
+                    (Test::Positive, "数値で入れる".into()),
+                    (Test::Name, "この Sheet に無い欄".into()),
                 ],
-                across: vec![(vec![Test::Ratio, Test::Table], "どれか 1 つ")],
+                across: vec![(vec![Test::Ratio, Test::Table], "どれか 1 つ".into())],
                 warning: Some("想定の外".into()),
                 p { "結果の表" }
             }
@@ -600,23 +598,28 @@ mod tests {
         assert!(html.contains("<select"), "{html}");
     }
 
+    /// 読めない欄は理由を集めて初期値で埋め（空欄を受ける欄の空欄の初期値は `None`）、理由は欄の順に並ぶ
     #[test]
-    fn a_reading_collects_the_unreadable_fields_in_the_order_they_are_read() {
+    fn a_reading_fills_unreadable_fields_with_their_initial_values_in_field_order() {
         let mut inputs = Inputs::<Test>::new();
         inputs.set(Test::Positive, "x");
-        inputs.set(Test::Ratio, "-1");
+        inputs.set(Test::Ratio, "1/400");
+        inputs.set(Test::Pressure, "-10");
         let mut reading = inputs.reading();
         let ratio = reading.optional_number(Test::Ratio);
+        let pressure = reading.number(Test::Pressure);
         let positive = reading.number(Test::Positive);
-        let load = reading.number(Test::Load);
-        reading.refuse(Test::Load, "0 以上 0.5 未満で入れる");
-        assert_eq!((ratio, positive, load), (None, None, Some(1800.0)));
+        assert!(!reading.refused(Test::Load));
+        reading.refuse(Test::Load, "0 以上の値を入れる");
+        assert!(reading.refused(Test::Load));
+        assert_eq!((ratio, pressure, positive), (None, -10.0, 4.0));
+        assert_eq!(reading.initial(Test::Load), Some(1800.0));
         assert_eq!(
             reading.errors(),
             vec![
-                (Test::Ratio, "0 より大きい値を入れる"),
-                (Test::Positive, "数値で入れる"),
-                (Test::Load, "0 以上 0.5 未満で入れる"),
+                (Test::Positive, "数値で入れる".to_string()),
+                (Test::Load, "0 以上の値を入れる".to_string()),
+                (Test::Ratio, "数値で入れる".to_string()),
             ]
         );
     }

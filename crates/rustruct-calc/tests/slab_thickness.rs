@@ -69,7 +69,7 @@ fn with(criteria: CriteriaSet) -> Conditions {
 }
 
 /// 条件の共有値
-fn shared(conditions: &Conditions) -> Result<SharedValues, InvalidInput> {
+fn shared(conditions: &Conditions) -> Result<SharedValues, Vec<InvalidInput>> {
     shared_values(
         conditions.concrete,
         conditions.finish_load,
@@ -404,7 +404,7 @@ fn self_weight_uses_the_rc_unit_weight_of_the_fc_class() {
     );
 }
 
-/// 不正な入力は理由ごとに弾く。条件欄の誤りはスパンの誤りより先に言う
+/// 不正な入力は理由ごとに弾く。条件欄の誤りとスパンの誤りは両方とも、条件欄を先に言う
 #[test]
 fn invalid_inputs_are_rejected() {
     let cases = [
@@ -452,13 +452,19 @@ fn invalid_inputs_are_rejected() {
         ),
     ];
     for (conditions, reason) in cases {
-        assert_eq!(evaluate(&conditions, spans(0.0, 5.0)), Err(reason));
-        assert_eq!(evaluate(&conditions, spans(4.0, 5.0)), Err(reason));
+        assert_eq!(
+            evaluate(&conditions, spans(0.0, 5.0)),
+            Err(vec![reason, InvalidInput::SpanX])
+        );
+        assert_eq!(evaluate(&conditions, spans(4.0, 5.0)), Err(vec![reason]));
     }
-    assert_eq!(evaluate(&base(), spans(0.0, 5.0)), Err(InvalidInput::SpanX));
+    assert_eq!(
+        evaluate(&base(), spans(0.0, 5.0)),
+        Err(vec![InvalidInput::SpanX])
+    );
     assert_eq!(
         evaluate(&base(), spans(4.0, f64::NAN)),
-        Err(InvalidInput::SpanY)
+        Err(vec![InvalidInput::SpanY])
     );
 }
 
@@ -479,7 +485,70 @@ fn zero_loads_are_accepted() {
 fn empty_criteria_set_is_rejected() {
     assert_eq!(
         evaluate(&with(CriteriaSet::default()), spans(4.0, 5.0)),
-        Err(InvalidInput::NoCriteria)
+        Err(vec![InvalidInput::NoCriteria])
+    );
+}
+
+/// 不正な欄が 2 つ以上あれば、最初の 1 つでなく全部を欄の順に返す（ページは読めない欄を全部いっぺんに出す）。
+/// 値の不正なクライテリアは「1 つも無い」とは言わない（入れてはある）
+#[test]
+fn every_invalid_input_is_returned_in_the_order_of_the_fields() {
+    let conditions = Conditions {
+        finish_load: AreaLoad::n_per_m2(-1.0),
+        live_load: AreaLoad::n_per_m2(f64::NAN),
+        amplification: -16.0,
+        criteria: CriteriaSet {
+            deflection_ratio: Some(f64::INFINITY),
+            deflection_absolute: Some(Length::mm(0.0)),
+            min_thickness: false,
+        },
+        ..base()
+    };
+    assert_eq!(
+        evaluate(&conditions, spans(-4.0, 0.0)),
+        Err(vec![
+            InvalidInput::FinishLoad,
+            InvalidInput::LiveLoad,
+            InvalidInput::Amplification,
+            InvalidInput::DeflectionRatio,
+            InvalidInput::DeflectionAbsolute,
+            InvalidInput::SpanX,
+            InvalidInput::SpanY,
+        ])
+    );
+    // クライテリアが 1 つも無いことも、ほかの欄の誤りと一緒に返す
+    let none = Conditions {
+        amplification: 0.0,
+        ..with(CriteriaSet::default())
+    };
+    assert_eq!(
+        evaluate(&none, spans(0.0, 5.0)),
+        Err(vec![
+            InvalidInput::Amplification,
+            InvalidInput::NoCriteria,
+            InvalidInput::SpanX,
+        ])
+    );
+}
+
+/// 理由の文言は欄の下に出すもの。欄の名前は含めない（ページが欄に付ける）。荷重は 0 を受け、ほかは受けない
+#[test]
+fn an_invalid_input_reads_as_what_to_enter() {
+    for reason in [InvalidInput::FinishLoad, InvalidInput::LiveLoad] {
+        assert_eq!(reason.to_string(), "0 以上の値を入れる", "{reason:?}");
+    }
+    for reason in [
+        InvalidInput::Amplification,
+        InvalidInput::DeflectionRatio,
+        InvalidInput::DeflectionAbsolute,
+        InvalidInput::SpanX,
+        InvalidInput::SpanY,
+    ] {
+        assert_eq!(reason.to_string(), "0 より大きい値を入れる", "{reason:?}");
+    }
+    assert_eq!(
+        InvalidInput::NoCriteria.to_string(),
+        "クライテリアを 1 つ以上入れる"
     );
 }
 
@@ -538,7 +607,7 @@ fn non_positive_absolute_deflection_is_rejected() {
     for bad in [0.0, -20.0, f64::NAN, f64::INFINITY] {
         assert_eq!(
             evaluate(&with(deflection_absolute(bad)), spans(4.0, 5.0)),
-            Err(InvalidInput::DeflectionAbsolute),
+            Err(vec![InvalidInput::DeflectionAbsolute]),
             "絶対量 {bad}"
         );
     }
@@ -701,12 +770,21 @@ mod shared_values {
             finish_load: AreaLoad::n_per_m2(-1.0),
             ..base()
         };
-        assert_eq!(shared(&finish), Err(InvalidInput::FinishLoad));
+        assert_eq!(shared(&finish), Err(vec![InvalidInput::FinishLoad]));
         let live = Conditions {
             live_load: AreaLoad::n_per_m2(f64::NAN),
             ..base()
         };
-        assert_eq!(shared(&live), Err(InvalidInput::LiveLoad));
+        assert_eq!(shared(&live), Err(vec![InvalidInput::LiveLoad]));
+        let both = Conditions {
+            finish_load: AreaLoad::n_per_m2(-1.0),
+            live_load: AreaLoad::n_per_m2(-1.0),
+            ..base()
+        };
+        assert_eq!(
+            shared(&both),
+            Err(vec![InvalidInput::FinishLoad, InvalidInput::LiveLoad])
+        );
         let no_criteria = Conditions {
             amplification: 0.0,
             criteria: Default::default(),
@@ -789,7 +867,7 @@ mod iso_curves {
                 &m(&grid()),
                 &[Length::mm(200.0)]
             ),
-            Err(InvalidInput::NoCriteria)
+            Err(vec![InvalidInput::NoCriteria])
         );
     }
 
