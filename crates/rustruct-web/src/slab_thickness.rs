@@ -17,6 +17,7 @@ pub use figure::SlabFigure;
 use rustruct_types::concrete::{Concrete, ConcreteKind};
 use rustruct_types::quantity::{AreaLoad, Length, Stress};
 
+use crate::data::young_modulus;
 use crate::inputs::{Definition, Field, InputGroup, Inputs, Kind, Layout, Reason, Sign};
 use crate::table::{
     Block, Caption, Column, Columns, HeadCell, HeadRow, Notes, NumCell, Row, Table, TextCell,
@@ -286,7 +287,7 @@ impl SharedRow {
                 wp: NOT_COMPUTED.into(),
             },
             Some(v) => Self {
-                young_modulus: fixed(v.young_modulus.as_n_per_mm2(), 0),
+                young_modulus: young_modulus(v.young_modulus),
                 rc_unit_weight: fixed(v.rc_unit_weight.as_kn_per_m3(), 1),
                 wp: fixed(v.wp.as_n_per_m2(), 0),
             },

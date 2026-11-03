@@ -2,7 +2,7 @@
 //! 数値はすべて `rustruct-types` から引き、ここでは表示の桁だけを決める（Issue #19）。
 
 use dioxus::prelude::*;
-use numerus::{fixed, point_pads, significant};
+use numerus::{exponential, fixed, point_pads, significant};
 use rustruct_types::allowable_stress::AllowableStress;
 use rustruct_types::concrete::{BarPosition, Concrete, ConcreteKind};
 use rustruct_types::quantity::Stress;
@@ -16,6 +16,12 @@ use crate::{Page, Route, RouteList};
 
 /// 計算できない値の表示（`docs/ui-decisions.md`「エラーと警告」）
 const NOT_COMPUTED: &str = "—";
+
+/// ヤング係数 E の欄。有効数字 3 桁で、値に E まで書く（「2.27E+04」。ADR site-0013）。
+/// 見出しは単位だけ（「E（N/mm²）」）。Data のコンクリートのページと必要スラブ厚さのページが同じ書き方を使う
+pub(crate) fn young_modulus(e: Stress) -> String {
+    exponential(e.as_n_per_mm2(), 3)
+}
 
 /// `/data`。Data の一覧（名前＋一行＋パス）。
 #[component]
@@ -33,7 +39,7 @@ pub enum ConcreteReadout {
     Computed {
         /// 気乾単位体積重量 γ [kN/m³]
         unit_weight: String,
-        /// ヤング係数 E [N/mm²]。×10⁴ で有効数字 3 桁
+        /// ヤング係数 E。書き方は `data::young_modulus`
         young_modulus: String,
         /// 許容応力度。`Allowable::ALL` の順
         allowable_stresses: Vec<AllowableRow>,
@@ -49,10 +55,7 @@ impl ConcreteReadout {
         match Self::concrete(input) {
             Ok(c) => Self::Computed {
                 unit_weight: fixed(c.unit_weight().as_kn_per_m3(), 1),
-                young_modulus: format!(
-                    "{}×10⁴",
-                    significant(c.young_modulus().as_n_per_mm2() / 1e4, 3)
-                ),
+                young_modulus: young_modulus(c.young_modulus()),
                 allowable_stresses: Allowable::ALL
                     .map(|a| AllowableRow::new(a.name(), a.of(&c)))
                     .to_vec(),
@@ -192,13 +195,13 @@ fn designation_rows() -> Vec<(&'static str, [String; 4])> {
 
 /// 気乾単位体積重量の表の行: (Fc の区分, γ)
 fn unit_weight_rows() -> Vec<(String, String)> {
-    let mut lower: Option<f64> = None;
+    let mut lower: Option<String> = None;
     ConcreteKind::Normal
         .unit_weight_table()
         .iter()
         .map(|row| {
-            let upper = row.fc_upper.as_n_per_mm2();
-            let range = match lower {
+            let upper = integer(row.fc_upper);
+            let range = match &lower {
                 None => format!("Fc ≦ {upper}"),
                 Some(lower) => format!("{lower} < Fc ≦ {upper}"),
             };
@@ -222,12 +225,13 @@ pub(crate) fn ConcretePage() -> Element {
         ConcreteReadout::Computed { warning, .. } => (None, warning.clone()),
         ConcreteReadout::Unusable { error } => (Some(error.clone()), None),
     };
-    let fc_max = ConcreteKind::Normal
-        .unit_weight_table()
-        .last()
-        .expect("表の区分は1つ以上")
-        .fc_upper
-        .as_n_per_mm2();
+    let fc_max = integer(
+        ConcreteKind::Normal
+            .unit_weight_table()
+            .last()
+            .expect("表の区分は1つ以上")
+            .fc_upper,
+    );
     rsx! {
         Page { route: Route::DataConcrete {},
             Columns {
@@ -467,7 +471,7 @@ fn long_term_tension_compression_d29_and_up(kind: RebarKind) -> String {
     }
 }
 
-/// 表 6.2 の値は整数で書かれているので、そのまま整数で出す
+/// 表に整数で書かれている値（表 6.2 の許容応力度、Fc の区分の境）は、そのまま整数で出す
 fn integer(stress: Stress) -> String {
     fixed(stress.as_n_per_mm2(), 0)
 }

@@ -6,6 +6,26 @@ const DECIMAL_EXPONENTS: std::ops::Range<i32> = -3..6;
 /// 有効数字 `figures` 桁で書く。末尾の 0 も桁として残す（0.560）。整数部が桁を超えるときは整数で（1,140）。
 /// 0 は「0」。規格の丸め（JIS の丸めなど）は呼ぶ側で済ませ、ここは表示の桁をそろえて書くだけにする
 pub fn significant(x: f64, figures: u32) -> String {
+    with_figures(x, figures, Form::ByRange)
+}
+
+/// 有効数字 `figures` 桁で、範囲によらず E で書く（`exponential(22_669.0, 3)` は「2.27E+04」）。
+/// 仮数の丸めは [`significant`] と同じ、E の書き方は範囲の外の数と同じ。0 は「0」
+pub fn exponential(x: f64, figures: u32) -> String {
+    with_figures(x, figures, Form::E)
+}
+
+/// 小数か E か
+#[derive(Clone, Copy, PartialEq)]
+enum Form {
+    /// 0.001 ≦ |x| < 1,000,000 は小数、外は E
+    ByRange,
+    /// 常に E
+    E,
+}
+
+/// 有効数字 `figures` 桁で、`form` の形に書く
+fn with_figures(x: f64, figures: u32, form: Form) -> String {
     if x == 0.0 || !x.is_finite() {
         return at_place(x, 0);
     }
@@ -14,9 +34,9 @@ pub fn significant(x: f64, figures: u32) -> String {
     let units = units(x.abs(), place);
     if units >= 10u128.pow(figures as u32) {
         // 9.996 → 10.0 のように丸めで桁が上がった。末位を 1 つ上げて桁の数を保つ
-        return write(x.is_sign_negative(), units / 10, place + 1);
+        return write(x.is_sign_negative(), units / 10, place + 1, form);
     }
-    write(x.is_sign_negative(), units, place)
+    write(x.is_sign_negative(), units, place, form)
 }
 
 /// 小数 `decimals` 桁で書く（`format!("{:.1}")` と同じ桁）。丸めて 0 になれば「0.0」のように 0 を並べる
@@ -30,7 +50,12 @@ pub fn at_place(x: f64, place: i32) -> String {
     if !x.is_finite() {
         return x.to_string();
     }
-    write(x.is_sign_negative(), units(x.abs(), place), place)
+    write(
+        x.is_sign_negative(),
+        units(x.abs(), place),
+        place,
+        Form::ByRange,
+    )
 }
 
 /// |x| を 10^`place` 単位の整数に丸める。2 進の誤差を落としてから四捨五入する
@@ -40,12 +65,12 @@ fn units(abs: f64, place: i32) -> u128 {
     ((scaled * 1e6).round() / 1e6).round() as u128
 }
 
-/// 数字の並び `units` × 10^`place` を書く。0 に負号は付けない
-fn write(negative: bool, units: u128, place: i32) -> String {
+/// 数字の並び `units` × 10^`place` を `form` の形に書く。0 に負号は付けない
+fn write(negative: bool, units: u128, place: i32, form: Form) -> String {
     let sign = if negative && units != 0 { "-" } else { "" };
     let digits = units.to_string();
     let exponent = digits.len() as i32 - 1 + place;
-    if units != 0 && !DECIMAL_EXPONENTS.contains(&exponent) {
+    if units != 0 && (form == Form::E || !DECIMAL_EXPONENTS.contains(&exponent)) {
         let (head, tail) = digits.split_at(1);
         let point = if tail.is_empty() { "" } else { "." };
         let exponent_sign = if exponent < 0 { '-' } else { '+' };
@@ -159,6 +184,25 @@ mod tests {
         assert_eq!(fixed(22_723.4, 0), "22,723");
         assert_eq!(fixed(0.00052, 4), "5E-04");
         assert_eq!(fixed(1_234_567.0, 0), "1.234567E+06");
+    }
+
+    #[test]
+    fn exponential_writes_e_inside_the_decimal_range_too() {
+        assert_eq!(exponential(22_669.0, 3), "2.27E+04");
+        assert_eq!(exponential(33_500.0, 3), "3.35E+04");
+        assert_eq!(exponential(-15_512.0, 3), "-1.55E+04");
+        assert_eq!(exponential(1.5, 2), "1.5E+00");
+        assert_eq!(exponential(0.0123, 3), "1.23E-02");
+    }
+
+    #[test]
+    fn exponential_rounds_like_significant() {
+        // 2.2650 は四捨五入で上がる。3.465 も 2 進の誤差を落としてから丸める
+        assert_eq!(exponential(22_650.0, 3), "2.27E+04");
+        assert_eq!(exponential(0.003465, 3), "3.47E-03");
+        assert_eq!(exponential(99_960.0, 3), "1.00E+05");
+        assert_eq!(exponential(1_234_567.0, 3), significant(1_234_567.0, 3));
+        assert_eq!(exponential(0.0, 3), "0");
     }
 
     #[test]
