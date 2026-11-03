@@ -12,7 +12,7 @@ use rustruct_calc::slab_thickness::{
 use rustruct_types::concrete::{Concrete, ConcreteKind};
 use rustruct_types::quantity::{AreaLoad, Length, Stress};
 
-use crate::data::{young_modulus, young_modulus_unit};
+use crate::data::young_modulus;
 use crate::inputs::{Definition, Field, InputGroup, Inputs, Kind, Layout, Reason, Sign};
 use crate::table::{
     Block, Caption, Column, Columns, HeadCell, HeadRow, Notes, NumCell, Row, Table, TextCell,
@@ -143,7 +143,7 @@ pub struct SlabReadout {
 /// 共有値の行
 #[derive(Debug, Clone, PartialEq)]
 pub struct SharedRow {
-    /// ヤング係数 E。書き方は `data::young_modulus`
+    /// ヤング係数 E（N/mm²）
     pub young_modulus: String,
     /// 鉄筋コンクリートの単位体積重量 γ₁（kN/m³）
     pub rc_unit_weight: String,
@@ -310,7 +310,6 @@ pub(crate) fn SlabThicknessPage() -> Element {
         rc_unit_weight,
         wp,
     } = readout.shared.clone();
-    let young_modulus_unit = young_modulus_unit();
     let point = readout.point.clone();
     let across = if readout.no_criteria {
         vec![(SlabField::CRITERIA.to_vec(), NO_CRITERIA)]
@@ -336,7 +335,7 @@ pub(crate) fn SlabThicknessPage() -> Element {
                             Table { fixed: true,
                                 thead {
                                     HeadRow {
-                                        HeadCell { "E（{young_modulus_unit}）" }
+                                        HeadCell { "E（N/mm²）" }
                                         HeadCell { "γ₁（kN/m³）" }
                                         HeadCell { "wp（N/m²）" }
                                     }

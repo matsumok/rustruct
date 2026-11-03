@@ -17,28 +17,10 @@ use crate::{Page, Route, RouteList};
 /// 計算できない値の表示（`docs/ui-decisions.md`「エラーと警告」）
 const NOT_COMPUTED: &str = "—";
 
-/// ヤング係数 E を書く 10 の指数。欄には仮数を、10ⁿ は単位と一緒に列の見出しに書く（ADR site-0013）。
-/// 欄と見出しの両方をここから書くので、指数と見出しは食い違わない
-const YOUNG_MODULUS_EXPONENT: i32 = 4;
-
-/// ヤング係数 E の欄。10⁴ N/mm² の仮数を有効数字 3 桁で（「2.27」）。Data のコンクリートのページと
-/// 必要スラブ厚さのページが同じ書き方を使う
+/// ヤング係数 E の欄。仮数を有効数字 3 桁で、×10⁴ まで値に書く（「2.27×10⁴」。ADR site-0013）。
+/// 見出しは単位だけ（「E（N/mm²）」）。Data のコンクリートのページと必要スラブ厚さのページが同じ書き方を使う
 pub(crate) fn young_modulus(e: Stress) -> String {
-    scaled(e.as_n_per_mm2(), YOUNG_MODULUS_EXPONENT, 3)
-}
-
-/// ヤング係数 E の列の見出しに括弧で書く単位（「×10⁴ N/mm²」）
-pub(crate) fn young_modulus_unit() -> String {
-    let exponent: String = YOUNG_MODULUS_EXPONENT
-        .to_string()
-        .chars()
-        .map(|c| match c {
-            '-' => '⁻',
-            digit => ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹']
-                [digit.to_digit(10).expect("i32 の文字は負号と数字だけ") as usize],
-        })
-        .collect();
-    format!("×10{exponent} N/mm²")
+    scaled(e.as_n_per_mm2(), 4, 3)
 }
 
 /// `/data`。Data の一覧（名前＋一行＋パス）。
@@ -236,7 +218,6 @@ pub(crate) fn ConcretePage() -> Element {
     let mut fc = use_signal(|| "24".to_string());
     let readout = ConcreteReadout::from_fc_input(&fc.read());
     let [unit_weight, young_modulus] = readout.values().map(str::to_string);
-    let young_modulus_unit = young_modulus_unit();
     let allowable_rows = readout.allowable_rows();
     let long_term_pads = point_pads(allowable_rows.iter().map(|row| &row.long_term));
     let short_term_pads = point_pads(allowable_rows.iter().map(|row| &row.short_term));
@@ -285,7 +266,7 @@ pub(crate) fn ConcretePage() -> Element {
                             thead {
                                 HeadRow {
                                     HeadCell { "気乾単位体積重量 γ（kN/m³）" }
-                                    HeadCell { "ヤング係数 E（{young_modulus_unit}）" }
+                                    HeadCell { "ヤング係数 E（N/mm²）" }
                                 }
                             }
                             tbody {
