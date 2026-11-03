@@ -19,13 +19,8 @@ use rustruct_types::quantity::{AreaLoad, Length, Stress};
 
 use crate::data::young_modulus;
 use crate::inputs::{Definition, Field, InputGroup, Inputs, Kind, Layout, Reason, Sign};
-use crate::table::{
-    Block, Caption, Column, Columns, HeadCell, HeadRow, Notes, NumCell, Row, Table, TextCell,
-};
+use crate::table::{Block, Caption, Column, Columns, Notes, Table, TableColumn};
 use crate::{Page, Route};
-
-/// 計算できない値の表示（`docs/ui-decisions.md`「エラーと警告」）
-const NOT_COMPUTED: &str = "—";
 
 /// 欄。並びは条件の Sheet の行の順、検討点の Sheet の列の順
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,7 +127,7 @@ pub type SlabInputs = Inputs<SlabField>;
 /// クライテリアが 1 つも無いときの文言
 const NO_CRITERIA: Reason = "クライテリアを 1 つ以上入れる";
 
-/// 入力から求めた表示。数値は丸めて文字にしたもの。計算できないときは「—」
+/// 入力から求めた表示。数値は丸めて文字にしたもの。計算できないときは無し（「—」）
 #[derive(Debug, Clone, PartialEq)]
 pub struct SlabReadout {
     /// 読めない欄と、その理由。並びは画面の欄の順
@@ -149,30 +144,30 @@ pub struct SlabReadout {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SharedRow {
     /// ヤング係数 E（N/mm²）
-    pub young_modulus: String,
+    pub young_modulus: Option<String>,
     /// 鉄筋コンクリートの単位体積重量 γ₁（kN/m³）
-    pub rc_unit_weight: String,
+    pub rc_unit_weight: Option<String>,
     /// スラブ自重を除く荷重 wp（N/m²）
-    pub wp: String,
+    pub wp: Option<String>,
 }
 
 /// 検討点の結果
 #[derive(Debug, Clone, PartialEq)]
 pub struct PointRow {
     /// 必要スラブ厚 t_req（mm）
-    pub required_thickness: String,
+    pub required_thickness: Option<String>,
     /// 決定条件の呼び名
-    pub governing: String,
+    pub governing: Option<String>,
     /// 短辺スパン lx（m）
-    pub short_span: String,
+    pub short_span: Option<String>,
     /// 辺長比 λ
-    pub aspect_ratio: String,
+    pub aspect_ratio: Option<String>,
     /// 弾性たわみ δe（mm）
-    pub elastic_deflection: String,
+    pub elastic_deflection: Option<String>,
     /// 増大後たわみ（mm）
-    pub amplified_deflection: String,
-    /// 許容たわみ（mm）。たわみに効く条件が無ければ「—」
-    pub allowable_deflection: String,
+    pub amplified_deflection: Option<String>,
+    /// 許容たわみ（mm）。たわみに効く条件が無ければ無し
+    pub allowable_deflection: Option<String>,
 }
 
 impl SlabReadout {
@@ -282,14 +277,14 @@ impl SharedRow {
     fn new(shared: Option<SharedValues>) -> Self {
         match shared {
             None => Self {
-                young_modulus: NOT_COMPUTED.into(),
-                rc_unit_weight: NOT_COMPUTED.into(),
-                wp: NOT_COMPUTED.into(),
+                young_modulus: None,
+                rc_unit_weight: None,
+                wp: None,
             },
             Some(v) => Self {
-                young_modulus: young_modulus(v.young_modulus),
-                rc_unit_weight: fixed(v.rc_unit_weight.as_kn_per_m3(), 1),
-                wp: fixed(v.wp.as_n_per_m2(), 0),
+                young_modulus: Some(young_modulus(v.young_modulus)),
+                rc_unit_weight: Some(fixed(v.rc_unit_weight.as_kn_per_m3(), 1)),
+                wp: Some(fixed(v.wp.as_n_per_m2(), 0)),
             },
         }
     }
@@ -298,28 +293,25 @@ impl SharedRow {
 impl PointRow {
     fn new(evaluation: Option<Evaluation>) -> Self {
         let Some(ev) = evaluation else {
-            let dash = || NOT_COMPUTED.to_string();
             return Self {
-                required_thickness: dash(),
-                governing: dash(),
-                short_span: dash(),
-                aspect_ratio: dash(),
-                elastic_deflection: dash(),
-                amplified_deflection: dash(),
-                allowable_deflection: dash(),
+                required_thickness: None,
+                governing: None,
+                short_span: None,
+                aspect_ratio: None,
+                elastic_deflection: None,
+                amplified_deflection: None,
+                allowable_deflection: None,
             };
         };
         let mm = |l: Length| fixed(l.as_mm(), 2);
         Self {
-            required_thickness: fixed(ev.required_thickness.as_mm(), 1),
-            governing: criterion_name(ev.governing).into(),
-            short_span: fixed(ev.short_span.as_m(), 2),
-            aspect_ratio: fixed(ev.aspect_ratio, 2),
-            elastic_deflection: mm(ev.elastic_deflection),
-            amplified_deflection: mm(ev.amplified_deflection),
-            allowable_deflection: ev
-                .allowable_deflection
-                .map_or_else(|| NOT_COMPUTED.into(), mm),
+            required_thickness: Some(fixed(ev.required_thickness.as_mm(), 1)),
+            governing: Some(criterion_name(ev.governing).into()),
+            short_span: Some(fixed(ev.short_span.as_m(), 2)),
+            aspect_ratio: Some(fixed(ev.aspect_ratio, 2)),
+            elastic_deflection: Some(mm(ev.elastic_deflection)),
+            amplified_deflection: Some(mm(ev.amplified_deflection)),
+            allowable_deflection: ev.allowable_deflection.map(mm),
         }
     }
 }
@@ -367,21 +359,14 @@ pub(crate) fn SlabThicknessPage() -> Element {
                         warning: readout.warning.clone(),
                         Block {
                             Caption { "共有値" }
-                            Table { fixed: true,
-                                thead {
-                                    HeadRow {
-                                        HeadCell { "E（N/mm²）" }
-                                        HeadCell { "γ₁（kN/m³）" }
-                                        HeadCell { "wp（N/m²）" }
-                                    }
-                                }
-                                tbody {
-                                    Row {
-                                        NumCell { {young_modulus} }
-                                        NumCell { {rc_unit_weight} }
-                                        NumCell { {wp} }
-                                    }
-                                }
+                            Table {
+                                fixed: true,
+                                columns: vec![
+                                    TableColumn::number("E").unit("N/mm²"),
+                                    TableColumn::number("γ₁").unit("kN/m³"),
+                                    TableColumn::number("wp").unit("N/m²"),
+                                ],
+                                rows: vec![vec![young_modulus.into(), rc_unit_weight.into(), wp.into()]],
                             }
                             Notes {
                                 li { "γ₁ は鉄筋コンクリートの単位体積重量" }
@@ -396,37 +381,22 @@ pub(crate) fn SlabThicknessPage() -> Element {
                         errors: readout.errors.clone(),
                         Block {
                             Caption { "必要スラブ厚" }
-                            Table { fixed: true,
-                                thead {
-                                    HeadRow {
-                                        HeadCell { "t_req（mm）" }
-                                        HeadCell { left: true, "決定条件" }
-                                    }
-                                }
-                                tbody {
-                                    Row {
-                                        NumCell { {point.required_thickness} }
-                                        TextCell { {point.governing} }
-                                    }
-                                }
+                            Table {
+                                fixed: true,
+                                columns: vec![
+                                    TableColumn::number("t_req").unit("mm"),
+                                    TableColumn::name("決定条件"),
+                                ],
+                                rows: vec![vec![point.required_thickness.into(), point.governing.into()]],
                             }
                         }
                     }
                     Block {
                         Caption { "短辺スパンと辺長比" }
-                        Table { fixed: true,
-                            thead {
-                                HeadRow {
-                                    HeadCell { "lx（m）" }
-                                    HeadCell { "λ" }
-                                }
-                            }
-                            tbody {
-                                Row {
-                                    NumCell { {point.short_span} }
-                                    NumCell { {point.aspect_ratio} }
-                                }
-                            }
+                        Table {
+                            fixed: true,
+                            columns: vec![TableColumn::number("lx").unit("m"), TableColumn::number("λ")],
+                            rows: vec![vec![point.short_span.into(), point.aspect_ratio.into()]],
                         }
                         Notes {
                             li { "lx は Lx と Ly の小さいほう" }
@@ -435,21 +405,20 @@ pub(crate) fn SlabThicknessPage() -> Element {
                     }
                     Block {
                         Caption { "たわみ（mm）" }
-                        Table { fixed: true,
-                            thead {
-                                HeadRow {
-                                    HeadCell { "δe" }
-                                    HeadCell { "増大後" }
-                                    HeadCell { "許容" }
-                                }
-                            }
-                            tbody {
-                                Row {
-                                    NumCell { {point.elastic_deflection} }
-                                    NumCell { {point.amplified_deflection} }
-                                    NumCell { {point.allowable_deflection} }
-                                }
-                            }
+                        Table {
+                            fixed: true,
+                            columns: vec![
+                                TableColumn::number("δe"),
+                                TableColumn::number("増大後"),
+                                TableColumn::number("許容"),
+                            ],
+                            rows: vec![
+                                vec![
+                                    point.elastic_deflection.into(),
+                                    point.amplified_deflection.into(),
+                                    point.allowable_deflection.into(),
+                                ],
+                            ],
                         }
                         Notes {
                             li { "t_req での値" }

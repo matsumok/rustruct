@@ -2,20 +2,16 @@
 //! 数値はすべて `rustruct-types` から引き、ここでは表示の桁だけを決める（Issue #19）。
 
 use dioxus::prelude::*;
-use numerus::{exponential, fixed, point_pads, significant};
+use numerus::{exponential, fixed, significant};
 use rustruct_types::allowable_stress::AllowableStress;
 use rustruct_types::concrete::{BarPosition, Concrete, ConcreteKind};
 use rustruct_types::quantity::Stress;
 use rustruct_types::rebar::{BarDesignation, RebarKind};
 
 use crate::table::{
-    Block, Caption, Column, Columns, DecimalCell, Divider, Formula, FormulaCell, GroupCell,
-    GroupRow, HeadCell, HeadRow, Notes, NumCell, ParenCell, Row, Table, TextCell, column_pads,
+    Block, Caption, Cell, Column, Columns, Divider, Formula, Notes, Table, TableColumn,
 };
 use crate::{Page, Route, RouteList};
-
-/// 計算できない値の表示（`docs/ui-decisions.md`「エラーと警告」）
-const NOT_COMPUTED: &str = "—";
 
 /// ヤング係数 E の欄。有効数字 3 桁で、値に E まで書く（「2.27E+04」。ADR site-0013）。
 /// 見出しは単位だけ（「E（N/mm²）」）。Data のコンクリートのページと必要スラブ厚さのページが同じ書き方を使う
@@ -65,31 +61,36 @@ impl ConcreteReadout {
         }
     }
 
-    /// 許容応力度の表の行。使えないときは値がすべて「—」
-    fn allowable_rows(&self) -> Vec<AllowableRow> {
+    /// 許容応力度の表の行（名前、長期、短期）。使えないときは値がすべて無し
+    fn allowable_rows(&self) -> Vec<Vec<Cell>> {
         match self {
             Self::Computed {
                 allowable_stresses, ..
-            } => allowable_stresses.clone(),
-            Self::Unusable { .. } => Allowable::ALL
-                .map(|a| AllowableRow {
-                    name: a.name(),
-                    long_term: NOT_COMPUTED.into(),
-                    short_term: NOT_COMPUTED.into(),
+            } => allowable_stresses
+                .iter()
+                .map(|row| {
+                    vec![
+                        row.name.into(),
+                        row.long_term.clone().into(),
+                        row.short_term.clone().into(),
+                    ]
                 })
+                .collect(),
+            Self::Unusable { .. } => Allowable::ALL
+                .map(|a| vec![a.name().into(), None.into(), None.into()])
                 .to_vec(),
         }
     }
 
-    /// (γ, E) の表示。使えないときはすべて「—」
-    fn values(&self) -> [&str; 2] {
+    /// (γ, E) の表示。使えないときはすべて無し
+    fn values(&self) -> Vec<Cell> {
         match self {
             Self::Computed {
                 unit_weight,
                 young_modulus,
                 ..
-            } => [unit_weight, young_modulus],
-            Self::Unusable { .. } => [NOT_COMPUTED; 2],
+            } => vec![unit_weight.clone().into(), young_modulus.clone().into()],
+            Self::Unusable { .. } => vec![None.into(), None.into()],
         }
     }
 
@@ -127,6 +128,12 @@ impl Allowable {
             Self::BondTop => "付着（上端筋）",
             Self::BondOther => "付着（その他の鉄筋）",
         }
+    }
+
+    /// 根拠の表の名前。式が2行になる付着は、名前も括弧書きの前で改行する。1行では式と短期の列に押されて
+    /// スマホ幅で「（その他／の鉄筋）」と語の途中で切れたため
+    fn basis_name(self) -> String {
+        self.name().replacen('（', "\n（", 1)
     }
 
     /// 長期の根拠の式。規準の「A かつ B 以下」は min(A, B) と書く
@@ -175,26 +182,24 @@ impl AllowableRow {
     }
 }
 
-/// 呼び名の表の行: (呼び名, [d, l, S, w])。JIS G 3112 表6 と同じ桁
-fn designation_rows() -> Vec<(&'static str, [String; 4])> {
+/// 呼び名の表の行: 呼び名, d, l, S, w。JIS G 3112 表6 と同じ桁
+fn designation_rows() -> Vec<Vec<Cell>> {
     BarDesignation::ALL
         .iter()
         .map(|designation| {
-            (
-                designation.name(),
-                [
-                    significant(designation.nominal_diameter().as_mm(), 3),
-                    fixed(designation.nominal_perimeter().as_mm(), 1),
-                    significant(designation.nominal_area().as_mm2(), 4),
-                    significant(designation.unit_mass().as_kg_per_m(), 3),
-                ],
-            )
+            vec![
+                designation.name().into(),
+                significant(designation.nominal_diameter().as_mm(), 3).into(),
+                fixed(designation.nominal_perimeter().as_mm(), 1).into(),
+                significant(designation.nominal_area().as_mm2(), 4).into(),
+                significant(designation.unit_mass().as_kg_per_m(), 3).into(),
+            ]
         })
         .collect()
 }
 
-/// 気乾単位体積重量の表の行: (Fc の区分, γ)
-fn unit_weight_rows() -> Vec<(String, String)> {
+/// 気乾単位体積重量の表の行: Fc の区分, γ
+fn unit_weight_rows() -> Vec<Vec<Cell>> {
     let mut lower: Option<String> = None;
     ConcreteKind::Normal
         .unit_weight_table()
@@ -206,7 +211,10 @@ fn unit_weight_rows() -> Vec<(String, String)> {
                 Some(lower) => format!("{lower} < Fc ≦ {upper}"),
             };
             lower = Some(upper);
-            (range, fixed(row.unit_weight.as_kn_per_m3(), 1))
+            vec![
+                range.into(),
+                fixed(row.unit_weight.as_kn_per_m3(), 1).into(),
+            ]
         })
         .collect()
 }
@@ -217,10 +225,8 @@ fn unit_weight_rows() -> Vec<(String, String)> {
 pub(crate) fn ConcretePage() -> Element {
     let mut fc = use_signal(|| "24".to_string());
     let readout = ConcreteReadout::from_fc_input(&fc.read());
-    let [unit_weight, young_modulus] = readout.values().map(str::to_string);
+    let values = readout.values();
     let allowable_rows = readout.allowable_rows();
-    let long_term_pads = point_pads(allowable_rows.iter().map(|row| &row.long_term));
-    let short_term_pads = point_pads(allowable_rows.iter().map(|row| &row.short_term));
     let (error, warning) = match &readout {
         ConcreteReadout::Computed { warning, .. } => (None, warning.clone()),
         ConcreteReadout::Unusable { error } => (Some(error.clone()), None),
@@ -263,39 +269,22 @@ pub(crate) fn ConcretePage() -> Element {
                             }
                         }
                         Table {
-                            thead {
-                                HeadRow {
-                                    HeadCell { "気乾単位体積重量 γ（kN/m³）" }
-                                    HeadCell { "ヤング係数 E（N/mm²）" }
-                                }
-                            }
-                            tbody {
-                                Row {
-                                    NumCell { {unit_weight} }
-                                    NumCell { {young_modulus} }
-                                }
-                            }
+                            columns: vec![
+                                TableColumn::number("気乾単位体積重量 γ").unit("kN/m³"),
+                                TableColumn::number("ヤング係数 E").unit("N/mm²"),
+                            ],
+                            rows: vec![values],
                         }
                     }
                     Block {
                         Caption { "許容応力度（N/mm²）" }
                         Table {
-                            thead {
-                                HeadRow {
-                                    HeadCell { left: true, "" }
-                                    HeadCell { "長期" }
-                                    HeadCell { "短期" }
-                                }
-                            }
-                            tbody {
-                                for ((row , long_term_pad) , short_term_pad) in allowable_rows.into_iter().zip(long_term_pads).zip(short_term_pads) {
-                                    Row {
-                                        TextCell { {row.name} }
-                                        DecimalCell { value: row.long_term, pad: long_term_pad }
-                                        DecimalCell { value: row.short_term, pad: short_term_pad }
-                                    }
-                                }
-                            }
+                            columns: vec![
+                                TableColumn::name(""),
+                                TableColumn::number("長期"),
+                                TableColumn::number("短期"),
+                            ],
+                            rows: allowable_rows,
                         }
                     }
                 }
@@ -304,20 +293,11 @@ pub(crate) fn ConcretePage() -> Element {
                     Block {
                         Caption { "気乾単位体積重量" }
                         Table {
-                            thead {
-                                HeadRow {
-                                    HeadCell { left: true, "Fc（N/mm²）" }
-                                    HeadCell { "γ（kN/m³）" }
-                                }
-                            }
-                            tbody {
-                                for (range, gamma) in unit_weight_rows() {
-                                    Row {
-                                        TextCell { {range} }
-                                        NumCell { {gamma} }
-                                    }
-                                }
-                            }
+                            columns: vec![
+                                TableColumn::name("Fc").unit("N/mm²"),
+                                TableColumn::number("γ").unit("kN/m³"),
+                            ],
+                            rows: unit_weight_rows(),
                         }
                         Notes {
                             li { "Fc {fc_max} を超えると最後の区分を使う" }
@@ -335,29 +315,20 @@ pub(crate) fn ConcretePage() -> Element {
                     Block {
                         Caption { "許容応力度（N/mm²）" }
                         Table {
-                            thead {
-                                HeadRow {
-                                    HeadCell { left: true, "" }
-                                    HeadCell { left: true, "長期" }
-                                    HeadCell { left: true, "短期" }
-                                }
-                            }
-                            tbody {
-                                for a in Allowable::ALL {
-                                    Row {
-                                        // 式が2行になる付着は、名前も括弧書きの前で改行する。1行では式と短期の列に押されて
-                                        // スマホ幅で「（その他／の鉄筋）」と語の途中で切れたため
-                                        TextCell {
-                                            match a.name().split_once('（') {
-                                                Some((head, rest)) => rsx! { {head} br {} "（{rest}" },
-                                                None => rsx! { {a.name()} },
-                                            }
-                                        }
-                                        FormulaCell { formula: a.long_term_formula() }
-                                        FormulaCell { formula: Formula::Plain(a.short_term_formula()) }
-                                    }
-                                }
-                            }
+                            columns: vec![
+                                TableColumn::name(""),
+                                TableColumn::formula("長期"),
+                                TableColumn::formula("短期"),
+                            ],
+                            rows: Allowable::ALL
+                                .map(|a| {
+                                    vec![
+                                        a.basis_name().into(),
+                                        a.long_term_formula().into(),
+                                        Formula::Plain(a.short_term_formula()).into(),
+                                    ]
+                                })
+                                .to_vec(),
                         }
                         // 出典: RC 規準（2024 年版）表 6.1・6.3（画面には出さない。ADR に書いてある）
                     }
@@ -370,8 +341,6 @@ pub(crate) fn ConcretePage() -> Element {
 /// `/data/rebar`。呼び名の表と、種類ごとの許容応力度の表。値は JIS と RC 規準の表と同じ桁で出す。
 #[component]
 pub(crate) fn RebarPage() -> Element {
-    let rows = designation_rows();
-    let pads = column_pads(&rows);
     rsx! {
         Page { route: Route::DataRebar {},
             Columns {
@@ -379,25 +348,14 @@ pub(crate) fn RebarPage() -> Element {
                     Block {
                         Caption { "異形棒鋼の寸法、単位質量及び節の許容限度" }
                         Table {
-                            thead {
-                                HeadRow {
-                                    HeadCell { left: true, "呼び名" }
-                                    HeadCell { "公称直径" br {} "d（mm）" }
-                                    HeadCell { "公称周長" br {} "l（mm）" }
-                                    HeadCell { "公称断面積" br {} "S（mm²）" }
-                                    HeadCell { "単位質量" br {} "w（kg/m）" }
-                                }
-                            }
-                            tbody {
-                                for ((name , values) , pads) in rows.into_iter().zip(pads) {
-                                    Row {
-                                        TextCell { {name} }
-                                        for (value , pad) in values.into_iter().zip(pads) {
-                                            DecimalCell { value, pad }
-                                        }
-                                    }
-                                }
-                            }
+                            columns: vec![
+                                TableColumn::name("呼び名"),
+                                TableColumn::number("公称直径\nd").unit("mm"),
+                                TableColumn::number("公称周長\nl").unit("mm"),
+                                TableColumn::number("公称断面積\nS").unit("mm²"),
+                                TableColumn::number("単位質量\nw").unit("kg/m"),
+                            ],
+                            rows: designation_rows(),
                         }
                         Notes {
                             li { "l = 3.142d、S = 0.7854d²、w = 0.00785S" }
@@ -409,34 +367,29 @@ pub(crate) fn RebarPage() -> Element {
                 Column {
                     Block {
                         Caption { "許容応力度（N/mm²）" }
-                        div { class: "overflow-x-auto",
-                            Table {
-                                thead {
-                                    GroupRow {
-                                        HeadCell { left: true, rows: 2, "種類" }
-                                        GroupCell { span: 3, "長期" }
-                                        GroupCell { span: 2, "短期" }
-                                    }
-                                    HeadRow {
-                                        HeadCell { span: 2, "引張・圧縮" }
-                                        HeadCell { "せん断" br {} "補強" }
-                                        HeadCell { "引張・" br {} "圧縮" }
-                                        HeadCell { "せん断" br {} "補強" }
-                                    }
-                                }
-                                tbody {
-                                    for kind in RebarKind::ALL.iter().copied() {
-                                        Row {
-                                            TextCell { {kind.symbol()} }
-                                            NumCell { {long_term_tension_compression(kind)} }
-                                            ParenCell { {long_term_tension_compression_d29_and_up(kind)} }
-                                            NumCell { {integer(kind.allowable_shear_reinforcement().long_term)} }
-                                            NumCell { {integer(kind.allowable_tension_compression(BarDesignation::D25).short_term)} }
-                                            NumCell { {integer(kind.allowable_shear_reinforcement().short_term)} }
-                                        }
-                                    }
-                                }
-                            }
+                        Table {
+                            columns: vec![
+                                TableColumn::name("種類"),
+                                TableColumn::number("引張・圧縮").group("長期"),
+                                TableColumn::paren(),
+                                TableColumn::number("せん断\n補強").group("長期"),
+                                TableColumn::number("引張・\n圧縮").group("短期"),
+                                TableColumn::number("せん断\n補強").group("短期"),
+                            ],
+                            rows: RebarKind::ALL
+                                .iter()
+                                .map(|&kind| {
+                                    vec![
+                                        kind.symbol().into(),
+                                        long_term_tension_compression(kind).into(),
+                                        long_term_tension_compression_d29_and_up(kind).into(),
+                                        integer(kind.allowable_shear_reinforcement().long_term).into(),
+                                        integer(kind.allowable_tension_compression(BarDesignation::D25).short_term)
+                                            .into(),
+                                        integer(kind.allowable_shear_reinforcement().short_term).into(),
+                                    ]
+                                })
+                                .collect(),
                         }
                         Notes {
                             li { "* D29 以上は（ ）内の値" }

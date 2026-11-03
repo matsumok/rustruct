@@ -252,10 +252,7 @@ fn allowable_stress_basis_has_long_and_short_term_columns_and_no_notes() {
     );
     let html = render_path("/data/concrete");
     // min(A, B) は「,」の後で改行して B を A の下に積み、式が2行になる付着は名前も括弧書きの前で改行する
-    for stacked in [
-        "min(<span class=\"inline-block align-top\">Fc/30,<br/>0.49+Fc/100)",
-        "付着<br/>（上端筋）",
-    ] {
+    for stacked in ["Fc/30,<br/>0.49+Fc/100)", "付着<br/>（上端筋）"] {
         assert!(html.contains(stacked), "{stacked} が無い: {html}");
     }
     for note in ["短期は長期の", "かぶりが", "Fc は N/mm²"] {

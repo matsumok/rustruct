@@ -6,7 +6,7 @@
 //! Sheet の行見出しに添えて対応を示す。
 
 use dioxus::prelude::*;
-use numerus::{at_place, point_pads, significant};
+use numerus::{at_place, significant};
 use rustruct_calc::kirchhoff_plate::{CORNER_MARGIN, Extreme, PlateError, Solution, solve};
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Plate, Support, Supports};
 use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
@@ -17,13 +17,8 @@ use figure::PlateField;
 pub use figure::{PlateFigure, Quantity};
 
 use crate::inputs::{Definition, Field, InputGroup, Inputs, Kind, Layout, Reason, Sign};
-use crate::table::{
-    Block, Caption, Column, Columns, DecimalCell, HeadCell, HeadRow, Notes, Row, Table, TextCell,
-};
+use crate::table::{Block, Caption, Column, Columns, NO_VALUE, Notes, Table, TableColumn};
 use crate::{Page, Route};
-
-/// 計算できない値の表示（`docs/ui-decisions.md`「エラーと警告」）
-const NOT_COMPUTED: &str = "—";
 
 /// 辺の最大値を取る評価点の分け方。辺を等分する数
 const EDGE_DIVISIONS: usize = 100;
@@ -182,7 +177,7 @@ fn supports(inputs: &PlateInputs) -> Supports {
     }
 }
 
-/// 入力から求めた、結果の表の表示。数値は丸めて文字にしたもの。計算できないときは「—」
+/// 入力から求めた、結果の表の表示。数値は丸めて文字にしたもの。計算できないときは無し（「—」）
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlateReadout {
     /// 読めない欄と、その理由
@@ -198,7 +193,7 @@ pub struct PlateReadout {
     /// 辺の最大値の表に足す注記。自由辺のある組だけ（ADR kirchhoff-plate-0008）
     pub edge_notes: Vec<String>,
     /// 隅ごとの隅反力（kN）。`Corner::ALL` の順
-    pub corners: Vec<(String, String)>,
+    pub corners: Vec<(String, Option<String>)>,
     /// 釣り合い
     pub balance: Balance,
 }
@@ -220,29 +215,29 @@ pub struct EdgeRow {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CenterRow {
     /// たわみ（mm）
-    pub w: String,
+    pub w: Option<String>,
     /// 曲げモーメント（kN·m/m）
-    pub mx: String,
-    pub my: String,
+    pub mx: Option<String>,
+    pub my: Option<String>,
 }
 
 /// 結果の表の、最大たわみの行
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeflectionRow {
     /// たわみ（mm）
-    pub w: String,
+    pub w: Option<String>,
     /// 位置（m）。隅 x = 0・y = 0 からの座標
-    pub x: String,
-    pub y: String,
+    pub x: Option<String>,
+    pub y: Option<String>,
 }
 
 /// 辺の最大値の 1 つ
 #[derive(Debug, Clone, PartialEq)]
 pub struct Maximum {
     /// 絶対値が最大の値（曲げモーメントは kN·m/m、せん断力と辺の反力は kN/m）
-    pub value: String,
-    /// 辺の始点からの位置（m）。値が辺の全体で 0 のときは「—」
-    pub along: String,
+    pub value: Option<String>,
+    /// 辺の始点からの位置（m）。値が辺の全体で 0 のときは無し
+    pub along: Option<String>,
 }
 
 impl Maximum {
@@ -255,7 +250,7 @@ impl Maximum {
         Self {
             value: figures(value),
             along: if value == 0.0 {
-                NOT_COMPUTED.into()
+                None
             } else {
                 figures(along.as_m())
             },
@@ -264,8 +259,8 @@ impl Maximum {
 
     fn not_computed() -> Self {
         Self {
-            value: NOT_COMPUTED.into(),
-            along: NOT_COMPUTED.into(),
+            value: None,
+            along: None,
         }
     }
 }
@@ -274,9 +269,9 @@ impl Maximum {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Balance {
     /// 辺の反力の合計 − 隅反力の合計
-    pub reactions: String,
+    pub reactions: Option<String>,
     /// 荷重の合計
-    pub load: String,
+    pub load: Option<String>,
 }
 
 impl PlateReadout {
@@ -285,19 +280,18 @@ impl PlateReadout {
     }
 
     fn not_computed(notice: Option<&'static str>) -> Self {
-        let dash = || NOT_COMPUTED.to_string();
         Self {
             errors: Vec::new(),
             notice,
             center: CenterRow {
-                w: dash(),
-                mx: dash(),
-                my: dash(),
+                w: None,
+                mx: None,
+                my: None,
             },
             deflection_maximum: DeflectionRow {
-                w: dash(),
-                x: dash(),
-                y: dash(),
+                w: None,
+                x: None,
+                y: None,
             },
             edges: EDGES
                 .map(|edge| EdgeRow {
@@ -309,11 +303,11 @@ impl PlateReadout {
                 .to_vec(),
             edge_notes: Vec::new(),
             corners: Corner::ALL
-                .map(|corner| (corner_name(corner), dash()))
+                .map(|corner| (corner_name(corner), None))
                 .to_vec(),
             balance: Balance {
-                reactions: dash(),
-                load: dash(),
+                reactions: None,
+                load: None,
             },
         }
     }
@@ -417,9 +411,9 @@ fn corner_name(corner: Corner) -> String {
     format!("{x}・{y}")
 }
 
-/// 有効数字 3 桁（Data と同じ）
-fn figures(value: f64) -> String {
-    significant(value, 3)
+/// 有効数字 3 桁（Data と同じ）。表の値なので「値か無し」の値
+fn figures(value: f64) -> Option<String> {
+    Some(significant(value, 3))
 }
 
 /// `/tools/kirchhoff-plate`。入力の Sheet のすぐ下に結果の表を続けた列と、分布図の列（ADR site-0006）。
@@ -440,7 +434,6 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
     let readout = outcome.read().readout.clone();
     let CenterRow { w, mx, my } = readout.center.clone();
     let deflection = readout.deflection_maximum.clone();
-    let corner_pads = point_pads(readout.corners.iter().map(|(_, r)| r));
     let Balance { reactions, load } = readout.balance.clone();
     rsx! {
         Page { route: Route::ToolsKirchhoffPlate {},
@@ -454,21 +447,14 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                         warning: readout.notice.map(String::from),
                         Block {
                             Caption { "板の中央" }
-                            Table { fixed: true,
-                                thead {
-                                    HeadRow {
-                                        HeadCell { "w（mm）" }
-                                        HeadCell { "Mx（kN·m/m）" }
-                                        HeadCell { "My（kN·m/m）" }
-                                    }
-                                }
-                                tbody {
-                                    Row {
-                                        DecimalCell { value: w, pad: 0 }
-                                        DecimalCell { value: mx, pad: 0 }
-                                        DecimalCell { value: my, pad: 0 }
-                                    }
-                                }
+                            Table {
+                                fixed: true,
+                                columns: vec![
+                                    TableColumn::number("w").unit("mm"),
+                                    TableColumn::number("Mx").unit("kN·m/m"),
+                                    TableColumn::number("My").unit("kN·m/m"),
+                                ],
+                                rows: vec![vec![w.into(), mx.into(), my.into()]],
                             }
                             Notes {
                                 li { "たわみは下向きを正とする" }
@@ -478,21 +464,14 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                     }
                     Block {
                         Caption { "最大たわみ" }
-                        Table { fixed: true,
-                            thead {
-                                HeadRow {
-                                    HeadCell { "w（mm）" }
-                                    HeadCell { "x（m）" }
-                                    HeadCell { "y（m）" }
-                                }
-                            }
-                            tbody {
-                                Row {
-                                    DecimalCell { value: deflection.w, pad: 0 }
-                                    DecimalCell { value: deflection.x, pad: 0 }
-                                    DecimalCell { value: deflection.y, pad: 0 }
-                                }
-                            }
+                        Table {
+                            fixed: true,
+                            columns: vec![
+                                TableColumn::number("w").unit("mm"),
+                                TableColumn::number("x").unit("m"),
+                                TableColumn::number("y").unit("m"),
+                            ],
+                            rows: vec![vec![deflection.w.into(), deflection.x.into(), deflection.y.into()]],
                         }
                         Notes {
                             li { "板全体での絶対値の最大値" }
@@ -522,21 +501,15 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                     }
                     Block {
                         Caption { "隅反力" }
-                        Table { fixed: true,
-                            thead {
-                                HeadRow {
-                                    HeadCell { left: true, "隅" }
-                                    HeadCell { "R（kN）" }
-                                }
-                            }
-                            tbody {
-                                for ((name , reaction) , pad) in readout.corners.iter().cloned().zip(corner_pads) {
-                                    Row {
-                                        TextCell { {name} }
-                                        DecimalCell { value: reaction, pad }
-                                    }
-                                }
-                            }
+                        Table {
+                            fixed: true,
+                            columns: vec![TableColumn::name("隅"), TableColumn::number("R").unit("kN")],
+                            rows: readout
+                                .corners
+                                .iter()
+                                .cloned()
+                                .map(|(name, reaction)| vec![name.into(), reaction.into()])
+                                .collect(),
                         }
                         Notes {
                             li { "隅反力は板を押さえる向きを正とする" }
@@ -544,19 +517,13 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                     }
                     Block {
                         Caption { "釣り合い" }
-                        Table { fixed: true,
-                            thead {
-                                HeadRow {
-                                    HeadCell { "ΣV − ΣR（kN）" }
-                                    HeadCell { "p·Lx·Ly（kN）" }
-                                }
-                            }
-                            tbody {
-                                Row {
-                                    DecimalCell { value: reactions, pad: 0 }
-                                    DecimalCell { value: load, pad: 0 }
-                                }
-                            }
+                        Table {
+                            fixed: true,
+                            columns: vec![
+                                TableColumn::number("ΣV − ΣR").unit("kN"),
+                                TableColumn::number("p·Lx·Ly").unit("kN"),
+                            ],
+                            rows: vec![vec![reactions.into(), load.into()]],
                         }
                         Notes {
                             li { "ΣV は辺の反力の合計" }
@@ -596,7 +563,7 @@ fn FigureBlock(quantity: Signal<Quantity>, figure: Option<PlateFigure>) -> Eleme
                     }
                 },
                 None => rsx! {
-                    p { {NOT_COMPUTED} }
+                    p { {NO_VALUE} }
                 },
             }
         }
@@ -629,39 +596,30 @@ fn QuantitySwitch(quantity: Signal<Quantity>) -> Element {
 /// 列の見出しに、位置の表は表の名前に書く
 #[component]
 fn EdgeTable(edges: Vec<EdgeRow>, positions: bool) -> Element {
-    let pick: fn(&Maximum) -> &str = if positions {
-        |m| &m.along
-    } else {
-        |m| &m.value
-    };
-    let columns: [fn(&EdgeRow) -> &Maximum; 3] =
-        [|r| &r.max_moment, |r| &r.max_shear, |r| &r.max_reaction];
-    let pads = columns.map(|column| point_pads(edges.iter().map(|r| pick(column(r)))));
-    let heads = if positions {
-        ["M", "Q", "V"]
-    } else {
-        ["M（kN·m/m）", "Q（kN/m）", "V（kN/m）"]
-    };
-    rsx! {
-        Table { fixed: true,
-            thead {
-                HeadRow {
-                    HeadCell { left: true, "辺" }
-                    for head in heads {
-                        HeadCell { "{head}" }
-                    }
-                }
-            }
-            tbody {
-                for (i , row) in edges.iter().enumerate() {
-                    Row {
-                        TextCell { "{row.name}" }
-                        for (column , pads) in columns.into_iter().zip(&pads) {
-                            DecimalCell { value: pick(column(row)).to_string(), pad: pads[i] }
-                        }
-                    }
-                }
-            }
+    let pick = |m: &Maximum| {
+        if positions {
+            m.along.clone()
+        } else {
+            m.value.clone()
         }
+    };
+    let heads = [("M", "kN·m/m"), ("Q", "kN/m"), ("V", "kN/m")].map(|(head, unit)| {
+        let column = TableColumn::number(head);
+        if positions { column } else { column.unit(unit) }
+    });
+    let columns = [TableColumn::name("辺")].into_iter().chain(heads).collect();
+    let rows = edges
+        .iter()
+        .map(|row| {
+            vec![
+                row.name.clone().into(),
+                pick(&row.max_moment).into(),
+                pick(&row.max_shear).into(),
+                pick(&row.max_reaction).into(),
+            ]
+        })
+        .collect();
+    rsx! {
+        Table { fixed: true, columns, rows }
     }
 }

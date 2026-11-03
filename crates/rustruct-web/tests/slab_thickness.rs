@@ -105,7 +105,7 @@ fn readout(change: impl FnOnce(&mut SlabInputs)) -> SlabReadout {
     SlabReadout::from_inputs(&inputs)
 }
 
-fn point_values(p: &PointRow) -> [&str; 7] {
+fn point_values(p: &PointRow) -> [Option<&str>; 7] {
     [
         &p.required_thickness,
         &p.governing,
@@ -115,11 +115,11 @@ fn point_values(p: &PointRow) -> [&str; 7] {
         &p.amplified_deflection,
         &p.allowable_deflection,
     ]
-    .map(String::as_str)
+    .map(Option::as_deref)
 }
 
-fn shared_values(s: &SharedRow) -> [&str; 3] {
-    [&s.young_modulus, &s.rc_unit_weight, &s.wp].map(String::as_str)
+fn shared_values(s: &SharedRow) -> [Option<&str>; 3] {
+    [&s.young_modulus, &s.rc_unit_weight, &s.wp].map(Option::as_deref)
 }
 
 #[test]
@@ -127,12 +127,12 @@ fn the_initial_point_is_governed_by_the_deflection_ratio_at_its_limit() {
     let r = readout(|_| {});
     assert!(r.errors.is_empty() && !r.no_criteria && r.warning.is_none());
     let p = &r.point;
-    assert_eq!(p.governing, "変形角");
+    assert_eq!(p.governing.as_deref(), Some("変形角"));
     // 変形角が決めるので、増大後たわみ = 許容たわみ = 4000/400
-    assert_eq!(p.amplified_deflection, "10.00");
-    assert_eq!(p.allowable_deflection, "10.00");
+    assert_eq!(p.amplified_deflection.as_deref(), Some("10.00"));
+    assert_eq!(p.allowable_deflection.as_deref(), Some("10.00"));
     // 弾性たわみ = 10 / 変形増大係数 16 = 0.625 ちょうど。四捨五入で 0.63（ADR site-0013）
-    assert_eq!(p.elastic_deflection, "0.63");
+    assert_eq!(p.elastic_deflection.as_deref(), Some("0.63"));
 }
 
 #[test]
@@ -152,10 +152,10 @@ fn turning_on_the_table_and_blanking_the_ratio_leaves_only_the_minimum_thickness
     });
     assert!(r.errors.is_empty() && !r.no_criteria);
     // wp = 2800 N/m²、lx = 4000 mm、λ = 1.25: 0.02·(0.55/0.65)·(1+0.28+0.4)·4000 = 113.7
-    assert_eq!(r.point.required_thickness, "113.7");
-    assert_eq!(r.point.governing, "表18-1");
+    assert_eq!(r.point.required_thickness.as_deref(), Some("113.7"));
+    assert_eq!(r.point.governing.as_deref(), Some("表18-1"));
     // たわみに効く条件が無いので、許容たわみは無い
-    assert_eq!(r.point.allowable_deflection, "—");
+    assert_eq!(r.point.allowable_deflection, None);
 }
 
 #[test]
@@ -163,9 +163,12 @@ fn blank_criteria_with_the_table_off_is_an_error_and_nothing_is_evaluated() {
     let r = readout(|i| i.set(SlabField::DeflectionRatio, ""));
     assert!(r.no_criteria);
     assert!(r.errors.is_empty());
-    assert!(point_values(&r.point).iter().all(|v| *v == "—"), "{r:#?}");
+    assert!(point_values(&r.point).iter().all(Option::is_none), "{r:#?}");
     // 共有値は条件だけで決まるので出る
-    assert_eq!(shared_values(&r.shared), ["2.27E+04", "24.0", "2,800"]);
+    assert_eq!(
+        shared_values(&r.shared),
+        [Some("2.27E+04"), Some("24.0"), Some("2,800")]
+    );
 }
 
 #[test]
@@ -181,8 +184,11 @@ fn an_unreadable_span_leaves_the_shared_values_and_dashes_the_point() {
             (SlabField::SpanY, "数値で入れる"),
         ]
     );
-    assert!(point_values(&r.point).iter().all(|v| *v == "—"), "{r:#?}");
-    assert_eq!(shared_values(&r.shared), ["2.27E+04", "24.0", "2,800"]);
+    assert!(point_values(&r.point).iter().all(Option::is_none), "{r:#?}");
+    assert_eq!(
+        shared_values(&r.shared),
+        [Some("2.27E+04"), Some("24.0"), Some("2,800")]
+    );
 }
 
 #[test]
@@ -206,18 +212,18 @@ fn unreadable_conditions_are_named_with_their_reasons() {
         ]
     );
     assert!(!r.no_criteria, "読めない欄があるときは「無い」と言わない");
-    assert!(shared_values(&r.shared).iter().all(|v| *v == "—"));
-    assert!(point_values(&r.point).iter().all(|v| *v == "—"));
+    assert!(shared_values(&r.shared).iter().all(Option::is_none));
+    assert!(point_values(&r.point).iter().all(Option::is_none));
 }
 
 #[test]
 fn fc_above_36_uses_the_heavier_rc_unit_weight_and_warns_outside_the_range() {
     let r = readout(|i| i.set(SlabField::Fc, "42"));
-    assert_eq!(r.shared.rc_unit_weight, "24.5");
+    assert_eq!(r.shared.rc_unit_weight.as_deref(), Some("24.5"));
     assert_eq!(r.warning, None);
     let r = readout(|i| i.set(SlabField::Fc, "120"));
     assert!(r.warning.is_some(), "{r:#?}");
-    assert_ne!(r.point.required_thickness, "—");
+    assert!(r.point.required_thickness.is_some());
 }
 
 // 等厚曲線の図（Issue #75）
@@ -265,7 +271,12 @@ fn the_page_shows_the_iso_thickness_figure_after_the_results() {
 #[test]
 fn the_curves_around_the_point_are_numbered_every_10_mm_and_bracket_its_thickness() {
     let figure = figure(|_| {}).expect("初期値で図が出る");
-    let t_req: f64 = readout(|_| {}).point.required_thickness.parse().unwrap();
+    let t_req: f64 = readout(|_| {})
+        .point
+        .required_thickness
+        .expect("初期値で解ける")
+        .parse()
+        .unwrap();
     let numbers = thickness_numbers(&figure.light_svg);
     assert!(!numbers.is_empty(), "{}", figure.light_svg);
     assert!(
@@ -423,6 +434,7 @@ fn the_color_edge_curves_around_the_point_are_numbered_even_where_the_mark_sits_
         let t_req: f64 = readout(|i| i.set(SlabField::SpanX, lx.as_str()))
             .point
             .required_thickness
+            .expect("解ける")
             .parse()
             .unwrap();
         let numbers = thickness_numbers(&svg);
