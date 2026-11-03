@@ -60,12 +60,6 @@ fn node_positions(b: f64, divisions: usize) -> (Vec<f64>, Vec<f64>) {
     }
 }
 
-/// 短い辺を `divisions` 分割したときの (x の分割数, y の分割数)。分割数のテスト（ADR kirchhoff-plate-0006）のためにある
-pub fn mesh_divisions(b: f64, divisions: usize) -> (usize, usize) {
-    let (xs, ys) = node_positions(b, divisions);
-    (xs.len() - 1, ys.len() - 1)
-}
-
 /// 1 次元のエルミート多項式。半長 h の区間の ξ ∈ [−1, 1] での 4 つの基底（ξ = −1 の値と傾き、ξ = 1 の値と傾き）
 /// について、値と x についての 1〜3 階の導関数を `[基底][階数]` で返す
 fn hermite(h: f64, xi: f64) -> [[f64; 4]; 4] {
@@ -782,6 +776,30 @@ impl Solver for FiniteElement {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kirchhoff_plate::DIVISIONS;
+
+    /// 短い辺を `divisions` 分割したときの (x の分割数, y の分割数)
+    fn mesh_divisions(b: f64, divisions: usize) -> (usize, usize) {
+        let (xs, ys) = node_positions(b, divisions);
+        (xs.len() - 1, ys.len() - 1)
+    }
+
+    #[test]
+    fn mesh_divisions_grow_with_the_aspect_ratio_and_stay_even() {
+        assert_eq!(mesh_divisions(1.0, DIVISIONS), (DIVISIONS, DIVISIONS));
+        let (nx, ny) = mesh_divisions(2.0, DIVISIONS);
+        assert_eq!(nx, DIVISIONS);
+        assert!(ny > DIVISIONS && ny.is_multiple_of(2));
+        let (nx4, ny4) = mesh_divisions(4.0, DIVISIONS);
+        assert_eq!(nx4, DIVISIONS);
+        assert!(ny4 > ny);
+        assert_eq!(mesh_divisions(0.25, DIVISIONS), (ny4, nx4));
+        // 縦横比が大きいと長い辺の分割数は上限で止まる
+        let (_, ny100) = mesh_divisions(100.0, DIVISIONS);
+        let (_, ny1000) = mesh_divisions(1000.0, DIVISIONS);
+        assert_eq!(ny100, ny1000);
+        assert!(ny100.is_multiple_of(2));
+    }
 
     /// 要素の剛性に、節点の自由度として与えた多項式のたわみを掛け、ひずみエネルギーの 2 倍を返す
     fn energy(hx: f64, hy: f64, nu: f64, w: impl Fn(f64, f64) -> [f64; 4]) -> f64 {
