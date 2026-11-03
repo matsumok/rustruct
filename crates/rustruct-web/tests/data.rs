@@ -111,7 +111,7 @@ fn concrete_page_opens_at_fc_24_with_its_results() {
     );
     assert_in_order(
         &text_of(&html),
-        &["23.0", "2.27×10⁴", "E = 3.35×10⁴ × (γ/24)² × (Fc/60)1/3"],
+        &["23.0", "2.27E+04", "E = 3.35×10⁴ × (γ/24)² × (Fc/60)1/3"],
     );
 }
 
@@ -155,9 +155,9 @@ fn readout_shows_allowable_stresses_to_three_figures() {
 #[test]
 fn readout_rounds_unit_weights_to_one_decimal_and_e_to_three_figures() {
     for (fc, gamma, e) in [
-        ("24", "23.0", "2.27×10⁴"),
-        ("60", "24.0", "3.35×10⁴"),
-        ("100", "25.0", "4.31×10⁴"),
+        ("24", "23.0", "2.27E+04"),
+        ("60", "24.0", "3.35E+04"),
+        ("100", "25.0", "4.31E+04"),
     ] {
         assert_eq!(computed(fc), (gamma.into(), e.into(), None), "Fc {fc}");
     }
@@ -204,7 +204,7 @@ fn concrete_page_reads_input_then_results_then_their_basis() {
         &text,
         &[
             "Fc（N/mm²）",
-            "2.27×10⁴",
+            "2.27E+04",
             "0.730",
             "Fc ≦ 36",
             "E = 3.35×10⁴ × (γ/24)² × (Fc/60)1/3",
@@ -222,11 +222,11 @@ fn units_sit_in_column_heads_and_table_titles_not_after_numbers() {
             "γ（kN/m³）",
             "E（N/mm²）",
             "23.0",
-            "2.27×10⁴",
+            "2.27E+04",
             "許容応力度（N/mm²）",
         ],
     );
-    for after_number in ["23.0 kN/m³", "2.27×10⁴ N/mm²"] {
+    for after_number in ["23.0 kN/m³", "2.27E+04 N/mm²"] {
         assert!(
             !text.contains(after_number),
             "数字の後に単位がある: {after_number}"

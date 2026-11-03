@@ -2,7 +2,7 @@
 //! 数値はすべて `rustruct-types` から引き、ここでは表示の桁だけを決める（Issue #19）。
 
 use dioxus::prelude::*;
-use numerus::{fixed, point_pads, scaled, significant};
+use numerus::{exponential, fixed, point_pads, significant};
 use rustruct_types::allowable_stress::AllowableStress;
 use rustruct_types::concrete::{BarPosition, Concrete, ConcreteKind};
 use rustruct_types::quantity::Stress;
@@ -17,10 +17,10 @@ use crate::{Page, Route, RouteList};
 /// 計算できない値の表示（`docs/ui-decisions.md`「エラーと警告」）
 const NOT_COMPUTED: &str = "—";
 
-/// ヤング係数 E の欄。仮数を有効数字 3 桁で、×10⁴ まで値に書く（「2.27×10⁴」。ADR site-0013）。
+/// ヤング係数 E の欄。有効数字 3 桁で、値に E まで書く（「2.27E+04」。ADR site-0013）。
 /// 見出しは単位だけ（「E（N/mm²）」）。Data のコンクリートのページと必要スラブ厚さのページが同じ書き方を使う
 pub(crate) fn young_modulus(e: Stress) -> String {
-    scaled(e.as_n_per_mm2(), 4, 3)
+    exponential(e.as_n_per_mm2(), 3)
 }
 
 /// `/data`。Data の一覧（名前＋一行＋パス）。
