@@ -1,18 +1,10 @@
-//! 必要スラブ厚さ Model。言葉は `docs/tools/slab-thickness/GLOSSARY.md`、スラブの形（Lx・Ly）は
+//! 必要スラブ厚さの条件とスパン。言葉は `docs/tools/slab-thickness/GLOSSARY.md`、スラブの形（Lx・Ly）は
 //! `docs/slab/GLOSSARY.md`、コンクリートは `docs/materials/GLOSSARY.md`。
-//! 保存するのは条件と検討点だけで、共有値・必要スラブ厚・決定条件は導出できるので `rustruct-calc` が求める。
+//! 共有値・必要スラブ厚・決定条件は導出できるので `rustruct-calc` が求める。
+//! Model（条件と検討点の並び）の型は、保存形式（ADR site-0003）を実装するときに足す。
 
 use crate::concrete::Concrete;
 use crate::quantity::{AreaLoad, Length};
-
-/// 必要スラブ厚さ Model。すべての検討点に共通の条件と、検討点の並び。
-/// 保存形式（serde）は、保存を実装するときに Kirchhoff 板 Model と合わせて付ける
-#[derive(Debug, Clone, PartialEq)]
-pub struct Model {
-    pub conditions: Conditions,
-    /// 検討点。並びは利用者が並べた順
-    pub points: Vec<StudyPoint>,
-}
 
 /// すべての検討点に共通の条件。荷重・変形増大係数・クライテリアが読めるかは計算が答える
 /// （条件欄を打ち直す途中を表せるように、生成では弾かない。Fc は [`Concrete`] が弾く）
@@ -50,13 +42,6 @@ pub enum Criterion {
     DeflectionAbsolute,
     /// 表18-1 最小厚さ
     MinThickness,
-}
-
-/// 検討点。名称と (Lx, Ly) の組で表す、検討の対象とする1枚のスラブ。
-#[derive(Debug, Clone, PartialEq)]
-pub struct StudyPoint {
-    pub name: String,
-    pub spans: Spans,
 }
 
 /// スラブの x方向スパン Lx と y方向スパン Ly。どちらも内法（ADR slab-0001）で、

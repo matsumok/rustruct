@@ -2,8 +2,8 @@
 //! 一箇所で行う（ADR kirchhoff-plate-0002）。座標は代表の向きの板の中央原点、x の半辺長 1、y の半辺長 b = Ly/Lx。
 //! 実装は有限要素（`finite_element`。画面が使う）と、参照解の級数（`series`。照合テストだけが使う）。
 //!
-//! 辺の反力だけは例外で、有限要素が節点の反力から直接返せるように `edge_reaction` を分けてある。級数解は既定の
-//! 実装（辺の導関数からの換算）をそのまま使う。
+//! 辺の反力だけは例外で、有限要素が節点の反力から直接返せるように辺の点（`EdgePoint`）に含める。級数解は
+//! 辺の導関数から換算する（`series`）。
 
 use std::ops::Add;
 
@@ -38,42 +38,65 @@ impl Add for Derivatives {
     }
 }
 
+/// 辺の上の 1 点。たわみの導関数と、無次元の辺の反力（p = 1、D = 1。支える向きが正）
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct EdgePoint {
+    pub derivatives: Derivatives,
+    pub reaction: f64,
+}
+
 pub trait Solver {
-    /// 板の内部の点。V はここからは求めない（辺の反力は `edge_reaction` からだけ）
+    /// 板の内部の点。V はここからは求めない（辺の反力は `edge` からだけ）
     fn interior(&self, x: f64, y: f64) -> Derivatives;
 
-    /// 辺の上の点。`along` は辺に沿う無次元座標（x の辺なら y、y の辺なら x）。
-    /// 級数解はその辺に沿う向きの級数で評価する
-    fn edge(&self, edge: Edge, along: f64) -> Derivatives;
+    /// 辺の上の点。`along` は辺に沿う無次元座標（x の辺なら y、y の辺なら x）
+    fn edge(&self, edge: Edge, along: f64) -> EdgePoint;
 
-    /// 辺の反力（無次元、p = 1、D = 1。支える向きが正）。既定は辺の導関数からの換算で、せん断力とねじり
-    /// モーメントの変化の和 −(w_xxx + (2 − ν) w_xyy)（x の辺。y の辺は x と y を入れ替える）を、座標の大きい側の
-    /// 辺では符号を変えて支える向きにする
-    fn edge_reaction(&self, edge: Edge, along: f64, nu: f64) -> f64 {
-        let d = self.edge(edge, along);
-        match edge {
-            Edge::X0 => -(d.w_xxx + (2.0 - nu) * d.w_xyy),
-            Edge::XLx => d.w_xxx + (2.0 - nu) * d.w_xyy,
-            Edge::Y0 => -(d.w_yyy + (2.0 - nu) * d.w_xxy),
-            Edge::YLy => d.w_yyy + (2.0 - nu) * d.w_xxy,
-        }
-    }
-
-    /// 辺の反力の辺に沿った積分（無次元）。`half_along` は辺の半長（x の辺なら b、y の辺なら 1）。既定は
-    /// `edge_reaction` の台形則で、級数解の辺の反力は辺の上で滑らかなので細かい等分で足りる。有限要素は
-    /// 節点の反力の和を厳密に返す
-    fn edge_reaction_total(&self, edge: Edge, half_along: f64, nu: f64) -> f64 {
-        let divisions = 1000;
-        let step = 2.0 * half_along / divisions as f64;
-        (0..divisions)
-            .map(|k| {
-                let a = -half_along + step * k as f64;
-                (self.edge_reaction(edge, a, nu) + self.edge_reaction(edge, a + step, nu)) / 2.0
-                    * step
-            })
-            .sum()
-    }
+    /// 辺の反力の辺に沿った積分（無次元）
+    fn edge_reaction_total(&self, edge: Edge) -> f64;
 
     /// 隅での w_xy。隅反力の元
     fn corner_w_xy(&self, corner: Corner) -> f64;
+
+    /// 板全体で |w| が最大の点の座標 (x, y)
+    fn deflection_maximum(&self) -> (f64, f64);
+}
+
+/// 格子 `xs` × `ys`（両端が辺）の点のうち |w| が最大の点を探し、その点に接する格子の目の中で詰めて、|w| が
+/// 最大の点の座標を返す。詰め方は、今の点から ±h の範囲に 9 × 9 点を置き（目の外は目の端に寄せる）、|w| が
+/// 最大の点に移って h を 1/4 にする、を 12 回。最初の h は接する目の幅で、最後の点の間隔はその 1e-8 の桁
+pub fn deflection_maximum(w: impl Fn(f64, f64) -> f64, xs: &[f64], ys: &[f64]) -> (f64, f64) {
+    const SIDE: usize = 4;
+    const ROUNDS: usize = 12;
+    let (nx, ny) = (xs.len() - 1, ys.len() - 1);
+    let magnitude = |x: f64, y: f64| w(x, y).abs();
+    let (mut best_i, mut best_j, mut best) = (0, 0, f64::NEG_INFINITY);
+    for (j, &y) in ys.iter().enumerate() {
+        for (i, &x) in xs.iter().enumerate() {
+            let m = magnitude(x, y);
+            if m > best {
+                (best_i, best_j, best) = (i, j, m);
+            }
+        }
+    }
+    let (x_lo, x_hi) = (xs[best_i.saturating_sub(1)], xs[(best_i + 1).min(nx)]);
+    let (y_lo, y_hi) = (ys[best_j.saturating_sub(1)], ys[(best_j + 1).min(ny)]);
+    let (mut x, mut y) = (xs[best_i], ys[best_j]);
+    let (mut hx, mut hy) = ((x_hi - x).max(x - x_lo), (y_hi - y).max(y - y_lo));
+    for _ in 0..ROUNDS {
+        let (cx, cy) = (x, y);
+        for a in 0..=2 * SIDE {
+            for b in 0..=2 * SIDE {
+                let px = (cx + (a as f64 - SIDE as f64) * hx / SIDE as f64).clamp(x_lo, x_hi);
+                let py = (cy + (b as f64 - SIDE as f64) * hy / SIDE as f64).clamp(y_lo, y_hi);
+                let m = magnitude(px, py);
+                if m > best {
+                    (x, y, best) = (px, py, m);
+                }
+            }
+        }
+        hx /= SIDE as f64;
+        hy /= SIDE as f64;
+    }
+    (x, y)
 }

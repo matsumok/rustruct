@@ -1,7 +1,10 @@
 //! Kirchhoff 板の曲げ。言葉は `docs/tools/kirchhoff-plate/GLOSSARY.md`、判断は同じ所の ADR。
 //!
 //! 公開の入口は [`solve`] 一つ。入力（[`Plate`]）から [`Solution`] を得て、点の応答、等間隔グリッドの
-//! 応答、辺に沿った辺の反力の分布とその合計、辺の最大値、隅ごとの隅反力を取る。公開の座標は隅が原点
+//! 応答、辺に沿った辺の反力の分布とその合計、辺の最大値、最大たわみ（ADR kirchhoff-plate-0009）、隅ごとの隅反力、荷重の合計と
+//! 釣り合いを取る。
+//! 隅の近くの値の見せ方（ADR kirchhoff-plate-0008）の規則もここが持ち（[`CORNER_MARGIN`]、[`Solution::edge_maximum`]、
+//! [`Solution::near_corner`]）、画面と照合はそれを呼ぶ。公開の座標は隅が原点
 //! （x は 0 から Lx、y は 0 から Ly）。符号は ADR kirchhoff-plate-0004。
 //!
 //! 内部では、支持条件の組を 21 種の型と写し方に分け（[`SupportType`]、ADR kirchhoff-plate-0003）、代表の向きの板を
@@ -24,13 +27,24 @@ use rustruct_types::kirchhoff_plate::{Corner, Edge, Support};
 use rustruct_types::quantity::{Force, ForcePerLength, Length, MomentPerLength};
 
 pub use finite_element::mesh_divisions;
-use solver::{Derivatives, Solver};
+use solver::{Derivatives, EdgePoint, Solver};
 use support_type::RepresentativeResponse;
 pub use support_type::{Mapping, SupportType};
 
 /// 有限要素の短い辺の分割数。長い辺は辺長に合わせて増やす（[`mesh_divisions`]）。利用者の入力にも Model にも
 /// 持たない定数で、値は分割数を倍にしたときの変化が収まることで決めた（ADR kirchhoff-plate-0006）
 pub const DIVISIONS: usize = 40;
+
+/// 隅の近くとして除く幅。辺長に対する比。自由辺のある組で、分布図の色の幅と、辺のせん断力・辺の反力の
+/// 最大値から除く（ADR kirchhoff-plate-0008）。照合で除く幅と同じ（ADR kirchhoff-plate-0002）
+pub const CORNER_MARGIN: f64 = 0.05;
+
+/// 辺の上の位置（辺長に対する比）が、両端から [`CORNER_MARGIN`] より端に寄っているか。評価点がちょうど
+/// 5 % に来たときに丸めで除かないよう、少しの幅を見る
+fn near_end(fraction: f64) -> bool {
+    const ROUNDING: f64 = 1e-9;
+    fraction < CORNER_MARGIN - ROUNDING || fraction > 1.0 - CORNER_MARGIN + ROUNDING
+}
 
 /// 入力が不正な理由。辺長・板厚・ヤング係数は正の有限値、荷重は有限値（0 と上向きも可）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,6 +133,14 @@ pub struct EdgeMaximum {
     pub reaction: Extreme<ForcePerLength>,
 }
 
+/// たわみの最大（GLOSSARY）。板全体の |w| の最大の点のたわみ（下向き正）と、その位置（隅が原点）
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DeflectionMaximum {
+    pub x: Length,
+    pub y: Length,
+    pub w: Length,
+}
+
 /// 解。入力と、正規化で決まった型と写し方、代表の向きの板の解き方（係数を持つ）。
 /// 代表の向きの辺長や曲げ剛性は入力から導けるので持たない
 pub struct Solution {
@@ -152,8 +174,9 @@ pub fn solve_with_divisions(plate: &Plate, divisions: usize) -> Result<Solution,
 /// だけに級数解があり、ほかの型は `Ok(None)`。`terms` は級数の項数で、参照解の値は [`series::TERMS`]
 pub fn solve_with_series(plate: &Plate, terms: usize) -> Result<Option<Solution>, PlateError> {
     let (support_type, mapping, b) = normalize(plate)?;
+    let nu = plate.poisson_ratio.value();
     Ok(
-        series::solve(support_type, b, terms)?.map(|solver| Solution {
+        series::solve(support_type, b, nu, terms)?.map(|solver| Solution {
             plate: *plate,
             support_type,
             mapping,
@@ -167,7 +190,7 @@ pub fn solve_with_series(plate: &Plate, terms: usize) -> Result<Option<Solution>
 fn normalize(plate: &Plate) -> Result<(SupportType, Mapping, f64), PlateError> {
     validate(plate)?;
     let (support_type, mapping) = SupportType::of(plate.supports);
-    if matches!(support_type, SupportType::RRRR | SupportType::RRRS) {
+    if !support_type.is_stable() {
         return Err(PlateError::Unstable(support_type));
     }
     let (rep_lx, rep_ly) = mapping.representative_lengths(plate.lx.as_mm(), plate.ly.as_mm());
@@ -249,13 +272,14 @@ impl Solution {
     }
 
     /// 辺に沿った応答。辺を `divisions` 等分した divisions + 1 点を、始点（座標 0 の端）から順に。
-    /// 境界条件で 0 の値（単純支持と自由の辺の曲げモーメント、自由の辺の反力）は、級数の打ち切りの屑を
-    /// 残さずちょうど 0 で返す
+    /// 境界条件で 0 の曲げモーメント（単純支持と自由の辺）は、ちょうど 0 で返す。有限要素はこの条件を弱い形で
+    /// しか満たさず、辺の上の値は 0 にならない。自由辺の反力は解き方が厳密に 0 で返す
     pub fn edge(&self, edge: Edge, divisions: usize) -> Vec<EdgeSample> {
         let (lx, ly) = (self.plate.lx.as_mm(), self.plate.ly.as_mm());
-        let support = self.plate.supports.at(edge);
-        let moment_vanishes = matches!(support, Support::SimplySupported | Support::Free);
-        let reaction_vanishes = support == Support::Free;
+        let moment_vanishes = matches!(
+            self.plate.supports.at(edge),
+            Support::SimplySupported | Support::Free
+        );
         let length = match edge {
             Edge::X0 | Edge::XLx => ly,
             Edge::Y0 | Edge::YLy => lx,
@@ -270,8 +294,7 @@ impl Solution {
                     Edge::X0 | Edge::XLx => self.eta(rep_along),
                     Edge::Y0 | Edge::YLy => self.xi(rep_along),
                 };
-                let d = self.solver.edge(rep_edge, nd);
-                let r = self.edge_response(rep_edge, nd, d);
+                let r = self.edge_response(rep_edge, self.solver.edge(rep_edge, nd));
                 EdgeSample {
                     along: Length::mm(along),
                     moment: MomentPerLength::nmm_per_mm(if moment_vanishes {
@@ -282,11 +305,7 @@ impl Solution {
                     shear: ForcePerLength::n_per_mm(
                         self.mapping.edge_shear_back(rep_edge, r.shear),
                     ),
-                    reaction: ForcePerLength::n_per_mm(if reaction_vanishes {
-                        0.0
-                    } else {
-                        r.reaction
-                    }),
+                    reaction: ForcePerLength::n_per_mm(r.reaction),
                 }
             })
             .collect()
@@ -295,32 +314,89 @@ impl Solution {
     /// 辺の反力の合計 [N]（辺に沿った積分、支える向きが正）。辺の反力の合計 − 隅反力の合計 = 荷重の合計
     /// （ADR kirchhoff-plate-0004）。有限要素は節点の反力の和そのもので、参照解の級数は辺の反力の数値積分
     pub fn total_reaction(&self, edge: Edge) -> Force {
-        let rep_edge = self.mapping.edge(edge);
-        let (rep_lx, rep_ly) = self.representative_lengths();
-        let half_along = match rep_edge {
-            Edge::X0 | Edge::XLx => rep_ly / rep_lx,
-            Edge::Y0 | Edge::YLy => 1.0,
-        };
         let a = self.half_x();
-        let v = self
-            .solver
-            .edge_reaction_total(rep_edge, half_along, self.nu());
+        let v = self.solver.edge_reaction_total(self.mapping.edge(edge));
         Force::n(self.p() * a * a * v)
     }
 
-    /// 辺の最大値。`edge` と同じ評価点から、曲げモーメント・せん断力・辺の反力それぞれの絶対値の最大と位置
-    pub fn edge_maximum(&self, edge: Edge, divisions: usize) -> EdgeMaximum {
-        let samples = self.edge(edge, divisions);
+    /// 荷重の合計 p · Lx · Ly（下向きが正）
+    pub fn total_load(&self) -> Force {
+        self.plate.load.over(self.plate.lx, self.plate.ly)
+    }
+
+    /// 辺の反力の合計 − 隅反力の合計（支える向きが正）。釣り合いでは荷重の合計 [`Self::total_load`] に等しい
+    /// （ADR kirchhoff-plate-0004、ADR kirchhoff-plate-0007）
+    pub fn net_reaction(&self) -> Force {
+        let edges: f64 = Edge::ALL
+            .iter()
+            .map(|&e| self.total_reaction(e).as_n())
+            .sum();
+        let corners: f64 = Corner::ALL
+            .iter()
+            .map(|&c| self.corner_reaction(c).as_n())
+            .sum();
+        Force::n(edges - corners)
+    }
+
+    /// 辺の最大値。`edge` と同じ評価点から、曲げモーメント・せん断力・辺の反力それぞれの絶対値の最大と位置。
+    /// 自由辺のある組では、固定辺と自由辺の隅で発散するせん断力と辺の反力を、両端から辺長の
+    /// [`CORNER_MARGIN`] を除いた範囲で取る。曲げモーメントは隅まで含める（ADR kirchhoff-plate-0008）。
+    ///
+    /// 辺を等分する数 `DIVISIONS` は型の引数で、両端を除いても評価点が残るよう 2 以上でなければ
+    /// コンパイルが通らない。
+    ///
+    /// ```no_run
+    /// # use rustruct_calc::kirchhoff_plate::{Plate, solve};
+    /// # use rustruct_types::kirchhoff_plate::{Edge, Support, Supports};
+    /// # use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
+    /// # let plate = Plate {
+    /// #     lx: Length::mm(4000.0),
+    /// #     ly: Length::mm(5000.0),
+    /// #     thickness: Length::mm(200.0),
+    /// #     young_modulus: Stress::n_per_mm2(20_000.0),
+    /// #     poisson_ratio: PoissonRatio::new(0.2).unwrap(),
+    /// #     load: AreaLoad::kn_per_m2(10.0),
+    /// #     supports: Supports { y_ly: Support::Free, ..Supports::all(Support::Fixed) },
+    /// # };
+    /// let maximum = solve(&plate).unwrap().edge_maximum::<2>(Edge::X0);
+    /// ```
+    ///
+    /// ```compile_fail
+    /// # use rustruct_calc::kirchhoff_plate::{Plate, solve};
+    /// # use rustruct_types::kirchhoff_plate::{Edge, Support, Supports};
+    /// # use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
+    /// # let plate = Plate {
+    /// #     lx: Length::mm(4000.0),
+    /// #     ly: Length::mm(5000.0),
+    /// #     thickness: Length::mm(200.0),
+    /// #     young_modulus: Stress::n_per_mm2(20_000.0),
+    /// #     poisson_ratio: PoissonRatio::new(0.2).unwrap(),
+    /// #     load: AreaLoad::kn_per_m2(10.0),
+    /// #     supports: Supports { y_ly: Support::Free, ..Supports::all(Support::Fixed) },
+    /// # };
+    /// let maximum = solve(&plate).unwrap().edge_maximum::<1>(Edge::X0);
+    /// ```
+    pub fn edge_maximum<const DIVISIONS: usize>(&self, edge: Edge) -> EdgeMaximum {
+        const {
+            assert!(
+                DIVISIONS >= 2,
+                "両端を除いても評価点が残るよう、辺は 2 等分以上"
+            )
+        };
+        let samples = self.edge(edge, DIVISIONS);
+        let free = self.plate.supports.has_free_edge();
+        let length = samples.last().expect("評価点は 1 つ以上").along.as_mm();
         // 量の型を跨いで比べるので、内部の単位の数で比べる
-        let extreme = |magnitude: fn(&EdgeSample) -> f64| {
+        let extreme = |magnitude: fn(&EdgeSample) -> f64, skip_ends: bool| {
             samples
                 .iter()
+                .filter(|s| !skip_ends || !near_end(s.along.as_mm() / length))
                 .max_by(|a, b| magnitude(a).abs().total_cmp(&magnitude(b).abs()))
-                .expect("評価点は 1 つ以上")
+                .expect("両端を除いても評価点は 1 つ以上")
         };
-        let moment = extreme(|s| s.moment.as_nmm_per_mm());
-        let shear = extreme(|s| s.shear.as_n_per_mm());
-        let reaction = extreme(|s| s.reaction.as_n_per_mm());
+        let moment = extreme(|s| s.moment.as_nmm_per_mm(), false);
+        let shear = extreme(|s| s.shear.as_n_per_mm(), free);
+        let reaction = extreme(|s| s.reaction.as_n_per_mm(), free);
         EdgeMaximum {
             moment: Extreme {
                 value: moment.moment,
@@ -335,6 +411,49 @@ impl Solution {
                 along: reaction.along,
             },
         }
+    }
+
+    /// たわみの最大。有限要素の節点の w から |w| が最大の節点を選び、その節点に接する要素の中を形状関数の w で
+    /// 詰めた点（ADR kirchhoff-plate-0009）。同じ大きさの最大が板を辺に平行な中心線で折り返した点にもあるとき（対辺がともに
+    /// 自由な板など）は、原点に近い側（y、次に x の小さいほう）を返す
+    pub fn deflection_maximum(&self) -> DeflectionMaximum {
+        let (lx, ly) = (self.plate.lx.as_mm(), self.plate.ly.as_mm());
+        let (rep_lx, rep_ly) = self.representative_lengths();
+        let (xi, eta) = self.solver.deflection_maximum();
+        // 辺長に対する比で戻す。辺の上の点（ξ = ±1、η = ±b）が丸めで板の外や辺のすぐ内に出ない
+        let b = rep_ly / rep_lx;
+        let (x, y) = self.mapping.user_point(
+            rep_lx * (xi + 1.0) / 2.0,
+            rep_ly * (eta / b + 1.0) / 2.0,
+            lx,
+            ly,
+        );
+        let w = |x: f64, y: f64| {
+            self.at(Length::mm(x), Length::mm(y))
+                .expect("板の上の点")
+                .w
+                .as_mm()
+        };
+        let found = w(x, y);
+        // 折り返した点の |w| が丸めの幅で等しければ同じ大きさの最大とみなす
+        const SAME: f64 = 1e-9;
+        let (x, y) = [(x, y), (lx - x, y), (x, ly - y), (lx - x, ly - y)]
+            .into_iter()
+            .filter(|&(px, py)| (w(px, py).abs() - found.abs()).abs() <= SAME * found.abs())
+            .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.total_cmp(&b.0)))
+            .expect("見つけた点そのものは残る");
+        DeflectionMaximum {
+            x: Length::mm(x),
+            y: Length::mm(y),
+            w: Length::mm(w(x, y)),
+        }
+    }
+
+    /// 隅から辺長の [`CORNER_MARGIN`] 以内の点か（x と y のどちらも、端から辺長の 5 % より端に寄っている）。
+    /// 分布図の色の幅（ADR kirchhoff-plate-0008）と照合（ADR kirchhoff-plate-0002）が除く点。自由辺のある組だけ除くかは呼び手が
+    /// `Supports::has_free_edge` で決める
+    pub fn near_corner(&self, x: Length, y: Length) -> bool {
+        near_end(x.as_mm() / self.plate.lx.as_mm()) && near_end(y.as_mm() / self.plate.ly.as_mm())
     }
 
     /// 隅反力（板を下に押さえる向きが正）。R = 2 D (1 − ν) s_x s_y w_xy。s_x・s_y は隅の座標の符号
@@ -395,10 +514,9 @@ impl Solution {
     /// 辺の上の応答（内部の単位）。反力は解き方の無次元の辺の反力 v̂（支える向きが正。有限要素では節点の反力
     /// から、級数解では −(ŵ_xxx + (2 − ν) ŵ_xyy)、せん断力とねじりモーメントの変化の和）を V = p a v̂ で
     /// 有次元にする
-    fn edge_response(&self, edge: Edge, along: f64, d: Derivatives) -> EdgeResponse {
-        let r = self.point_response(d);
-        let (a, p, nu) = (self.half_x(), self.p(), self.nu());
-        let reaction = p * a * self.solver.edge_reaction(edge, along, nu);
+    fn edge_response(&self, edge: Edge, point: EdgePoint) -> EdgeResponse {
+        let r = self.point_response(point.derivatives);
+        let reaction = self.p() * self.half_x() * point.reaction;
         match edge {
             Edge::X0 | Edge::XLx => EdgeResponse {
                 moment: r.mx,

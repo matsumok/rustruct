@@ -22,6 +22,13 @@ impl Length {
     pub fn as_mm(self) -> f64 {
         self.0
     }
+    /// 1 m = 10³ mm
+    pub const fn m(value: f64) -> Self {
+        Self(value * 1e3)
+    }
+    pub fn as_m(self) -> f64 {
+        self.0 / 1e3
+    }
 }
 
 quantity!(
@@ -80,6 +87,9 @@ impl UnitWeight {
     pub fn as_kn_per_m3(self) -> f64 {
         self.0 * 1e6
     }
+    pub fn as_n_per_mm3(self) -> f64 {
+        self.0
+    }
 }
 
 quantity!(
@@ -107,6 +117,10 @@ impl AreaLoad {
     }
     pub fn as_n_per_m2(self) -> f64 {
         self.0 * 1e6
+    }
+    /// 辺長 `lx`・`ly` の長方形に一様に掛かるときの力の合計
+    pub fn over(self, lx: Length, ly: Length) -> Force {
+        Force(self.0 * lx.0 * ly.0)
     }
 }
 

@@ -43,6 +43,21 @@ fn unit_weights_follow_the_fc_table() {
 }
 
 #[test]
+fn unit_weight_table_rises_by_the_upper_fc() {
+    // γ を引くのは Fc が上限以下になる最初の区分なので、区分は上限の昇順に並ぶ
+    let table = ConcreteKind::Normal.unit_weight_table();
+    assert!(!table.is_empty(), "表が空");
+    for pair in table.windows(2) {
+        assert!(
+            pair[0].fc_upper < pair[1].fc_upper,
+            "上限 {:?} の次が {:?}",
+            pair[0].fc_upper,
+            pair[1].fc_upper
+        );
+    }
+}
+
+#[test]
 fn young_modulus_follows_the_rc_standard_formula() {
     // E = 3.35×10⁴ × (γ/24)² × (Fc/60)^(1/3)
     // Fc 60, γ 24 は係数がすべて 1 で 33500

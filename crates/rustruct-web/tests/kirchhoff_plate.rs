@@ -76,6 +76,10 @@ fn the_page_shows_the_results_of_the_fixed_plate_in_order() {
             "w（mm）",
             "Mx（kN·m/m）",
             "My（kN·m/m）",
+            "最大たわみ",
+            "w（mm）",
+            "x（m）",
+            "y（m）",
             "辺の最大値",
             "M（kN·m/m）",
             "Q（kN/m）",
@@ -136,7 +140,10 @@ fn set_all(inputs: &mut PlateInputs, support: Support) {
 /// 結果の値がすべて「—」
 fn assert_not_computed(r: &PlateReadout) {
     let c = &r.center;
-    let mut values: Vec<&str> = [&c.w, &c.mx, &c.my].map(String::as_str).to_vec();
+    let d = &r.deflection_maximum;
+    let mut values: Vec<&str> = [&c.w, &c.mx, &c.my, &d.w, &d.x, &d.y]
+        .map(String::as_str)
+        .to_vec();
     for row in &r.edges {
         for m in [&row.max_moment, &row.max_shear, &row.max_reaction] {
             values.extend([&m.value, &m.along].map(String::as_str));
@@ -156,29 +163,34 @@ fn an_unstable_combination_shows_dashes_and_says_the_plate_is_not_held() {
 }
 
 #[test]
-fn a_combination_with_a_free_edge_is_solved_and_balances() {
-    // 不安定な組以外はすべて解ける（ADR kirchhoff-plate-0002）。自由辺の反力は 0 で、残る辺が荷重を受ける
+fn a_combination_with_a_free_edge_is_solved() {
+    // 不安定な組以外はすべて解ける（ADR kirchhoff-plate-0002）。釣り合いと自由辺の反力は計算核のテスト
     let r = readout(|i| i.set(InputField::Support(Edge::XLx), Support::Free.symbol()));
     assert_eq!(r.notice, None);
     assert!(r.errors.is_empty());
-    assert_eq!(r.balance.reactions, r.balance.load);
-    let free: f64 = r.edges[1].max_reaction.value.parse().unwrap();
-    assert_eq!(free, 0.0, "{:#?}", r.edges);
+    assert_ne!(r.balance.reactions, "—");
+    // 自由辺の反力は辺の全体で 0 なので、位置は「—」
+    let free = &r.edges[1].max_reaction;
+    assert_eq!([free.value.as_str(), free.along.as_str()], ["0", "—"]);
 }
 
 #[test]
-fn a_simply_supported_plate_balances_with_its_corner_reactions_pressing_down() {
-    // 辺の反力の合計は荷重を超え、超えた分を隅反力が押さえる（ADR kirchhoff-plate-0007）
+fn a_simply_supported_plate_shows_a_reaction_at_every_corner() {
+    // 隅反力の向きと釣り合いは計算核のテスト（ADR kirchhoff-plate-0007）。ここでは隅ごとの行の名前と、
+    // 値が出ていること
     let r = readout(|i| set_all(i, Support::SimplySupported));
     assert_eq!(r.notice, None);
-    assert_eq!([&r.balance.reactions, &r.balance.load], ["200", "200"]);
-    for (corner, reaction) in &r.corners {
-        let value: f64 = reaction.parse().unwrap();
-        assert!(
-            value > 0.0,
-            "{corner} の隅反力が押さえる向きでない: {reaction}"
-        );
-    }
+    let names: Vec<&str> = r.corners.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "x = 0・y = 0",
+            "x = Lx・y = 0",
+            "x = Lx・y = Ly",
+            "x = 0・y = Ly"
+        ]
+    );
+    assert!(r.corners.iter().all(|(_, v)| v != "—"), "{:?}", r.corners);
 }
 
 #[test]
@@ -369,23 +381,38 @@ fn three_fixed_one_free() -> PlateInputs {
 }
 
 #[test]
-fn the_edge_shear_and_reaction_of_a_plate_with_a_free_edge_skip_five_percent_at_each_end() {
-    // 固定辺と自由辺の隅ではせん断力と辺の反力が発散する。辺の最大値は両端から辺長の 5 % を除いて取る
-    // （ADR kirchhoff-plate-0008）。曲げモーメントは隅まで含める
+fn the_deflection_maximum_of_the_fixed_plate_is_the_centre() {
+    // 求め方（要素の中まで見る、ADR kirchhoff-plate-0009）は計算核のテスト。ここでは表の値と位置の書き方
+    let r = readout(|_| {});
+    let d = &r.deflection_maximum;
+    assert_eq!(d.w, r.center.w);
+    assert_eq!([d.x.as_str(), d.y.as_str()], ["2.00", "2.50"]);
+}
+
+#[test]
+fn with_a_free_edge_the_deflection_maximum_is_on_that_edge() {
     let r = PlateReadout::from_inputs(&three_fixed_one_free());
-    for (row, length) in r.edges.iter().zip([4.0, 4.0, 5.0, 5.0]) {
-        for m in [&row.max_shear, &row.max_reaction] {
-            if m.along == "—" {
-                continue;
-            }
-            let along: f64 = m.along.parse().unwrap();
-            assert!(
-                (0.05 * length..=0.95 * length).contains(&along),
-                "{} の辺: {along}",
-                row.name
-            );
-        }
-    }
+    let d = &r.deflection_maximum;
+    assert_eq!([d.x.as_str(), d.y.as_str()], ["2.50", "4.00"]);
+    assert!(
+        d.w.parse::<f64>().unwrap() > r.center.w.parse::<f64>().unwrap(),
+        "{d:?} {:?}",
+        r.center
+    );
+    // 自由辺を y = 0 に移すと位置は 0
+    let mut inputs = three_fixed_one_free();
+    inputs.set(InputField::Support(Edge::YLy), Support::Fixed.symbol());
+    inputs.set(InputField::Support(Edge::Y0), Support::Free.symbol());
+    let moved = PlateReadout::from_inputs(&inputs).deflection_maximum;
+    assert_eq!([moved.x.as_str(), moved.y.as_str()], ["2.50", "0"]);
+    assert_eq!(moved.w, d.w);
+}
+
+#[test]
+fn a_plate_with_a_free_edge_says_how_the_edge_shear_and_reaction_are_taken() {
+    // 両端から辺長の 5 % を除いて取る規則（ADR kirchhoff-plate-0008）は計算核の `edge_maximum` のテスト。
+    // ここでは注記の文言
+    let r = PlateReadout::from_inputs(&three_fixed_one_free());
     assert_eq!(
         r.edge_notes,
         [

@@ -1,5 +1,5 @@
 //! Tool「Kirchhoff 板の曲げ」（`/tools/kirchhoff-plate`）。言葉は `docs/tools/kirchhoff-plate/GLOSSARY.md`、
-//! 符号と座標は ADR kirchhoff-plate-0004。数値はすべて `rustruct-calc` の `solve` から引き、ここでは入力の文字の
+//! 符号と座標はADR kirchhoff-plate-0004。数値はすべて `rustruct-calc` の `solve` から引き、ここでは入力の文字の
 //! 読み取りと、表示の桁だけを決める。計算はブラウザの中で同期に回し、入力を変えるたびに結果を描き直す。
 //!
 //! 辺は座標で呼ぶ（x = 0 の辺など）。画面の上下左右は図の向き（x は右、y は上）でここが決め、入力の
@@ -7,7 +7,7 @@
 
 use dioxus::prelude::*;
 use numerus::{at_place, point_pads, significant};
-use rustruct_calc::kirchhoff_plate::{EdgeSample, PlateError, Solution, solve};
+use rustruct_calc::kirchhoff_plate::{CORNER_MARGIN, Extreme, PlateError, Solution, solve};
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Plate, Support, Supports};
 use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
 
@@ -28,11 +28,7 @@ const NOT_COMPUTED: &str = "—";
 /// 辺の最大値を取る評価点の分け方。辺を等分する数
 const EDGE_DIVISIONS: usize = 100;
 
-/// 隅の近くとして、分布図の色の幅と辺のせん断力・反力の最大値から除く幅。辺長に対する比
-/// （ADR kirchhoff-plate-0008）
-const CORNER_MARGIN: f64 = 0.05;
-
-/// 注記に書く `CORNER_MARGIN`（「5 %」）
+/// 注記に書く、計算核の隅の近くの幅（「5 %」、ADR kirchhoff-plate-0008）
 fn corner_margin_text() -> String {
     format!("{} %", at_place(CORNER_MARGIN * 100.0, 0))
 }
@@ -46,21 +42,6 @@ fn corner_notes() -> Vec<String> {
             corner_margin_text()
         ),
     ]
-}
-
-/// 隅の近くの値の見せ方（ADR kirchhoff-plate-0008）が効く組。固定辺と自由辺の隅でせん断力と辺の反力が発散するので、
-/// 自由辺のある組では隅から辺長の 5 % を除いて見せる
-fn has_free_edge(supports: Supports) -> bool {
-    Edge::ALL
-        .iter()
-        .any(|&edge| supports.at(edge) == Support::Free)
-}
-
-/// 辺の上の位置（辺長に対する比）が、両端から `CORNER_MARGIN` より端に寄っているか。評価点がちょうど 5 % に
-/// 来たときに丸めで除かないよう、少しの幅を見る
-fn near_end(fraction: f64) -> bool {
-    const ROUNDING: f64 = 1e-9;
-    fraction < CORNER_MARGIN - ROUNDING || fraction > 1.0 - CORNER_MARGIN + ROUNDING
 }
 
 /// 欄。並びは Sheet の行の順
@@ -177,8 +158,8 @@ fn plate(inputs: &PlateInputs) -> Result<Plate, Vec<(InputField, Reason)>> {
         return Err(errors);
     };
     Ok(Plate {
-        lx: Length::mm(lx * 1000.0),
-        ly: Length::mm(ly * 1000.0),
+        lx: Length::m(lx),
+        ly: Length::m(ly),
         thickness: Length::mm(thickness),
         young_modulus: Stress::n_per_mm2(young_modulus),
         poisson_ratio,
@@ -210,6 +191,8 @@ pub struct PlateReadout {
     pub notice: Option<&'static str>,
     /// 板の中央の値
     pub center: CenterRow,
+    /// 最大たわみ（ADR kirchhoff-plate-0009）
+    pub deflection_maximum: DeflectionRow,
     /// 辺ごとの行。`EDGES` の順
     pub edges: Vec<EdgeRow>,
     /// 辺の最大値の表に足す注記。自由辺のある組だけ（ADR kirchhoff-plate-0008）
@@ -243,6 +226,16 @@ pub struct CenterRow {
     pub my: String,
 }
 
+/// 結果の表の、最大たわみの行
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeflectionRow {
+    /// たわみ（mm）
+    pub w: String,
+    /// 位置（m）。隅 x = 0・y = 0 からの座標
+    pub x: String,
+    pub y: String,
+}
+
 /// 辺の最大値の 1 つ
 #[derive(Debug, Clone, PartialEq)]
 pub struct Maximum {
@@ -253,15 +246,9 @@ pub struct Maximum {
 }
 
 impl Maximum {
-    /// 評価点のうち絶対値が最大のもの。`value` は表の単位の値
-    fn of<'a>(
-        samples: impl Iterator<Item = &'a EdgeSample>,
-        value: fn(&EdgeSample) -> f64,
-    ) -> Self {
-        let sample = samples
-            .max_by(|a, b| value(a).abs().total_cmp(&value(b).abs()))
-            .expect("評価点は 1 つ以上");
-        Self::new(value(sample), sample.along)
+    /// 計算核の辺の最大値から。`value` は表の単位の値
+    fn of<T: Copy>(extreme: Extreme<T>, value: fn(T) -> f64) -> Self {
+        Self::new(value(extreme.value), extreme.along)
     }
 
     fn new(value: f64, along: Length) -> Self {
@@ -270,7 +257,7 @@ impl Maximum {
             along: if value == 0.0 {
                 NOT_COMPUTED.into()
             } else {
-                figures(along.as_mm() / 1000.0)
+                figures(along.as_m())
             },
         }
     }
@@ -307,6 +294,11 @@ impl PlateReadout {
                 mx: dash(),
                 my: dash(),
             },
+            deflection_maximum: DeflectionRow {
+                w: dash(),
+                x: dash(),
+                y: dash(),
+            },
             edges: EDGES
                 .map(|edge| EdgeRow {
                     name: edge.to_string(),
@@ -328,34 +320,24 @@ impl PlateReadout {
 
     fn computed(solution: &Solution) -> Self {
         let plate = solution.plate();
-        let (lx, ly) = (plate.lx.as_mm(), plate.ly.as_mm());
-        let total_load = plate.load.as_kn_per_m2() * lx * ly / 1e6;
-
         let center = solution
-            .at(Length::mm(lx / 2.0), Length::mm(ly / 2.0))
+            .at(
+                Length::mm(plate.lx.as_mm() / 2.0),
+                Length::mm(plate.ly.as_mm() / 2.0),
+            )
             .expect("中央は板の上");
-        let free = has_free_edge(plate.supports);
-        let mut edge_total = 0.0;
+        let deflection = solution.deflection_maximum();
         let edges = EDGES
             .map(|edge| {
-                edge_total += solution.total_reaction(edge).as_kn();
-                let samples = solution.edge(edge, EDGE_DIVISIONS);
-                let length = samples.last().expect("評価点は 1 つ以上").along.as_mm();
-                // せん断力と辺の反力は、自由辺のある組では両端から辺長の 5 % を除く。曲げモーメントは隅まで
-                let away = || {
-                    samples
-                        .iter()
-                        .filter(move |s| !free || !near_end(s.along.as_mm() / length))
-                };
+                let maximum = solution.edge_maximum::<EDGE_DIVISIONS>(edge);
                 EdgeRow {
                     name: edge.to_string(),
-                    max_moment: Maximum::of(samples.iter(), |s| s.moment.as_knm_per_m()),
-                    max_shear: Maximum::of(away(), |s| s.shear.as_kn_per_m()),
-                    max_reaction: Maximum::of(away(), |s| s.reaction.as_kn_per_m()),
+                    max_moment: Maximum::of(maximum.moment, |m| m.as_knm_per_m()),
+                    max_shear: Maximum::of(maximum.shear, |q| q.as_kn_per_m()),
+                    max_reaction: Maximum::of(maximum.reaction, |v| v.as_kn_per_m()),
                 }
             })
             .to_vec();
-        let corner_reactions = Corner::ALL.map(|corner| solution.corner_reaction(corner).as_kn());
         Self {
             errors: Vec::new(),
             notice: None,
@@ -364,16 +346,28 @@ impl PlateReadout {
                 mx: figures(center.mx.as_knm_per_m()),
                 my: figures(center.my.as_knm_per_m()),
             },
+            deflection_maximum: DeflectionRow {
+                w: figures(deflection.w.as_mm()),
+                x: figures(deflection.x.as_m()),
+                y: figures(deflection.y.as_m()),
+            },
             edges,
-            edge_notes: if free { corner_notes() } else { Vec::new() },
+            edge_notes: if plate.supports.has_free_edge() {
+                corner_notes()
+            } else {
+                Vec::new()
+            },
             corners: Corner::ALL
-                .into_iter()
-                .zip(corner_reactions)
-                .map(|(corner, r)| (corner_name(corner), figures(r)))
-                .collect(),
+                .map(|corner| {
+                    (
+                        corner_name(corner),
+                        figures(solution.corner_reaction(corner).as_kn()),
+                    )
+                })
+                .to_vec(),
             balance: Balance {
-                reactions: figures(edge_total - corner_reactions.iter().sum::<f64>()),
-                load: figures(total_load),
+                reactions: figures(solution.net_reaction().as_kn()),
+                load: figures(solution.total_load().as_kn()),
             },
         }
     }
@@ -445,6 +439,7 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
     });
     let readout = outcome.read().readout.clone();
     let CenterRow { w, mx, my } = readout.center.clone();
+    let deflection = readout.deflection_maximum.clone();
     let corner_pads = point_pads(readout.corners.iter().map(|(_, r)| r));
     let Balance { reactions, load } = readout.balance.clone();
     rsx! {
@@ -479,6 +474,29 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                                 li { "たわみは下向きを正とする" }
                                 li { "曲げモーメントは下側が引張になる向きを正とする" }
                             }
+                        }
+                    }
+                    Block {
+                        Caption { "最大たわみ" }
+                        Table { fixed: true,
+                            thead {
+                                HeadRow {
+                                    HeadCell { "w（mm）" }
+                                    HeadCell { "x（m）" }
+                                    HeadCell { "y（m）" }
+                                }
+                            }
+                            tbody {
+                                Row {
+                                    DecimalCell { value: deflection.w, pad: 0 }
+                                    DecimalCell { value: deflection.x, pad: 0 }
+                                    DecimalCell { value: deflection.y, pad: 0 }
+                                }
+                            }
+                        }
+                        Notes {
+                            li { "板全体での絶対値の最大値" }
+                            li { "x、y は隅 x = 0・y = 0 からの座標" }
                         }
                     }
                     Block {

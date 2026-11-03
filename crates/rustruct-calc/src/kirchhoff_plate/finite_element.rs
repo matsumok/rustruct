@@ -27,7 +27,7 @@ use std::f64::consts::PI;
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Support, Supports};
 
 use super::band::BandMatrix;
-use super::solver::{Derivatives, Solver};
+use super::solver::{Derivatives, EdgePoint, Solver, deflection_maximum};
 
 /// 長い辺の分割数の上限。縦横比がこれを超える板は長い辺の要素が粗くなるが、連立の大きさを抑える
 const MAX_DIVISIONS: usize = 512;
@@ -514,7 +514,6 @@ impl FiniteElement {
                     .collect();
             }
         }
-        let slot_of = |edge: Edge| Edge::ALL.iter().position(|&e| e == edge).expect("4 辺");
         for corner in Corner::ALL {
             let (ex, ey) = corner.edges();
             let (sx, sy) = (
@@ -538,7 +537,7 @@ impl FiniteElement {
                 let positions = self.edge_positions(edge);
                 let k = if end == 0 { 1 } else { end - 1 };
                 let tributary = (positions[k + 1] - positions[k - 1]) / 2.0;
-                (forces[slot_of(edge)][k] / tributary).abs()
+                (forces[Self::edge_slot(edge)][k] / tributary).abs()
             };
             let share_x = if sx { neighbour(ex, kx) * half_x } else { 0.0 };
             let share_y = if sy { neighbour(ey, ky) * half_y } else { 0.0 };
@@ -552,16 +551,17 @@ impl FiniteElement {
                 (0.0, 1.0)
             };
             if sx {
-                forces[slot_of(ex)][kx] = total * fx;
+                forces[Self::edge_slot(ex)][kx] = total * fx;
             }
             if sy {
-                forces[slot_of(ey)][ky] = total * fy;
+                forces[Self::edge_slot(ey)][ky] = total * fy;
             }
         }
         for (slot, edge) in forces.into_iter().zip(Edge::ALL) {
             if !slot.is_empty() {
                 let positions = self.edge_positions(edge);
-                self.edge_reactions[slot_of(edge)] = piecewise_linear_from_cells(positions, &slot);
+                self.edge_reactions[Self::edge_slot(edge)] =
+                    piecewise_linear_from_cells(positions, &slot);
             }
         }
     }
@@ -716,6 +716,23 @@ impl FiniteElement {
             w_yyy: self.recovered(x, y, 0, 3, false),
         }
     }
+
+    /// 4 辺ごとに持つ値（`edge_reactions`）の中の、辺の位置
+    fn edge_slot(edge: Edge) -> usize {
+        Edge::ALL.iter().position(|&e| e == edge).expect("4 辺")
+    }
+
+    /// 辺の上の点の辺の反力。節点の反力を節点の間で線形につなぐ。支持の無い自由辺は節点の反力を持たず、厳密に 0
+    fn edge_reaction(&self, edge: Edge, along: f64) -> f64 {
+        let v = &self.edge_reactions[Self::edge_slot(edge)];
+        if v.is_empty() {
+            return 0.0;
+        }
+        let positions = self.edge_positions(edge);
+        let (k, local) = Self::containing(positions, along)[0];
+        let t = (local + 1.0) / 2.0;
+        (1.0 - t) * v[k] + t * v[k + 1]
+    }
 }
 
 impl Solver for FiniteElement {
@@ -723,32 +740,22 @@ impl Solver for FiniteElement {
         self.derivatives(x, y)
     }
 
-    fn edge(&self, edge: Edge, along: f64) -> Derivatives {
+    fn edge(&self, edge: Edge, along: f64) -> EdgePoint {
         let (x, y) = match edge {
             Edge::X0 => (-1.0, along),
             Edge::XLx => (1.0, along),
             Edge::Y0 => (along, -self.b()),
             Edge::YLy => (along, self.b()),
         };
-        self.derivatives(x, y)
-    }
-
-    fn edge_reaction(&self, edge: Edge, along: f64, _nu: f64) -> f64 {
-        let slot = Edge::ALL.iter().position(|&e| e == edge).expect("4 辺");
-        let v = &self.edge_reactions[slot];
-        if v.is_empty() {
-            return 0.0;
+        EdgePoint {
+            derivatives: self.derivatives(x, y),
+            reaction: self.edge_reaction(edge, along),
         }
-        // 節点の間は線形につなぐ
-        let positions = self.edge_positions(edge);
-        let (k, local) = Self::containing(positions, along)[0];
-        let t = (local + 1.0) / 2.0;
-        (1.0 - t) * v[k] + t * v[k + 1]
     }
 
-    fn edge_reaction_total(&self, edge: Edge, _half_along: f64, _nu: f64) -> f64 {
+    fn edge_reaction_total(&self, edge: Edge) -> f64 {
         // 節点の間で線形なので、節点での台形則が厳密。値は節点の反力の和に等しい
-        let v = &self.edge_reactions[Edge::ALL.iter().position(|&e| e == edge).expect("4 辺")];
+        let v = &self.edge_reactions[Self::edge_slot(edge)];
         let positions = self.edge_positions(edge);
         v.windows(2)
             .zip(positions.windows(2))
@@ -764,6 +771,11 @@ impl Solver for FiniteElement {
         }
         let (i, j) = self.corner_node(corner);
         self.u[4 * self.node(i, j) + 3]
+    }
+
+    /// 節点の w から最大の節点を選び、接する要素の中を形状関数の w（要素の中の双 3 次式）で詰める
+    fn deflection_maximum(&self) -> (f64, f64) {
+        deflection_maximum(|x, y| self.averaged(x, y, 0, 0), &self.xs, &self.ys)
     }
 }
 

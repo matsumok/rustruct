@@ -9,7 +9,8 @@
 
 use rustruct_types::kirchhoff_plate::{Corner, Edge};
 
-use super::super::solver::{Derivatives, Solver};
+use super::super::solver::Derivatives;
+use super::Field;
 use super::levy::{Frame, Orientation, Series};
 
 pub struct SimplySupported {
@@ -44,7 +45,7 @@ pub fn solve(b: f64, terms: usize) -> SimplySupported {
     }
 }
 
-impl Solver for SimplySupported {
+impl Field for SimplySupported {
     fn interior(&self, x: f64, y: f64) -> Derivatives {
         // y に沿う級数の双曲線関数は (1 − |x|)/b の速さで、x に沿う級数のは (b − |y|) の速さで減衰する
         if (1.0 - x.abs()) / self.b >= self.b - y.abs() {

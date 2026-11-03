@@ -3,7 +3,9 @@
 
 mod common;
 use common::{assert_in_order, element, text_of};
-use rustruct_web::{PointRow, SharedRow, SlabField, SlabInputs, SlabReadout, render_path};
+use rustruct_web::{
+    PointRow, SharedRow, SlabField, SlabFigure, SlabInputs, SlabReadout, render_path,
+};
 
 #[test]
 fn tools_lists_slab_thickness_under_the_rc_heading_before_mechanics() {
@@ -216,4 +218,217 @@ fn fc_above_36_uses_the_heavier_rc_unit_weight_and_warns_outside_the_range() {
     let r = readout(|i| i.set(SlabField::Fc, "120"));
     assert!(r.warning.is_some(), "{r:#?}");
     assert_ne!(r.point.required_thickness, "—");
+}
+
+// 等厚曲線の図（Issue #75）
+
+fn figure(change: impl FnOnce(&mut SlabInputs)) -> Option<SlabFigure> {
+    let mut inputs = SlabInputs::default();
+    change(&mut inputs);
+    SlabFigure::from_inputs(&inputs)
+}
+
+/// SVG の文字（白抜きの数値、目盛りの数値、軸の名前、条件の要約、検討点の名前）
+fn svg_texts(svg: &str) -> Vec<String> {
+    svg.split("<text")
+        .skip(1)
+        .map(|t| t[t.find('>').unwrap() + 1..t.find("</text>").unwrap()].to_string())
+        .collect()
+}
+
+/// 等厚曲線の上の数値（白抜きの等幅の文字）
+fn thickness_numbers(svg: &str) -> Vec<f64> {
+    svg.split("<text")
+        .skip(1)
+        .filter(|t| t[..t.find('>').unwrap()].contains("paint-order"))
+        .filter_map(|t| {
+            t[t.find('>').unwrap() + 1..t.find("</text>").unwrap()]
+                .replace(',', "")
+                .parse()
+                .ok()
+        })
+        .collect()
+}
+
+#[test]
+fn the_page_shows_the_iso_thickness_figure_after_the_results() {
+    let main = element(&render_path("/tools/slab-thickness"), "main").to_string();
+    assert_in_order(
+        &text_of(&main),
+        &["たわみ（mm）", "許容", "必要スラブ厚の等厚曲線（mm）"],
+    );
+    // ライトとダークの 2 枚
+    assert_eq!(main.matches("<svg xmlns").count(), 2, "{main}");
+    assert!(main.contains("role=\"img\""), "{main}");
+}
+
+#[test]
+fn the_curves_around_the_point_are_numbered_every_10_mm_and_bracket_its_thickness() {
+    let figure = figure(|_| {}).expect("初期値で図が出る");
+    let t_req: f64 = readout(|_| {}).point.required_thickness.parse().unwrap();
+    let numbers = thickness_numbers(&figure.light_svg);
+    assert!(!numbers.is_empty(), "{}", figure.light_svg);
+    assert!(
+        numbers.iter().all(|t| t % 10.0 == 0.0 && *t >= 80.0),
+        "{numbers:?}"
+    );
+    assert!(numbers.iter().any(|t| *t < t_req), "{numbers:?} / {t_req}");
+    assert!(numbers.iter().any(|t| *t > t_req), "{numbers:?} / {t_req}");
+    assert_eq!(thickness_numbers(&figure.dark_svg), numbers);
+}
+
+#[test]
+fn the_initial_view_is_a_square_centered_on_the_point() {
+    // 検討点 (4.0, 5.0) が 1 つ: 幅 2 m の正方形。目盛りは 0.5 m おき
+    let texts = svg_texts(&figure(|_| {}).unwrap().light_svg);
+    for t in [
+        "3.0",
+        "3.5",
+        "4.0",
+        "4.5",
+        "5.0",
+        "5.5",
+        "6.0",
+        "Lx（m）",
+        "Ly（m）",
+    ] {
+        assert!(texts.iter().any(|s| s == t), "{t} が無い: {texts:?}");
+    }
+    assert!(!texts.iter().any(|s| s == "2.5" || s == "6.5"), "{texts:?}");
+    let texts = svg_texts(
+        &figure(|i| {
+            i.set(SlabField::SpanX, "8");
+            i.set(SlabField::SpanY, "8");
+        })
+        .unwrap()
+        .light_svg,
+    );
+    for t in ["7.0", "9.0"] {
+        assert!(texts.iter().any(|s| s == t), "{t} が無い: {texts:?}");
+    }
+}
+
+#[test]
+fn the_point_is_marked_with_its_name() {
+    let svg = figure(|i| i.set(SlabField::Name, "S2")).unwrap().light_svg;
+    assert_eq!(svg.matches("<circle").count(), 1, "{svg}");
+    assert!(svg_texts(&svg).iter().any(|s| s == "S2"), "{svg}");
+}
+
+#[test]
+fn the_summary_lists_the_conditions_and_only_the_active_criteria() {
+    let texts = svg_texts(&figure(|_| {}).unwrap().light_svg).join("\n");
+    for t in ["Fc=24", "wp=2,800", "α=16", "δ/lx≤1/400"] {
+        assert!(texts.contains(t), "{t} が無い: {texts}");
+    }
+    assert!(
+        !texts.contains("δ≤") && !texts.contains("表18-1"),
+        "{texts}"
+    );
+
+    let texts = svg_texts(
+        &figure(|i| {
+            i.set(SlabField::DeflectionRatio, "");
+            i.set(SlabField::DeflectionAbsolute, "20");
+            i.set(SlabField::MinThickness, "true");
+        })
+        .unwrap()
+        .light_svg,
+    )
+    .join("\n");
+    assert!(
+        texts.contains("δ≤20") && texts.contains("表18-1"),
+        "{texts}"
+    );
+    assert!(!texts.contains("δ/lx"), "{texts}");
+}
+
+#[test]
+fn no_figure_while_the_conditions_are_unreadable_or_without_criteria() {
+    assert_eq!(figure(|i| i.set(SlabField::Fc, "")), None);
+    assert_eq!(figure(|i| i.set(SlabField::Amplification, "0")), None);
+    assert_eq!(figure(|i| i.set(SlabField::DeflectionRatio, "")), None);
+    let html = render_path("/tools/slab-thickness");
+    assert!(!html.contains("図は描かない"), "初期値で注記が出ている");
+}
+
+#[test]
+fn an_unreadable_point_leaves_the_default_view_without_a_mark() {
+    let svg = figure(|i| i.set(SlabField::SpanX, "abc"))
+        .expect("条件が読めれば図は出る")
+        .light_svg;
+    assert!(!svg.contains("<circle"), "{svg}");
+    // 検討点が無いときの範囲は両軸 3〜9 m
+    let texts = svg_texts(&svg);
+    for t in ["4", "6", "8"] {
+        assert!(texts.iter().any(|s| s == t), "{t} が無い: {texts:?}");
+    }
+}
+
+#[test]
+fn regions_under_80_mm_are_left_unpainted_and_no_curve_is_thinner() {
+    // 2.5 m 四方: 範囲（1.5〜3.5 m）の左下は 80 mm に届かず、右上は超える
+    let svg = figure(|i| {
+        i.set(SlabField::SpanX, "2.5");
+        i.set(SlabField::SpanY, "2.5");
+    })
+    .unwrap()
+    .light_svg;
+    let numbers = thickness_numbers(&svg);
+    assert!(numbers.contains(&80.0), "{numbers:?}");
+    assert!(numbers.iter().all(|t| *t >= 80.0), "{numbers:?}");
+}
+
+/// 属性の値（最初の 1 つ）
+fn attr(tag: &str, name: &str) -> f64 {
+    let at = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+    tag[at..at + tag[at..].find('"').unwrap()].parse().unwrap()
+}
+
+#[test]
+fn curve_numbers_keep_off_the_point_mark_and_its_name() {
+    // 検討点はいつも範囲の中心、数値を並べる対角線の上にある。どの厚さに近くても印と名前を避ける
+    for k in 0..12 {
+        let lx = format!("{:.2}", 4.0 + 0.05 * k as f64);
+        let svg = figure(|i| i.set(SlabField::SpanX, lx.as_str()))
+            .unwrap()
+            .light_svg;
+        let circle = &svg[svg.find("<circle").unwrap()..];
+        let (cx, cy) = (attr(circle, "cx"), attr(circle, "cy"));
+        for t in svg.split("<text").skip(1) {
+            let tag = &t[..t.find('>').unwrap()];
+            if !(tag.contains("paint-order") && tag.contains("font-size=\"9\"")) {
+                continue;
+            }
+            let (x, y) = (attr(tag, "x"), attr(tag, "y"));
+            // 印の周り: 中心どうしが、印の半径と数値の文字の高さの半分より近い（名前は印の右上）
+            let near_mark = (x - cx).hypot(y - cy) < 10.0;
+            let on_name = x > cx && x < cx + 30.0 && y < cy && y > cy - 20.0;
+            assert!(
+                !near_mark && !on_name,
+                "Lx {lx}: 数値 ({x}, {y}) が印 ({cx}, {cy}) に重なる"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_color_edge_curves_around_the_point_are_numbered_even_where_the_mark_sits_on_the_diagonal() {
+    // 検討点は数値を並べる対角線の上にある。印と名前にかかる曲線も、同じ曲線の別の場所に数値が出る
+    for k in 0..12 {
+        let lx = format!("{:.2}", 4.0 + 0.05 * k as f64);
+        let svg = figure(|i| i.set(SlabField::SpanX, lx.as_str()))
+            .unwrap()
+            .light_svg;
+        let t_req: f64 = readout(|i| i.set(SlabField::SpanX, lx.as_str()))
+            .point
+            .required_thickness
+            .parse()
+            .unwrap();
+        let numbers = thickness_numbers(&svg);
+        let below = (t_req / 20.0).floor() * 20.0;
+        for t in [below, below + 20.0] {
+            assert!(numbers.contains(&t), "Lx {lx}: {t} が無い {numbers:?}");
+        }
+    }
 }

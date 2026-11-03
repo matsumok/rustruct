@@ -7,7 +7,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-# 配置後のスモークテスト。CI は配置の job（Rust は入れていない）から check-live.sh を直に呼ぶ
+# 配置後のスモークテスト。CI は配置の action（.github/actions/publish。Rust は入れていない）から check-live.sh を直に呼ぶ
 if [ "${1:-}" = live ]; then
   shift
   url=${1:?URL を渡す（例: sh scripts/check.sh live https://rustruct.matsumok.com）}
