@@ -6,11 +6,17 @@
 //! 作り、ページがテーマで片方を見せる。
 
 use charta::{Grid, Item, Palette, Pt, Scene, Stroke, Theme, distribution, to_svg};
-use rustruct_calc::kirchhoff_plate::{PointResponse, Solution};
+use numerus::at_place;
+use rustruct_calc::kirchhoff_plate::{CORNER_MARGIN, PointResponse, Solution};
 use rustruct_types::kirchhoff_plate::{Edge, Support, Supports};
 
-use super::{EDGES, PlateInputs, PlateOutcome, corner_margin_text, support_name};
+use super::{EDGES, support_name};
 use crate::COLUMN_WIDTH;
+
+/// 注記に書く、計算核の隅の近くの幅（「5 %」、ADR kirchhoff-plate-0008）。結果の表の注記も使う
+pub(super) fn corner_margin_text() -> String {
+    format!("{} %", at_place(CORNER_MARGIN * 100.0, 0))
+}
 
 /// 長い辺を等分する評価点の間の数。短い辺は辺長の比で決め、評価点の間はほぼ正方形になる
 const GRID_DIVISIONS: usize = 60;
@@ -91,7 +97,7 @@ impl Quantity {
 
 /// 解から取った、等間隔の評価点の応答。量を切り替えても解き直さないように、入力から一度だけ作る
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct PlateField {
+pub struct PlateField {
     /// 辺長（m）
     lx: f64,
     ly: f64,
@@ -148,13 +154,7 @@ pub struct PlateFigure {
 }
 
 impl PlateFigure {
-    /// 入力から、ページと同じ経路で。入力が読めないか、板を支えられない組なら図は無い
-    pub fn from_inputs(inputs: &PlateInputs, quantity: Quantity) -> Option<Self> {
-        let field = PlateOutcome::from_inputs(inputs).field?;
-        Some(Self::new(&field, quantity))
-    }
-
-    pub(crate) fn new(field: &PlateField, quantity: Quantity) -> Self {
+    pub fn new(field: &PlateField, quantity: Quantity) -> Self {
         let scene = scene(field, quantity);
         let svg = |theme| to_svg(&scene, &theme).expect("役割名は tokens.json にある");
         let supports = EDGES

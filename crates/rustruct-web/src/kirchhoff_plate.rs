@@ -6,17 +6,15 @@
 //! Sheet の行見出しに添えて対応を示す。
 
 use dioxus::prelude::*;
-use numerus::{at_place, significant};
-use rustruct_calc::kirchhoff_plate::{
-    CORNER_MARGIN, Extreme, InvalidInput, PlateError, Solution, solve,
-};
+use numerus::significant;
+use rustruct_calc::kirchhoff_plate::{Extreme, InvalidInput, PlateError, Solution, solve};
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Plate, Support, Supports};
 use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
 
 mod figure;
 
-use figure::PlateField;
-pub use figure::{PlateFigure, Quantity};
+use figure::corner_margin_text;
+pub use figure::{PlateField, PlateFigure, Quantity};
 
 use crate::inputs::{Definition, Field, InputGroup, Inputs, Kind, Layout, Reading, Reason};
 use crate::table::{Block, Caption, Column, Columns, NO_VALUE, Notes, Table, TableColumn};
@@ -24,11 +22,6 @@ use crate::{Page, Route};
 
 /// 辺の最大値を取る評価点の分け方。辺を等分する数
 const EDGE_DIVISIONS: usize = 100;
-
-/// 注記に書く、計算核の隅の近くの幅（「5 %」、ADR kirchhoff-plate-0008）
-fn corner_margin_text() -> String {
-    format!("{} %", at_place(CORNER_MARGIN * 100.0, 0))
-}
 
 /// 自由辺のある組の、辺の最大値の注記（ADR kirchhoff-plate-0008）
 fn corner_notes() -> Vec<String> {
@@ -122,7 +115,7 @@ fn support_name(support: Support) -> &'static str {
     }
 }
 
-/// 入力の Sheet の中身。読めるかは `PlateReadout` が決める
+/// 入力の Sheet の中身。読めるかは `PlateOutcome` が決める
 pub type PlateInputs = Inputs<InputField>;
 
 /// 入力を Model へ。読めない欄と、`PoissonRatio` が受けない ν は理由を集めて初期値で埋める（`Reading`）
@@ -268,10 +261,6 @@ pub struct Balance {
 }
 
 impl PlateReadout {
-    pub fn from_inputs(inputs: &PlateInputs) -> Self {
-        PlateOutcome::from_inputs(inputs).readout
-    }
-
     fn not_computed(notice: Option<&'static str>) -> Self {
         Self {
             errors: Vec::new(),
@@ -360,15 +349,17 @@ impl PlateReadout {
     }
 }
 
-/// 入力を 1 回解いて得る、結果の表と分布図の評価点の応答。解けなければ評価点は無い
+/// 計算の結果。入力を 1 回読んで解き、結果の表と分布図の素にしたもの。この Tool の入口はここだけ
 #[derive(Debug, Clone, PartialEq)]
-struct PlateOutcome {
-    readout: PlateReadout,
-    field: Option<PlateField>,
+pub struct PlateOutcome {
+    /// 結果の表。読めない欄と、解けない理由も
+    pub readout: PlateReadout,
+    /// 分布図の評価点の応答。解けなければ無い
+    pub field: Option<PlateField>,
 }
 
 impl PlateOutcome {
-    fn from_inputs(inputs: &PlateInputs) -> Self {
+    pub fn from_inputs(inputs: &PlateInputs) -> Self {
         let not_computed = |notice| Self {
             readout: PlateReadout::not_computed(Some(notice)),
             field: None,
