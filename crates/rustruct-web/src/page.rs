@@ -3,19 +3,19 @@
 use dioxus::prelude::*;
 
 use crate::Route;
-use crate::shell::split_wordmark;
+use crate::route::split_wordmark;
 
 /// トップ。`display` のサイトの住所と、四部の一覧（名前＋一行＋パス）。
 /// スマホのヘッダーが `rustruct` だけになっても、ここで住所が全部見える。狭い画面ではドットの前で折り返す。
 #[component]
 pub(crate) fn Home() -> Element {
-    let (name, domain) = split_wordmark();
+    let (name, host) = split_wordmark();
     rsx! {
         main { class: "mx-auto max-w-page lg:max-w-page-lg",
             p { class: "text-display py-8",
                 {name}
                 wbr {}
-                span { class: "text-muted", {domain} }
+                span { class: "text-muted", {host} }
             }
             RouteList { routes: Route::sections().collect::<Vec<_>>() }
         }

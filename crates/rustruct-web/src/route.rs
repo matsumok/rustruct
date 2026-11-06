@@ -13,6 +13,14 @@ use crate::tools::{Domain, ToolsIndex};
 /// ヘッダーに置く wordmark の文字。サイトの住所そのもの。
 pub const WORDMARK: &str = "rustruct.matsumok.com";
 
+/// wordmark を `rustruct` と `.matsumok.com` に分ける。
+pub(crate) fn split_wordmark() -> (&'static str, &'static str) {
+    let dot = WORDMARK
+        .find('.')
+        .expect("wordmark はドメインなのでドットを含む");
+    WORDMARK.split_at(dot)
+}
+
 /// サイトの住所。全ページが `Frame`（ヘッダーと本文の枠）の中に入る。
 #[derive(Routable, Clone, PartialEq, Debug)]
 #[rustfmt::skip]

@@ -5,8 +5,9 @@ use dioxus::prelude::*;
 use dioxus_primitives::collapsible::{Collapsible, CollapsibleContent, CollapsibleTrigger};
 use dioxus_primitives::dialog::{DialogContent, DialogRoot, DialogTitle};
 
+use crate::Route;
 use crate::icons::{ChevronIcon, CloseIcon, DarkIcon, LightIcon, MenuIcon, UserIcon};
-use crate::{Route, WORDMARK};
+use crate::route::split_wordmark;
 
 /// 覚えた色（ライトかダーク）を、描く前に `<html data-theme>` に当てる。HTML は WASM より先に描かれるので、
 /// ここで当てないと開くたびに一瞬 OS の色が出る（ui-decisions「画面幅」の切り替え）。
@@ -251,19 +252,11 @@ fn MenuNode(node: Route, here: Route, depth: usize, on_close: EventHandler<()>) 
 /// スマホのヘッダーでは `.matsumok.com` を隠し、`rustruct` だけにする。
 #[component]
 fn Wordmark() -> Element {
-    let (name, domain) = split_wordmark();
+    let (name, host) = split_wordmark();
     rsx! {
         span { class: "font-mono text-wordmark text-ink",
             {name}
-            span { class: "hidden font-normal text-muted md:inline", {domain} }
+            span { class: "hidden font-normal text-muted md:inline", {host} }
         }
     }
-}
-
-/// wordmark を `rustruct` と `.matsumok.com` に分ける。
-pub(crate) fn split_wordmark() -> (&'static str, &'static str) {
-    let dot = WORDMARK
-        .find('.')
-        .expect("wordmark はドメインなのでドットを含む");
-    WORDMARK.split_at(dot)
 }
