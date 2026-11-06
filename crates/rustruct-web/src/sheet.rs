@@ -8,7 +8,6 @@
 
 use dioxus::prelude::*;
 use dioxus_primitives::checkbox::{Checkbox, CheckboxIndicator, CheckboxState};
-
 use dioxus_primitives::select::{Select, SelectList, SelectOption, SelectTrigger};
 
 use crate::icons::{CheckIcon, ChevronIcon};
@@ -86,15 +85,45 @@ pub(crate) fn SheetCheck(label: String, checked: bool, onchange: EventHandler<bo
 /// 押して閉じたとき。素の `select` と同じく、選んだ後も欄に留まる）。primitives の select は戻さず、閉じた
 /// リストが消えるとフォーカスが `body` に落ちる。外を押して閉じたときは、フォーカスはもう移った先にあるので動かさない。
 /// ボタンはリストを `aria-controls` で指す（primitives が付ける）。リストは閉じる処理の中で読み、フォーカスは
-/// 処理を抜けてから移す（処理の中で移すと、フォーカスの抜けた選択肢の blur が入れ子で走り、WASM が止まる）
-const RETURN_FOCUS_TO_TRIGGER: &str = r#"var l=document.activeElement&&document.activeElement.closest('[role="listbox"]');if(l&&l.id){var t=document.querySelector('[aria-controls="'+CSS.escape(l.id)+'"]');if(t)setTimeout(function(){t.focus()},0)}"#;
+/// `spawn` で処理を抜けてから移す（処理の中で移すと、フォーカスの抜けた選択肢の blur が入れ子で走り、WASM が止まる）。
+/// ブラウザの外（SSG とテスト）では何もしない
+fn return_focus_to_trigger() {
+    #[cfg(target_arch = "wasm32")]
+    {
+        use web_sys::HtmlElement;
+        use web_sys::wasm_bindgen::JsCast;
+
+        let Some(document) = web_sys::window().and_then(|window| window.document()) else {
+            return;
+        };
+        let Some(list) = document
+            .active_element()
+            .and_then(|focused| focused.closest("[role=listbox]").ok().flatten())
+        else {
+            return;
+        };
+        let Ok(controls) = document.query_selector_all("[aria-controls]") else {
+            return;
+        };
+        let trigger = (0..controls.length())
+            .filter_map(|index| controls.item(index))
+            .filter_map(|node| node.dyn_into::<HtmlElement>().ok())
+            .find(|element| element.get_attribute("aria-controls") == Some(list.id()));
+        if let Some(trigger) = trigger {
+            spawn(async move {
+                _ = trigger.focus();
+            });
+        }
+    }
+}
 
 /// Sheet のセルに入れる選択の欄。選択肢は（記号, 名前）の並びで、値は記号。振る舞いは `dioxus-primitives` の
 /// select（リストを開くボタン、矢印と Enter と Esc、打った文字で選択肢に移る、読み上げの `listbox`）。
 /// ボタンは書けるセルと同じ形で、選んだ名前と開く印（`chevron--down`）を出す。リストはセルの真下に重ね、
 /// 選んだ選択肢を `ink` で塗り（量の切替と同じ）、フォーカスは書けるセルと同じ `ink` の内枠。
 /// リストは位置を指定しない `absolute` で、置かれる位置はボタンの下のまま、包む箱は Sheet の外になる。
-/// Sheet の角を丸める `overflow-hidden` に切られないのはこのため（セルや Sheet に `relative` を付けない）
+/// Sheet の角を丸める `overflow-hidden` に切られないのはこのため（セルや Sheet に `relative` を付けない。
+/// `inputs.rs` のテストが見る）
 #[component]
 pub(crate) fn SheetSelect(
     label: String,
@@ -117,7 +146,7 @@ pub(crate) fn SheetSelect(
             },
             on_open_change: move |open: bool| {
                 if !open {
-                    document::eval(RETURN_FOCUS_TO_TRIGGER);
+                    return_focus_to_trigger();
                 }
             },
             SelectTrigger {

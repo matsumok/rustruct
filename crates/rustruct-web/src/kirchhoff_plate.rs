@@ -5,7 +5,10 @@
 //! 辺は座標で呼ぶ（x = 0 の辺など）。画面の上下左右は図の向き（x は右、y は上）でここが決め、入力の
 //! Sheet の行見出しに添えて対応を示す。
 
+use std::collections::HashSet;
+
 use dioxus::prelude::*;
+use dioxus_primitives::toggle_group::{ToggleGroup, ToggleItem};
 use numerus::significant;
 use rustruct_calc::kirchhoff_plate::{Extreme, InvalidInput, PlateError, Solution, solve};
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Plate, Support, Supports};
@@ -570,9 +573,6 @@ fn FigureBlock(quantity: Signal<Quantity>, figure: Option<PlateFigure>) -> Eleme
 /// 塗ったものの上では見えない
 #[component]
 fn QuantitySwitch(quantity: Signal<Quantity>) -> Element {
-    use dioxus_primitives::toggle_group::{ToggleGroup, ToggleItem};
-    use std::collections::HashSet;
-
     let pressed = Quantity::ALL.iter().position(|q| *q == quantity());
     rsx! {
         ToggleGroup {
