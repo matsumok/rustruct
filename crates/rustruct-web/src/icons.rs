@@ -8,10 +8,10 @@ use dioxus::prelude::*;
 
 /// 32 の格子の SVG。`paths` は (d, transform) の組。
 #[component]
-fn Icon(class: &'static str, paths: &'static [(&'static str, &'static str)]) -> Element {
+fn Icon(class: String, paths: &'static [(&'static str, &'static str)]) -> Element {
     rsx! {
         svg {
-            class,
+            class: "{class}",
             view_box: "0 0 32 32",
             fill: "currentColor",
             "aria-hidden": "true",
@@ -27,7 +27,7 @@ fn Icon(class: &'static str, paths: &'static [(&'static str, &'static str)]) -> 
 pub fn MenuIcon(class: &'static str) -> Element {
     rsx! {
         Icon {
-            class,
+            class: "{class}",
             paths: &[
                 ("M4 6H28V8H4z", ""),
                 ("M4 24H28V26H4z", ""),
@@ -43,7 +43,7 @@ pub fn MenuIcon(class: &'static str) -> Element {
 pub fn CloseIcon(class: &'static str) -> Element {
     rsx! {
         Icon {
-            class,
+            class: "{class}",
             paths: &[(
                 "M17.4141 16 24 9.4141 22.5859 8 16 14.5859 9.4143 8 8 9.4141 14.5859 16 8 22.5859 9.4143 24 16 17.4141 22.5859 24 24 22.5859 17.4141 16z",
                 "",
@@ -57,7 +57,7 @@ pub fn CloseIcon(class: &'static str) -> Element {
 pub fn LightIcon(class: &'static str) -> Element {
     rsx! {
         Icon {
-            class,
+            class: "{class}",
             paths: &[
                 ("M15 2H17V7H15z", ""),
                 ("M21.668 6.854H26.626V8.854H21.668z", "rotate(-45 24.147 7.853)"),
@@ -81,7 +81,7 @@ pub fn LightIcon(class: &'static str) -> Element {
 pub fn DarkIcon(class: &'static str) -> Element {
     rsx! {
         Icon {
-            class,
+            class: "{class}",
             paths: &[(
                 "M13.5025,5.4136A15.0755,15.0755,0,0,0,25.096,23.6082a11.1134,11.1134,0,0,1-7.9749,3.3893c-.1385,0-.2782.0051-.4178,0A11.0944,11.0944,0,0,1,13.5025,5.4136M14.98,3a1.0024,1.0024,0,0,0-.1746.0156A13.0959,13.0959,0,0,0,16.63,28.9973c.1641.006.3282,0,.4909,0a13.0724,13.0724,0,0,0,10.702-5.5556,1.0094,1.0094,0,0,0-.7833-1.5644A13.08,13.08,0,0,1,15.8892,4.38,1.0149,1.0149,0,0,0,14.98,3Z",
                 "",
@@ -95,7 +95,7 @@ pub fn DarkIcon(class: &'static str) -> Element {
 pub fn UserIcon(class: &'static str) -> Element {
     rsx! {
         Icon {
-            class,
+            class: "{class}",
             paths: &[
                 ("M16,4a5,5,0,1,1-5,5,5,5,0,0,1,5-5m0-2a7,7,0,1,0,7,7A7,7,0,0,0,16,2Z", ""),
                 (
@@ -107,10 +107,13 @@ pub fn UserIcon(class: &'static str) -> Element {
     }
 }
 
-/// 開け閉め（`chevron--down`）。閉じた枝は置く側で右向きに回す。
+/// 開け閉め（`chevron--down`）。閉じた枝は置く側で右向きに回す（開いているかはトリガーの `aria-expanded`）。
 #[component]
 pub fn ChevronIcon(class: &'static str) -> Element {
     rsx! {
-        Icon { class, paths: &[("M16 22 6 12 7.4 10.6 16 19.2 24.6 10.6 26 12 16 22z", "")] }
+        Icon {
+            class: "{class}",
+            paths: &[("M16 22 6 12 7.4 10.6 16 19.2 24.6 10.6 26 12 16 22z", "")],
+        }
     }
 }

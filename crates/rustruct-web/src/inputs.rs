@@ -587,10 +587,16 @@ mod tests {
             from += at + needle.len();
         }
         assert!(!html.contains("この Sheet に無い欄"), "{html}");
-        // ng の文字は、読めない 2 欄とまたぐエラーの 2 欄の見出し、理由 2 行とまたぐエラーの文言。
-        // ng の枠は読めない 2 欄だけ（またぐエラーの欄は読めている）
-        assert_eq!(html.matches("text-ng").count(), 4 + 3, "{html}");
-        assert_eq!(html.matches("outline-ng").count(), 2, "{html}");
+        // エラーの見出しは、読めない 2 欄とまたぐエラーの 2 欄（data-state）。不正な欄は読めない 2 欄だけ
+        // （aria-invalid。またぐエラーの欄は読めている）
+        let marked = |tag: &str, mark: &str| {
+            html.split(&format!("<{tag} "))
+                .skip(1)
+                .filter(|t| t[..t.find('>').unwrap()].contains(mark))
+                .count()
+        };
+        assert_eq!(marked("th", "data-state=\"error\""), 4, "{html}");
+        assert_eq!(marked("input", "aria-invalid=\"true\""), 2, "{html}");
         for label in ["Lx（m）", "表18-1 最小厚さ", "x = 0（左）"] {
             assert!(html.contains(&format!("aria-label=\"{label}\"")), "{html}");
         }

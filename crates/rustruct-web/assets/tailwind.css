@@ -427,9 +427,6 @@
   .bg-fill {
     background-color: var(--color-fill);
   }
-  .bg-ink {
-    background-color: var(--color-ink);
-  }
   .bg-paper {
     background-color: var(--color-paper);
   }
@@ -559,18 +556,6 @@
   .text-ng {
     color: var(--color-ng);
   }
-  .text-paper {
-    color: var(--color-paper);
-  }
-  .underline {
-    text-decoration-line: underline;
-  }
-  .decoration-accent {
-    text-decoration-color: var(--color-accent);
-  }
-  .underline-offset-4 {
-    text-underline-offset: 4px;
-  }
   .accent-ink {
     accent-color: var(--color-ink);
   }
@@ -578,11 +563,25 @@
     outline-style: var(--tw-outline-style);
     outline-width: 2px;
   }
-  .-outline-offset-2 {
-    outline-offset: calc(2px * -1);
+  .group-aria-expanded\:rotate-0 {
+    &:is(:where(.group)[aria-expanded="true"] *) {
+      rotate: 0deg;
+    }
   }
-  .outline-ng {
-    outline-color: var(--color-ng);
+  .group-here\:underline {
+    &:is(:where(.group)[aria-current="page"] *) {
+      text-decoration-line: underline;
+    }
+  }
+  .group-here\:decoration-accent {
+    &:is(:where(.group)[aria-current="page"] *) {
+      text-decoration-color: var(--color-accent);
+    }
+  }
+  .group-here\:underline-offset-4 {
+    &:is(:where(.group)[aria-current="page"] *) {
+      text-underline-offset: 4px;
+    }
   }
   .first\:pr-3 {
     &:first-child {
@@ -627,6 +626,32 @@
   .focus\:outline-ink {
     &:focus {
       outline-color: var(--color-ink);
+    }
+  }
+  .aria-invalid\:outline-2 {
+    &[aria-invalid="true"] {
+      outline-style: var(--tw-outline-style);
+      outline-width: 2px;
+    }
+  }
+  .aria-invalid\:-outline-offset-2 {
+    &[aria-invalid="true"] {
+      outline-offset: calc(2px * -1);
+    }
+  }
+  .aria-invalid\:outline-ng {
+    &[aria-invalid="true"] {
+      outline-color: var(--color-ng);
+    }
+  }
+  .aria-pressed\:bg-ink {
+    &[aria-pressed="true"] {
+      background-color: var(--color-ink);
+    }
+  }
+  .aria-pressed\:text-paper {
+    &[aria-pressed="true"] {
+      color: var(--color-paper);
     }
   }
   .md\:block {
@@ -749,6 +774,11 @@
       &:where(:not([data-theme="light"], [data-theme="light"] *)) {
         display: none;
       }
+    }
+  }
+  .error\:text-ng {
+    &[data-state="error"] {
+      color: var(--color-ng);
     }
   }
 }

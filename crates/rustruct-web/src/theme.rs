@@ -71,6 +71,13 @@ pub fn theme_css(tokens_json: &str) -> Result<String, Error> {
          }\n\n",
     );
 
+    out.push_str(
+        "/* 状態: 組み込みの variant が無いもの。ARIA の無い要素の data-state と、今いるページの aria-current。\n\
+         \x20  クラスは 1 本にし、状態の差分だけをこの variant で書く（ADR site-0016） */\n\
+         @custom-variant error (&[data-state=\"error\"]);\n\
+         @custom-variant here (&[aria-current=\"page\"]);\n\n",
+    );
+
     out.push_str("@theme {\n");
 
     out.push_str("  /* 色: 役割名。bg-paper / text-ink / border-line のように使う */\n");
@@ -554,6 +561,22 @@ mod tests {
         ] {
             assert!(variant.contains(part), "{part} が無い:\n{variant}");
         }
+    }
+
+    /// 組み込みの variant が無い状態は、要素の属性で選ぶ variant に書く: ARIA の無い要素の `data-state` と、
+    /// 今いるページの `aria-current`（ADR site-0016）。
+    /// 任意値の `data-[state=…]:` は使わない
+    #[test]
+    fn states_without_a_built_in_variant_come_out_as_custom_variants_on_the_element_itself() {
+        let css = css();
+        for line in [
+            r#"@custom-variant error (&[data-state="error"]);"#,
+            r#"@custom-variant here (&[aria-current="page"]);"#,
+        ] {
+            assert!(css.contains(line), "{line} が無い:\n{css}");
+        }
+        // 組み込みの open:（<details> の [open]）を上書きしない
+        assert!(!css.contains("@custom-variant open"), "{css}");
     }
 
     #[test]
