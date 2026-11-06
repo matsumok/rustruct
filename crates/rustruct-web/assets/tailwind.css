@@ -622,6 +622,22 @@
       outline-color: var(--color-ink);
     }
   }
+  .aria-invalid\:outline-2 {
+    &[aria-invalid="true"] {
+      outline-style: var(--tw-outline-style);
+      outline-width: 2px;
+    }
+  }
+  .aria-invalid\:-outline-offset-2 {
+    &[aria-invalid="true"] {
+      outline-offset: calc(2px * -1);
+    }
+  }
+  .aria-invalid\:outline-ng {
+    &[aria-invalid="true"] {
+      outline-color: var(--color-ng);
+    }
+  }
   .aria-pressed\:bg-ink {
     &[aria-pressed="true"] {
       background-color: var(--color-ink);
@@ -757,22 +773,6 @@
   .error\:text-ng {
     &[data-state="error"] {
       color: var(--color-ng);
-    }
-  }
-  .error\:outline-2 {
-    &[data-state="error"] {
-      outline-style: var(--tw-outline-style);
-      outline-width: 2px;
-    }
-  }
-  .error\:-outline-offset-2 {
-    &[data-state="error"] {
-      outline-offset: calc(2px * -1);
-    }
-  }
-  .error\:outline-ng {
-    &[data-state="error"] {
-      outline-color: var(--color-ng);
     }
   }
 }
