@@ -127,10 +127,15 @@ fn Breadcrumb(route: Route) -> Element {
 /// ログインの仕組みができるまで、アカウントのボタンが言うこと（ui-decisions「画面幅」）。
 const ACCOUNT_NOTE: &str = "登録は準備中";
 
-/// 今いるページを含む段の印（`aria-current`）。今いるページそのものには `Link` が自分で `page` を付けるので、
-/// ここではその上の段の `true` だけを付ける（同じ属性を二重にしない）。
+/// メニューの木の段の印（`aria-current`）。今いるページは `page`、それを含む上の段は `true`。
+/// `Link` も今いるページに `page` を付けるが、渡した属性が後から上書きするので、`None` を渡すと消える。
+/// 今いるページの見出しの下線は、この `page` から引く（`group-here:`）。
 fn aria_current(here: &Route, node: &Route) -> Option<&'static str> {
-    (here != node && node.holds(here)).then_some("true")
+    if here == node {
+        Some("page")
+    } else {
+        node.holds(here).then_some("true")
+    }
 }
 
 /// ライトとダークのアイコン。今の色のほうを出す。色は描く前に決まるが、どちらかはブラウザでしか分からないので、
@@ -251,5 +256,20 @@ fn Wordmark() -> Element {
             {name}
             span { class: "hidden font-normal text-muted md:inline", {host} }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// メニューの木の段の印。今いるページは page、それを含む段は true、ほかは付けない。
+    /// 今いるページの印は Link も付けるが、ここで None を渡すと Link の印を消してしまう
+    #[test]
+    fn the_menu_marks_the_page_itself_as_page_and_the_steps_above_as_true() {
+        let here = Route::ToolsKirchhoffPlate {};
+        assert_eq!(aria_current(&here, &here), Some("page"));
+        assert_eq!(aria_current(&here, &Route::Tools {}), Some("true"));
+        assert_eq!(aria_current(&here, &Route::Data {}), None);
     }
 }
