@@ -108,6 +108,13 @@
   --spacing-7: 40px;
   --spacing-8: 48px;
   --spacing-9: 80px;
+  /* シェルの寸法: 画面左右の余白・列の区切りの空き・ヘッダーの高さ。px-margin-sm / md:gap-gap-md / h-header */
+  --spacing-margin-lg: 48px;
+  --spacing-margin-md: 40px;
+  --spacing-margin-sm: 20px;
+  --spacing-gap-lg: 80px;
+  --spacing-gap-md: 16px;
+  --spacing-header: 48px;
 
   /* 角丸: radius-<n> を rounded-<n> で使う */
   --radius-*: initial;

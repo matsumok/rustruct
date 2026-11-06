@@ -44,6 +44,8 @@ impl From<serde_json::Error> for Error {
 /// - 文字 `--text-<役割>` と `--line-height` `--font-weight` `--letter-spacing` の組: `text-body`
 /// - 書体 `--font-sans` `--font-mono`: `font-sans` `font-mono`
 /// - 余白 `--spacing-<n>`（tokens の `space-<n>`）: `p-5` `gap-4`
+/// - シェルの寸法 `--spacing-<名前>[-<幅>]`（tokens の `layout` の `margin` `gap` `header`）: `px-margin-sm`
+///   `md:gap-gap-md` `h-header`
 /// - 角丸 `--radius-<n>`（tokens の `radius-<n>`）: `rounded-0` `rounded-8` `rounded-full`
 /// - 幅 `--container-<n>`（tokens の `layout` の `width-<n>`）: `max-w-column` `max-w-page`
 /// - 切り替わる幅 `--breakpoint-<n>`（tokens の `breakpoint-<n>`）: `md:flex` `lg:px-8`
@@ -110,6 +112,10 @@ pub fn theme_css(tokens_json: &str) -> Result<String, Error> {
     for (name, value) in &tokens.spacing {
         out.push_str(&format!("  --spacing-{name}: {value};\n"));
     }
+    out.push_str("  /* シェルの寸法: 画面左右の余白・列の区切りの空き・ヘッダーの高さ。px-margin-sm / md:gap-gap-md / h-header */\n");
+    for (name, value) in &tokens.shell {
+        out.push_str(&format!("  --spacing-{name}: {value};\n"));
+    }
 
     out.push_str("\n  /* 角丸: radius-<n> を rounded-<n> で使う */\n");
     out.push_str("  --radius-*: initial;\n");
@@ -122,9 +128,9 @@ pub fn theme_css(tokens_json: &str) -> Result<String, Error> {
     for (name, value) in &tokens.widths {
         out.push_str(&format!("  --container-{name}: {value};\n"));
     }
-    // 本文の箱: 1単位の列2つと、間の区切り（線 1px と左右の空き）から導く。空きは data.rs の Columns と同じ
-    // （iPad space-4 → max-w-page、PC space-9 → lg:max-w-page-lg）
-    for (name, gap) in [("page", "4"), ("page-lg", "9")] {
+    // 本文の箱: 1単位の列2つと、間の区切り（線と左右の空き）から導く。空きは table.rs の Columns と同じ
+    // layout の gap（iPad gap-md → max-w-page、PC gap-lg → lg:max-w-page-lg）
+    for (name, gap) in [("page", "gap-md"), ("page-lg", "gap-lg")] {
         out.push_str(&format!(
             "  --container-{name}: {}px;\n",
             page_width(&tokens, gap)?
@@ -227,6 +233,9 @@ struct Tokens {
     radius: Vec<(String, String)>,
     /// `layout` の `width-<n>` の `<n>` と値。
     widths: Vec<(String, String)>,
+    /// `layout` のシェルの寸法（`margin` `gap` `header`）。画面幅ごとの値は `<名前>-<幅>`（`margin-sm`）、
+    /// 1つだけなら `<名前>`（`header`）。値は `space-<n>` の参照を解決した長さ。
+    shell: Vec<(String, String)>,
     /// `breakpoint` の `breakpoint-<n>` の `<n>` と値。
     breakpoints: Vec<(String, String)>,
 }
@@ -263,7 +272,7 @@ struct TextSize {
 }
 
 /// 本文の箱の最大幅（px）。2列（`width-column` × 2）と、間の区切りの線（1px）と、線の左右の空き
-/// （`space-<gap>` × 2）。2列が収まる幅そのものなので、tokens.json には持たずに導く（ADR site-0007）。
+/// （`layout` の `gap` の `gap-<幅>` × 2）。2列が収まる幅そのものなので、tokens.json には持たずに導く（ADR site-0007）。
 fn page_width(tokens: &Tokens, gap: &str) -> Result<u32, Error> {
     let px = |list: &[(String, String)], name: &str, what: &str| -> Result<u32, Error> {
         list.iter()
@@ -272,20 +281,23 @@ fn page_width(tokens: &Tokens, gap: &str) -> Result<u32, Error> {
             .ok_or_else(|| Error::Shape(format!("{what} が px の整数でない")))
     };
     let column = px(&tokens.widths, "column", "width-column")?;
-    let gutter = px(&tokens.spacing, gap, &format!("space-{gap}"))?;
+    let gutter = px(&tokens.shell, gap, gap)?;
     Ok(column * 2 + gutter * 2 + 1)
 }
 
 impl Tokens {
     fn parse(tokens_json: &str) -> Result<Self, Error> {
         let v: Value = serde_json::from_str(tokens_json)?;
+        let spacing = scale(&v, "/spacing/tokens", "space-")?;
+        let (widths, shell) = layout(&v, &spacing)?;
         Ok(Tokens {
             colors: colors(&v)?,
             families: families(&v)?,
             text_styles: text_styles(&v)?,
-            spacing: scale(&v, "/spacing/tokens", "space-")?,
+            spacing,
             radius: scale(&v, "/radius/tokens", "radius-")?,
-            widths: scale(&v, "/layout/tokens", "width-")?,
+            widths,
+            shell,
             breakpoints: scale(&v, "/breakpoint/tokens", "breakpoint-")?,
         })
     }
@@ -396,6 +408,46 @@ fn scale(v: &Value, pointer: &str, prefix: &str) -> Result<Vec<(String, String)>
             Ok((n.to_string(), str_at(t, "/value")?.to_string()))
         })
         .collect()
+}
+
+/// 名前と値の並び。
+type Scale = Vec<(String, String)>;
+
+/// `layout` を、幅（`width-<n>`）とシェルの寸法に分ける。シェルの寸法の値は `{space-<n>}` の参照か、
+/// 画面幅（`sm` `md` `lg`）ごとの参照のオブジェクト。参照は `spacing` の値に置き換える。
+fn layout(v: &Value, spacing: &[(String, String)]) -> Result<(Scale, Scale), Error> {
+    let lookup = |name: &str| {
+        let n = name.strip_prefix("space-")?;
+        spacing.iter().find(|(s, _)| s == n).map(|(_, value)| value)
+    };
+    let mut widths = Vec::new();
+    let mut shell = Vec::new();
+    for t in array(v, "/layout/tokens")? {
+        let name = str_at(t, "/name")?;
+        if let Some(n) = name.strip_prefix("width-") {
+            widths.push((n.to_string(), str_at(t, "/value")?.to_string()));
+            continue;
+        }
+        match at(t, "/value")? {
+            Value::String(value) => shell.push((name.to_string(), resolve(value, lookup)?)),
+            Value::Object(by_width) => {
+                for (width, value) in by_width {
+                    let value = value.as_str().ok_or_else(|| {
+                        Error::Shape(format!(
+                            "/layout/tokens の {name} の {width} が文字列でない"
+                        ))
+                    })?;
+                    shell.push((format!("{name}-{width}"), resolve(value, lookup)?));
+                }
+            }
+            _ => {
+                return Err(Error::Shape(format!(
+                    "/layout/tokens の {name} の値が文字列でもオブジェクトでもない"
+                )));
+            }
+        }
+    }
+    Ok((widths, shell))
 }
 
 fn at<'a>(v: &'a Value, pointer: &str) -> Result<&'a Value, Error> {
@@ -634,6 +686,23 @@ mod tests {
     }
 
     #[test]
+    fn shell_dimensions_are_usable_under_the_spacing_namespace_by_their_names() {
+        // 画面左右の余白 px-margin-sm / md:px-margin-md / lg:px-margin-lg、列の区切りの空き md:gap-gap-md /
+        // lg:gap-gap-lg、ヘッダーの高さ h-header。値は tokens.json の参照先の space-<n>
+        let css = css();
+        for line in [
+            "--spacing-margin-sm: 20px;",
+            "--spacing-margin-md: 40px;",
+            "--spacing-margin-lg: 48px;",
+            "--spacing-gap-md: 16px;",
+            "--spacing-gap-lg: 80px;",
+            "--spacing-header: 48px;",
+        ] {
+            assert!(css.contains(line), "{line} が無い:\n{css}");
+        }
+    }
+
+    #[test]
     fn layout_widths_are_usable_as_tailwind_container_sizes() {
         // 本文の1単位（ui-decisions「列の単位」）。max-w-column / w-column で使う
         assert!(css().contains("--container-column: 335px;"), "{}", css());
@@ -642,6 +711,29 @@ mod tests {
         assert!(css().contains("--container-page-lg: 831px;"), "{}", css()); // 2 × 335 + 2 × 80 + 1
         // 図の座標の幅も同じ1単位
         assert_eq!(column_width(TOKENS).unwrap(), 335);
+    }
+
+    #[test]
+    fn the_page_width_follows_the_gap_of_the_layout_not_a_fixed_space_step() {
+        // gap を space-1 と space-2 にすると、本文の箱は 2 × 335 + 2 × 4 + 1 と 2 × 335 + 2 × 8 + 1
+        let json = r##"{"color":{"tokens":[]},"type":{"families":{},"groups":[]},
+            "spacing":{"tokens":[{"name":"space-1","value":"4px"},{"name":"space-2","value":"8px"}]},
+            "radius":{"tokens":[]},
+            "layout":{"tokens":[{"name":"width-column","value":"335px"},
+                {"name":"gap","value":{"md":"{space-1}","lg":"{space-2}"}}]},
+            "breakpoint":{"tokens":[]}}"##;
+        let css = theme_css(json).expect("gap から本文の箱を導ける");
+        assert!(css.contains("--container-page: 679px;"), "{css}");
+        assert!(css.contains("--container-page-lg: 687px;"), "{css}");
+    }
+
+    #[test]
+    fn a_layout_reference_to_a_missing_space_step_is_an_error() {
+        let json = r##"{"color":{"tokens":[]},"type":{"families":{},"groups":[]},
+            "spacing":{"tokens":[]},"radius":{"tokens":[]},
+            "layout":{"tokens":[{"name":"header","value":"{space-8}"}]},"breakpoint":{"tokens":[]}}"##;
+        let err = theme_css(json).expect_err("参照先が無いのに通った");
+        assert!(err.to_string().contains("space-8"), "{err}");
     }
 
     #[test]
