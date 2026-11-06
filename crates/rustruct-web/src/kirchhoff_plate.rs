@@ -16,9 +16,10 @@ mod figure;
 use figure::corner_margin_text;
 pub use figure::{PlateField, PlateFigure, Quantity};
 
+use crate::Route;
 use crate::inputs::{Definition, Field, InputGroup, Inputs, Kind, Layout, Reading, Reason};
+use crate::page::Page;
 use crate::table::{Block, Caption, Column, Columns, NO_VALUE, Notes, Table, TableColumn};
-use crate::{Page, Route};
 
 /// 辺の最大値を取る評価点の分け方。辺を等分する数
 const EDGE_DIVISIONS: usize = 100;

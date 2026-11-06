@@ -18,10 +18,11 @@ pub use figure::{SlabCurves, SlabFigure};
 use rustruct_types::concrete::{Concrete, ConcreteKind};
 use rustruct_types::quantity::{AreaLoad, Length, Stress};
 
+use crate::Route;
 use crate::data::young_modulus;
 use crate::inputs::{Definition, Field, InputGroup, Inputs, Kind, Layout, Reason};
+use crate::page::Page;
 use crate::table::{Block, Caption, Column, Columns, Notes, Table, TableColumn};
-use crate::{Page, Route};
 
 /// 欄。並びは条件の Sheet の行の順、検討点の Sheet の列の順
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
