@@ -5,7 +5,8 @@
 //! 上は水準以上。見た目は分布図（ADR site-0011）にそろえる:
 //!
 //! - 帯は隣り合う水準の境の間。色は `seq` で、`color_step` ごとの段（境が `color_step` の倍数のところで
-//!   色が変わる）。最初の水準の境の下は塗らない
+//!   色が変わる）。塗るのは `fill_from` 以上の最初の水準の境から上だけで、色の段もそこから数える。それより下の
+//!   水準も線と数値は描く
 //! - 線は `ink` の細線（分布図と同じ太さ）
 //! - 線の上の数値は分布図と同じ白抜きの文字。場が両方向に増えるので、描く範囲の左下から右上への対角線は
 //!   範囲に現れる水準の境とちょうど一度ずつ交わる。数値はその交点に置き、ぶつかるときは `color_step` の
@@ -28,12 +29,14 @@ pub struct LevelGraph {
 }
 
 /// `graphs` は水準の昇順。`xs` は昇順で、描く範囲の x の中にあり、両端を範囲の端に置く（帯がそこまで届く）。
+/// 帯は `fill_from` 以上の水準の間だけ塗り、それより下の水準は線と数値だけにする。
 /// 線の上の数値の桁は、最後の 2 つの水準の差を刻みとして決める。`clear` は数値を置かない画面の矩形
 /// （左上と右下）で、図の上に重ねる印や文字の場所
 pub fn level_graphs(
     plot: &Plot,
     xs: &[f64],
     graphs: &[LevelGraph],
+    fill_from: f64,
     color_step: f64,
     clear: &[[Pt; 2]],
 ) -> Scene {
@@ -43,11 +46,13 @@ pub fn level_graphs(
         return scene;
     };
 
-    // 帯。色の段は color_step の倍数で区切る
-    let base = (first.level / color_step + 1e-9).floor() * color_step;
+    // 帯。fill_from 以上の水準の間だけ。色の段はそこから color_step の倍数で区切る
+    let filled = &graphs[graphs.partition_point(|g| g.level < fill_from)..];
+    let base = filled.first().map_or(first.level, |g| g.level);
+    let base = (base / color_step + 1e-9).floor() * color_step;
     let shades = (((last.level - base) / color_step - 1e-9).ceil() as usize).max(1);
     let clamp = |y: Option<f64>| y.unwrap_or(f64::INFINITY).clamp(plot.y.0, plot.y.1);
-    for pair in graphs.windows(2) {
+    for pair in filled.windows(2) {
         let (lower, upper) = (&pair[0], &pair[1]);
         let bottom: Vec<f64> = lower.ys.iter().map(|&y| clamp(y)).collect();
         let top: Vec<f64> = upper.ys.iter().map(|&y| clamp(y)).collect();
@@ -289,7 +294,7 @@ mod tests {
 
     #[test]
     fn bands_lie_between_neighboring_levels_and_change_color_every_color_step() {
-        let scene = level_graphs(&plot(), &xs(), &graphs(), 20.0, &[]);
+        let scene = level_graphs(&plot(), &xs(), &graphs(), 80.0, 20.0, &[]);
         let bands = bands(&scene);
         // 80〜90 から 190〜200 の 12 本。80 の境の下は塗らない
         assert_eq!(bands.len(), 12);
@@ -316,7 +321,7 @@ mod tests {
 
     #[test]
     fn lines_are_thin_ink_inside_the_plot() {
-        let scene = level_graphs(&plot(), &xs(), &graphs(), 20.0, &[]);
+        let scene = level_graphs(&plot(), &xs(), &graphs(), 80.0, 20.0, &[]);
         let lines: Vec<&Vec<Vec<Pt>>> = scene
             .items
             .iter()
@@ -345,7 +350,7 @@ mod tests {
 
     #[test]
     fn numbers_sit_on_the_diagonal_preferring_the_color_edges() {
-        let scene = level_graphs(&plot(), &xs(), &graphs(), 20.0, &[]);
+        let scene = level_graphs(&plot(), &xs(), &graphs(), 80.0, 20.0, &[]);
         let labels: Vec<(f64, f64, &str)> = scene
             .items
             .iter()
@@ -369,7 +374,7 @@ mod tests {
     fn numbers_keep_out_of_the_given_rectangles() {
         // 中心の近く（データの (4, 4)〜(6, 6)）を空ける: 120 と 100 の数値はそこに置けない
         let clear = [[[80.0, 80.0], [120.0, 120.0]]];
-        let scene = level_graphs(&plot(), &xs(), &graphs(), 20.0, &clear);
+        let scene = level_graphs(&plot(), &xs(), &graphs(), 80.0, 20.0, &clear);
         for item in &scene.items {
             if let Item::Text { x, y, text, .. } = item {
                 assert!(
@@ -384,7 +389,7 @@ mod tests {
     fn a_number_kept_off_the_diagonal_moves_along_its_own_line() {
         // 対角線の中心の近くを空ける: 100 の数値は対角線に置けず、100 の線（x + y = 10）の別の場所に出る
         let clear = [[[80.0, 80.0], [120.0, 120.0]]];
-        let scene = level_graphs(&plot(), &xs(), &graphs(), 20.0, &clear);
+        let scene = level_graphs(&plot(), &xs(), &graphs(), 80.0, 20.0, &clear);
         let hundred: Vec<(f64, f64)> = scene
             .items
             .iter()
@@ -406,7 +411,7 @@ mod tests {
 
     #[test]
     fn bands_do_not_repeat_points_where_they_run_along_the_frame() {
-        let scene = level_graphs(&plot(), &xs(), &graphs(), 20.0, &[]);
+        let scene = level_graphs(&plot(), &xs(), &graphs(), 80.0, 20.0, &[]);
         for (subpaths, _) in bands(&scene) {
             for polygon in subpaths {
                 assert!(
@@ -425,7 +430,7 @@ mod tests {
             .iter()
             .map(|&x| (x < 5.0).then_some(10.0 - x))
             .collect();
-        let scene = level_graphs(&plot(), &xs(), &graphs, 20.0, &[]);
+        let scene = level_graphs(&plot(), &xs(), &graphs, 80.0, 20.0, &[]);
         let bands = bands(&scene);
         assert_eq!(bands.len(), 2);
         // 90〜100 の帯は x ≥ 5 で上の端（画面の y = 0）まで届く
@@ -437,5 +442,43 @@ mod tests {
             .map(|p| p[1])
             .fold(f64::INFINITY, f64::min);
         assert_eq!(top, 0.0);
+    }
+
+    /// 50〜200 を 10 刻みで。80 未満の境も持つ
+    fn graphs_from_50() -> Vec<LevelGraph> {
+        (5..=20)
+            .map(|k| {
+                let level = k as f64 * 10.0;
+                LevelGraph {
+                    level,
+                    ys: xs().iter().map(|x| Some(level / 10.0 - x)).collect(),
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn levels_under_fill_from_get_lines_but_no_bands_and_leave_the_colors_as_they_were() {
+        let from_50 = level_graphs(&plot(), &xs(), &graphs_from_50(), 80.0, 20.0, &[]);
+        let from_80 = level_graphs(&plot(), &xs(), &graphs(), 80.0, 20.0, &[]);
+        // 帯は 80 以上だけで、80 から始めたときと同じ形と色
+        assert_eq!(bands(&from_50), bands(&from_80));
+        // 線は 50・60・70 の境にも引く（50〜200 の 16 本のうち、200 は隅に触れるだけ）
+        let lines = from_50
+            .items
+            .iter()
+            .filter(|item| matches!(item, Item::Path { closed: false, .. }))
+            .count();
+        assert!(lines >= 15, "{lines}");
+        // 80 未満の線にも数値を置く
+        let texts: Vec<&str> = from_50
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(texts.contains(&"60"), "60 が無い: {texts:?}");
     }
 }

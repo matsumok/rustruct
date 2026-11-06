@@ -13,6 +13,11 @@ use rustruct_types::concrete::Concrete;
 use rustruct_types::quantity::{AreaLoad, Length, Stress, UnitWeight};
 pub use rustruct_types::slab_thickness::{Conditions, CriteriaSet, Criterion, Spans};
 
+/// スラブ厚さの下限。等厚曲線の図は、これ未満の厚さの帯を塗らない（ADR slab-thickness-0002）。
+/// 計算核は下限で引き上げない。検討点の評価（[`evaluate`]）も等厚曲線群（[`iso_curves`]）も、これ未満の
+/// 厚さをそのまま扱う
+pub const MIN_SLAB_THICKNESS: Length = Length::mm(80.0);
+
 /// 入力が不正な理由。条件の欄ごとに分け、スパンは最後。荷重は 0 以上、それ以外は正の有限値。Fc は
 /// [`Concrete`] が作るときに守る。入口は不正な欄をすべて、この並び（欄の順）で返す
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

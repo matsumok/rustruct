@@ -34,6 +34,9 @@ mod data;
 /// Tools: 一覧（分野の見出しごと）と、各 Tool のページ。
 mod tools;
 
+/// 図の色と書体（charta の Theme）と、図の SVG。
+mod chart;
+
 /// Tool「Kirchhoff 板の曲げ」のページ。
 mod kirchhoff_plate;
 

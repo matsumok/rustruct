@@ -329,8 +329,8 @@ fn the_page_shows_the_deflection_figure_after_the_results_with_five_switches() {
         main.contains("role=\"group\" aria-label=\"分布図の量\""),
         "{main}"
     );
-    // ライトとダークの 2 枚。等値線の数値が読め、下向きの荷重でたわみは負にならない
-    assert_eq!(main.matches("<svg xmlns").count(), 2, "{main}");
+    // 図は 1 枚（ライトとダークは CSS 変数で切り替わる）。等値線の数値が読め、下向きの荷重でたわみは負にならない
+    assert_eq!(main.matches("<svg xmlns").count(), 1, "{main}");
     let numbers = figure_numbers(&main);
     assert!(!numbers.is_empty(), "等値線の数値が無い: {main}");
     assert!(numbers.iter().all(|v| *v >= 0.0), "{numbers:?}");
@@ -366,10 +366,29 @@ fn each_switch_names_its_figure_with_the_unit() {
 fn a_moment_figure_of_the_fixed_plate_reads_both_signs() {
     // 四辺固定の Mx は中央で正、x = 0 と x = Lx の辺の近くで負
     let figure = figure_of(&PlateInputs::default(), Quantity::Mx).unwrap();
-    let numbers = figure_numbers(&figure.light_svg);
+    let numbers = figure_numbers(&figure.svg);
     assert!(numbers.iter().any(|v| *v > 0.0), "{numbers:?}");
     assert!(numbers.iter().any(|v| *v < 0.0), "{numbers:?}");
-    assert_eq!(figure_numbers(&figure.dark_svg), numbers);
+}
+
+#[test]
+fn the_figure_is_one_svg_whose_colors_are_css_variables() {
+    // ライトとダークはページの CSS が変数の値を切り替える。図は 1 枚で、`#rrggbb` を含まない
+    // 帯の色は段の色そのものか、隣り合う 2 段を OKLab で混ぜた色
+    for (quantity, ramp) in [(Quantity::W, "seq"), (Quantity::Mx, "div")] {
+        let svg = figure_of(&PlateInputs::default(), quantity).unwrap().svg;
+        assert!(!svg.contains('#'), "{svg}");
+        assert!(svg.contains("var(--color-ink)"), "{svg}");
+        assert!(svg.contains(&format!("var(--color-{ramp}-")), "{svg}");
+        for fill in svg.split("style=\"fill: ").skip(1) {
+            assert!(
+                ["none;", "var(--color-", "color-mix(in oklab, var(--color-"]
+                    .iter()
+                    .any(|head| fill.starts_with(head)),
+                "{fill}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -391,7 +410,7 @@ fn the_figure_follows_the_aspect_of_the_plate_within_one_column_and_names_each_s
         Support::SimplySupported.symbol(),
     );
     let wide = figure_of(&inputs, Quantity::W).unwrap();
-    let ((tw, th), (ww, wh)) = (size(&tall.light_svg), size(&wide.light_svg));
+    let ((tw, th), (ww, wh)) = (size(&tall.svg), size(&wide.svg));
     // 長い辺の向きが 1 単位（335）いっぱい
     assert_eq!((th, ww), (335.0, 335.0), "{tw}×{th} {ww}×{wh}");
     // 4:5 の板の大きさから縁の幅 m を読む（tw − 2m = 0.8 (th − 2m)）。8:2 の板も、その縁を除いて 4:1
@@ -492,7 +511,7 @@ fn the_shear_figure_of_a_plate_with_a_free_edge_is_read_inside_the_plate() {
     // 隅の発散で色の幅を決めると、刻みが粗くなって板の中に等値線がほとんど引かれない。色の幅は隅から
     // 辺長の 5 % 以内の点を除いて決める（ADR kirchhoff-plate-0008）ので、板の中の Qx に正の水準が 3 つ以上読める
     let figure = figure_of(&three_fixed_one_free(), Quantity::Qx).unwrap();
-    let mut positive: Vec<f64> = figure_numbers(&figure.light_svg)
+    let mut positive: Vec<f64> = figure_numbers(&figure.svg)
         .into_iter()
         .filter(|v| *v > 0.0)
         .collect();

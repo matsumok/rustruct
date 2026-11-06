@@ -2,20 +2,23 @@
 //! 検討点を印で示す。言葉は `docs/tools/slab-thickness/GLOSSARY.md`、曲線の引き方はADR slab-thickness-0001。
 //!
 //! 曲線は `rustruct-calc` の `iso_curves` が x の並びの上で直接引き、`charta` の `level_graphs` が線と帯に
-//! する。範囲・厚さの刻み・80 mm の下限・条件の要約は移植元の slab の決めを引き継ぎ、色・線・数値の置き方は
-//! サイトの分布図にそろえる（ADR slab-thickness-0002、`docs/ui-decisions.md`「等厚曲線の図」）。図は 1 単位
+//! する。範囲・厚さの刻み・条件の要約は移植元の slab の決めを引き継ぎ、色・線・数値の置き方はサイトの分布図に
+//! そろえる。80 mm（計算核の `MIN_SLAB_THICKNESS`）未満の曲線も線と数値は描き、その間の帯は塗らない（ADR slab-thickness-0002、`docs/ui-decisions.md`「等厚曲線の図」）。図は 1 単位
 //! （`width-column`）の幅に収め、色はライトとダークの 2 枚を作る。
 
 use charta::plot::TEXT_SIZE;
 use charta::{
-    Anchor, Font, HALO_WIDTH, Item, LevelGraph, Paint, Plot, Pt, Scene, Stroke, Theme, axes,
+    Anchor, Colors, Font, HALO_WIDTH, Item, LevelGraph, Paint, Plot, Pt, Scene, Stroke, axes,
     level_graphs, to_svg,
 };
 use numerus::at_place;
-use rustruct_calc::slab_thickness::{Conditions, Spans, evaluate, iso_curves, shared_values};
+use rustruct_calc::slab_thickness::{
+    Conditions, MIN_SLAB_THICKNESS, Spans, evaluate, iso_curves, shared_values,
+};
 use rustruct_types::quantity::Length;
 
 use crate::COLUMN_WIDTH;
+use crate::chart::{Mode, theme};
 
 /// 検討点が無いときの範囲（両軸、m）
 const DEFAULT_VIEW: (f64, f64) = (3.0, 9.0);
@@ -27,11 +30,9 @@ const MIN_VIEW_HALF: f64 = 1.0;
 const MIN_SPAN: f64 = 0.05;
 /// 曲線を引く x の数（範囲の幅を等分する）
 const SAMPLES: usize = 400;
-/// 曲線の厚さの下限（mm）。これ未満の領域は塗らない
-const THICKNESS_FLOOR: f64 = 80.0;
 /// 曲線の厚さの刻み（mm）。曲線が多すぎるときだけ切りのよい値に粗くする
 const THICKNESS_STEP: f64 = 10.0;
-/// 一度に引く曲線の本数の上限
+/// 80 mm 以上で一度に引く曲線の本数の上限（80 mm 未満の曲線は刻みの点で 80 mm までなので、多くない）
 const MAX_CURVES: usize = 200;
 /// 目盛りの数値の幅の見込み（文字数）
 const DIGITS: usize = 4;
@@ -67,7 +68,9 @@ impl SlabFigure {
             .as_ref()
             .map(|(name, spans)| (name.as_str(), *spans));
         let scene = scene(&curves.conditions, point);
-        let svg = |theme| to_svg(&scene, &theme).expect("役割名は tokens.json にある");
+        let svg = |mode| {
+            to_svg(&scene, &theme(mode), Colors::Values).expect("役割名は tokens.json にある")
+        };
         let label = match point {
             Some((name, _)) if !name.is_empty() => {
                 format!("必要スラブ厚の等厚曲線。横軸は Lx、縦軸は Ly。丸の印は検討点 {name}")
@@ -77,8 +80,8 @@ impl SlabFigure {
         };
         Self {
             label,
-            light_svg: svg(Theme::light()),
-            dark_svg: svg(Theme::dark()),
+            light_svg: svg(Mode::Light),
+            dark_svg: svg(Mode::Dark),
         }
     }
 }
@@ -194,7 +197,14 @@ fn scene(conditions: &Conditions, point: Option<(&str, Spans)>) -> Scene {
     let clear: Vec<[Pt; 2]> = overlay.iter().filter_map(extent).collect();
     // 色は曲線 2 本ごとに変わる
     scene.place(
-        level_graphs(&plot, &xs, &graphs, 2.0 * step, &clear),
+        level_graphs(
+            &plot,
+            &xs,
+            &graphs,
+            MIN_SLAB_THICKNESS.as_mm(),
+            2.0 * step,
+            &clear,
+        ),
         [0.0, 0.0],
     );
     scene.items.extend(overlay);
@@ -247,9 +257,11 @@ fn text(at: [f64; 2], s: &str) -> Item {
 }
 
 /// 範囲の厚さ [t_min, t_max]（mm）を覆う曲線の厚さと、その刻み。刻みは本数が上限に収まる切りのよい値
-/// （10 mm 以上）。80 mm 未満の曲線は作らず、80 mm を最も薄い曲線にする
+/// （10 mm 以上）。刻みと 80 mm 以上の厚さは 80 mm から上の幅で決め、80 mm を必ず曲線にする（塗る帯の始まり）。
+/// 範囲が 80 mm 未満に及べば、その分の曲線を刻みの点で足す（線だけで、帯は塗らない）
 fn thicknesses(t_min: f64, t_max: f64) -> (Vec<f64>, f64) {
-    let lo = t_min.max(THICKNESS_FLOOR);
+    let floor = MIN_SLAB_THICKNESS.as_mm();
+    let lo = t_min.max(floor);
     let hi = t_max.max(lo);
     let mut step = nice_step(((hi - lo) / (MAX_CURVES - 2) as f64).max(THICKNESS_STEP));
     let mut ts = between(lo, hi, step);
@@ -258,7 +270,16 @@ fn thicknesses(t_min: f64, t_max: f64) -> (Vec<f64>, f64) {
         step *= 2.0;
         ts = between(lo, hi, step);
     }
-    (ts, step)
+    // 80 mm 未満: t_min を刻みに切り下げた点（厚さは正なので 1 刻み以上）から 80 mm の手前まで
+    let under: Vec<f64> = if t_min < floor {
+        ((t_min / step).floor().max(1.0) as i64..)
+            .map(|k| k as f64 * step)
+            .take_while(|&t| t < floor)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    (under.into_iter().chain(ts).collect(), step)
 }
 
 /// `min_step` 以上で最小の切りのよい刻み（…, 10, 25, 50, 100, 250, …）
@@ -274,7 +295,7 @@ fn nice_step(min_step: f64) -> f64 {
 /// [lo, hi] を覆う厚さ。lo を刻みに切り下げた値（80 mm 未満なら 80 mm）から、hi 以上の刻みの点まで。
 /// 帯を作れるよう 2 本以上
 fn between(lo: f64, hi: f64, step: f64) -> Vec<f64> {
-    let lo = ((lo / step).floor() * step).max(THICKNESS_FLOOR);
+    let lo = ((lo / step).floor() * step).max(MIN_SLAB_THICKNESS.as_mm());
     let first = (lo / step).floor() as i64 + 1;
     let last = ((hi / step).ceil() as i64).max(first);
     std::iter::once(lo)

@@ -4,6 +4,8 @@
 //!   が読む。リポジトリに入れる生成物なので、内容が変わらないときは書き込まない（書くと dx の
 //!   監視が無駄に走る）
 //! - `$OUT_DIR/fonts.rs`（Google Fonts の URL と、図の座標の幅にする本文の1単位）: `lib.rs` が `include!` する
+//! - `$OUT_DIR/chart_theme.rs`（図の色の役割名・ライト・ダークの表と書体）: `chart.rs` が `include!` して
+//!   `charta::Theme` を作る。tokens.json を読むのはこのクレートだけ（charta は値を受け取る）
 //!
 //! 変換そのものは `src/theme.rs` の純粋関数で、ここはファイルの読み書きだけを持つ。
 
@@ -44,4 +46,9 @@ fn main() {
     );
     std::fs::write(&fonts_path, fonts_rs)
         .unwrap_or_else(|e| panic!("{} を書けない: {e}", fonts_path.display()));
+
+    let chart_path = Path::new(&out_dir).join("chart_theme.rs");
+    let chart_rs = theme::chart_theme_rs(&tokens).unwrap_or_else(|e| panic!("{e}"));
+    std::fs::write(&chart_path, chart_rs)
+        .unwrap_or_else(|e| panic!("{} を書けない: {e}", chart_path.display()));
 }

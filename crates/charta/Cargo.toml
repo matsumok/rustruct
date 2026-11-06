@@ -10,6 +10,3 @@ workspace = true
 [dependencies]
 numerus.workspace = true
 
-# docs/design/tokens.json → 色と書体の表（$OUT_DIR/tokens.rs）を build.rs が書く。配信物には JSON も serde も入らない
-[build-dependencies]
-serde_json.workspace = true

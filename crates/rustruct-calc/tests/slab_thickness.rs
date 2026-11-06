@@ -3,8 +3,8 @@
 //! 条件の既定は Fc 24、仕上げ荷重 1000 N/m²、積載荷重 1800 N/m²、変形増大係数 8、変形角 1/400。
 
 use rustruct_calc::slab_thickness::{
-    Conditions, CriteriaSet, Criterion, Evaluation, InvalidInput, SharedValues, Spans, evaluate,
-    shared_values,
+    Conditions, CriteriaSet, Criterion, Evaluation, InvalidInput, MIN_SLAB_THICKNESS, SharedValues,
+    Spans, evaluate, shared_values,
 };
 use rustruct_types::concrete::{Concrete, ConcreteKind};
 use rustruct_types::quantity::{AreaLoad, Length, Stress};
@@ -589,6 +589,19 @@ fn absolute_deflection_matches_hand_calculation() {
     assert_eq!(ev.governing, Criterion::DeflectionAbsolute);
 }
 
+/// スラブ厚さの下限は 80 mm
+#[test]
+fn min_slab_thickness_is_80_mm() {
+    assert_eq!(MIN_SLAB_THICKNESS, Length::mm(80.0));
+}
+
+/// 検討点の評価は 80 mm 未満の必要スラブ厚もそのまま返す。下限で引き上げない
+#[test]
+fn evaluation_returns_thicknesses_under_80_mm() {
+    let t = t_req(&with(deflection_ratio(400.0)), 1.0, 1.0);
+    assert!(t > 0.0 && t < 80.0, "t_req = {t}");
+}
+
 /// 変形角と絶対量は、同じ許容たわみを表す組では同じ答えになる（lx = 4 m では 1/200 と 20 mm が同じ 20 mm）。
 /// 2 つの条件が別の式で書かれていても、同じ判定式に帰着することを確かめる
 #[test]
@@ -1014,5 +1027,17 @@ mod iso_curves {
             }
         }
         assert!(unbounded > 10 && bounded > 10, "{unbounded} / {bounded}");
+    }
+
+    /// 80 mm 未満の厚さも、頼んだとおり頼んだ順に曲線を返す。80 mm 未満の曲線も引ける
+    #[test]
+    fn curves_under_80_mm_come_back_as_requested() {
+        let xs = grid();
+        let conditions = with(deflection_ratio(400.0));
+        let got = curves(&conditions, &xs, &[50.0, 60.0, 70.0, 80.0, 90.0]);
+        let thicknesses: Vec<f64> = got.iter().map(|(t, _)| *t).collect();
+        assert_eq!(thicknesses, [50.0, 60.0, 70.0, 80.0, 90.0]);
+        // 50 mm の曲線は範囲の中に境がある（1 m 角で 80 mm 未満なので、短いスパンで境を持つ）
+        assert!(got[0].1.iter().any(Option::is_some));
     }
 }

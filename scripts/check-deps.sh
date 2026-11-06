@@ -36,6 +36,12 @@ if [ "$got" != "numerus" ]; then
   echo "NG: charta の直接依存が docs/stack.md（numerus のみ）と違う:"; echo "$got"; fail=1
 fi
 
+# charta は build.rs も build 依存も持たず、tokens.json を読まない（色と書体は呼び手が Theme で渡す）
+got=$(cargo tree -p charta -e build --prefix none --locked --depth 1 | tail -n +2)
+if [ -e crates/charta/build.rs ] || [ -n "$got" ] || grep -rq 'tokens\.json' crates/charta; then
+  echo "NG: charta が build.rs・build 依存・tokens.json への参照を持つ（docs/stack.md）"; fail=1
+fi
+
 # numerus は依存を持たない
 got=$(direct_deps numerus)
 if [ -n "$got" ]; then

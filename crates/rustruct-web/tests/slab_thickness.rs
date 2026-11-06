@@ -380,8 +380,40 @@ fn an_unreadable_point_leaves_the_default_view_without_a_mark() {
     }
 }
 
+/// 塗った帯の輪郭（`fill` が色の閉じた path）。画面の点の列
+fn bands(svg: &str) -> Vec<Vec<(f64, f64)>> {
+    svg.split("<path")
+        .skip(1)
+        .map(|t| &t[..t.find('>').unwrap()])
+        .filter(|tag| tag.contains("fill=\"#"))
+        .map(|tag| {
+            let at = tag.find(" d=\"").unwrap() + 4;
+            let d = &tag[at..at + tag[at..].find('"').unwrap()];
+            d.split(['M', 'L', 'Z'])
+                .filter(|p| !p.is_empty())
+                .map(|p| {
+                    let (x, y) = p.split_once(' ').unwrap();
+                    (x.parse().unwrap(), y.parse().unwrap())
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// 点が多角形の内にあるか（偶奇の規則）
+fn inside(polygon: &[(f64, f64)], (x, y): (f64, f64)) -> bool {
+    let mut odd = false;
+    for (i, &(xa, ya)) in polygon.iter().enumerate() {
+        let (xb, yb) = polygon[(i + 1) % polygon.len()];
+        if (ya > y) != (yb > y) && x < xa + (y - ya) / (yb - ya) * (xb - xa) {
+            odd = !odd;
+        }
+    }
+    odd
+}
+
 #[test]
-fn regions_under_80_mm_are_left_unpainted_and_no_curve_is_thinner() {
+fn curves_under_80_mm_are_drawn_and_numbered_but_their_regions_are_left_unpainted() {
     // 2.5 m 四方: 範囲（1.5〜3.5 m）の左下は 80 mm に届かず、右上は超える
     let svg = figure(|i| {
         i.set(SlabField::SpanX, "2.5");
@@ -391,7 +423,18 @@ fn regions_under_80_mm_are_left_unpainted_and_no_curve_is_thinner() {
     .light_svg;
     let numbers = thickness_numbers(&svg);
     assert!(numbers.contains(&80.0), "{numbers:?}");
-    assert!(numbers.iter().all(|t| *t >= 80.0), "{numbers:?}");
+    assert!(numbers.contains(&70.0), "{numbers:?}");
+    // 枠の左下の隅（80 mm 未満）はどの帯にも入らない。80 mm の曲線の上の右上の隅は入る
+    let frame = &svg[svg.find("<rect").unwrap()..];
+    let (x, y) = (attr(frame, "x"), attr(frame, "y"));
+    let side = attr(frame, "width");
+    let bands = bands(&svg);
+    assert!(!bands.is_empty());
+    assert!(
+        !bands.iter().any(|b| inside(b, (x + 1.0, y + side - 1.0))),
+        "左下を塗った"
+    );
+    assert!(bands.iter().any(|b| inside(b, (x + side - 1.0, y + 1.0))));
 }
 
 /// 属性の値（最初の 1 つ）
