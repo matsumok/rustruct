@@ -10,6 +10,22 @@ cd "$(dirname "$0")/.."
 css=crates/rustruct-web/assets/tailwind.css
 fail=0
 
+# 拾えない形は書けなくする: 文字に {…} を差し込む class: と、class: 変数（束ねたクラス）や、枝が文字でない
+# class: if。状態の差分は data-state か aria-* の variant で 1 本の文字に書く（ADR site-0008）。
+# 部品が受けた class をそのまま渡す class: "{class}" だけは通す（置く側の class: "…" をここで拾う）
+bad=$(perl -0777 -ne '
+  while (/class:\s*("[^"]*"|if\b[^{]*\{\s*"[^"]*"\s*\}\s*else\s*\{\s*"[^"]*"\s*\}|if\b|(?!if\b)[A-Za-z_(])/g) {
+    my ($m, $at) = ($1, $-[0]);
+    my @lit = $m =~ /"([^"]*)"/g;
+    my $ok = @lit && !grep { /[{}]/ && $_ ne "{class}" } @lit;
+    next if $ok;
+    my $line = 1 + (substr($_, 0, $at) =~ tr/\n//);
+    print "$ARGV:$line\n";
+  }' $(find crates/rustruct-web/src -name '*.rs'))
+for b in $bad; do
+  echo "NG: $b の class: が文字そのものでない（{…} の差し込みか変数。状態は data-state の variant で 1 本の文字に書く）"; fail=1
+done
+
 # class: "…" と、class: if … { "…" } else { "…" }（行をまたいでもよい）の文字をすべて拾う
 classes=$(perl -0777 -ne 'while (/class:\s*(if\b[^{]*\{\s*"[^"]*"\s*\}\s*else\s*\{\s*"[^"]*"\s*\}|"[^"{}]*")/g) { my $m = $1; print "$1\n" while $m =~ /"([^"]*)"/g }' \
   $(find crates/rustruct-web/src -name '*.rs') | tr ' ' '\n' | grep -v '^$' | sort -u)

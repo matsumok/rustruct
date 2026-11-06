@@ -71,6 +71,12 @@ pub fn theme_css(tokens_json: &str) -> Result<String, Error> {
          }\n\n",
     );
 
+    out.push_str(
+        "/* 状態: 要素の data-state の値（ADR site-0008）。クラスは 1 本にし、状態の差分だけをこの variant で書く */\n\
+         @custom-variant error (&[data-state=\"error\"]);\n\
+         @custom-variant open (&[data-state=\"open\"]);\n\n",
+    );
+
     out.push_str("@theme {\n");
 
     out.push_str("  /* 色: 役割名。bg-paper / text-ink / border-line のように使う */\n");
@@ -553,6 +559,19 @@ mod tests {
             r#"&:where(:not([data-theme="light"], [data-theme="light"] *))"#,
         ] {
             assert!(variant.contains(part), "{part} が無い:\n{variant}");
+        }
+    }
+
+    /// 状態の差分は `data-state` の値で選ぶ variant に書く（ADR site-0008 の `data-state` の約束）。
+    /// 任意値の `data-[state=…]:` は使わない
+    #[test]
+    fn states_come_out_as_variants_on_the_data_state_of_the_element_itself() {
+        let css = css();
+        for line in [
+            r#"@custom-variant error (&[data-state="error"]);"#,
+            r#"@custom-variant open (&[data-state="open"]);"#,
+        ] {
+            assert!(css.contains(line), "{line} が無い:\n{css}");
         }
     }
 

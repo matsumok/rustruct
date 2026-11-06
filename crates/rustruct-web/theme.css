@@ -13,6 +13,10 @@
   }
 }
 
+/* 状態: 要素の data-state の値（ADR site-0008）。クラスは 1 本にし、状態の差分だけをこの variant で書く */
+@custom-variant error (&[data-state="error"]);
+@custom-variant open (&[data-state="open"]);
+
 @theme {
   /* 色: 役割名。bg-paper / text-ink / border-line のように使う */
   --color-*: initial;

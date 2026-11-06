@@ -440,12 +440,6 @@ fn MenuNode(node: Route, here: Route, depth: usize, on_close: EventHandler<()>) 
         (false, false) => "text-body",
         (false, true) => "text-body underline decoration-accent underline-offset-4",
     };
-    // 閉じた枝の印は右向き
-    let chevron = if open() {
-        "size-4"
-    } else {
-        "size-4 -rotate-90"
-    };
     let link = rsx! {
         Link {
             to: node.clone(),
@@ -474,7 +468,8 @@ fn MenuNode(node: Route, here: Route, depth: usize, on_close: EventHandler<()>) 
                         CollapsibleTrigger {
                             class: "px-3 py-2 text-muted",
                             "aria-label": if open() { "{heading}を閉じる" } else { "{heading}を開く" },
-                            ChevronIcon { class: chevron }
+                            // 閉じた枝の印は右向き
+                            ChevronIcon { class: "size-4 -rotate-90 open:rotate-0", open: open() }
                         }
                     }
                     {path}

@@ -6,12 +6,17 @@
 
 use dioxus::prelude::*;
 
-/// 32 の格子の SVG。`paths` は (d, transform) の組。
+/// 32 の格子の SVG。`paths` は (d, transform) の組。`state` は状態を持つアイコンの `data-state`。
 #[component]
-fn Icon(class: &'static str, paths: &'static [(&'static str, &'static str)]) -> Element {
+fn Icon(
+    class: &'static str,
+    paths: &'static [(&'static str, &'static str)],
+    #[props(default)] state: Option<&'static str>,
+) -> Element {
     rsx! {
         svg {
             class,
+            "data-state": state,
             view_box: "0 0 32 32",
             fill: "currentColor",
             "aria-hidden": "true",
@@ -107,10 +112,42 @@ pub fn UserIcon(class: &'static str) -> Element {
     }
 }
 
-/// 開け閉め（`chevron--down`）。閉じた枝は置く側で右向きに回す。
+/// 開け閉め（`chevron--down`）。枝が開いているかを `data-state`（`open` / `closed`）に持ち、
+/// 閉じた枝は置く側のクラスで右向きに回す（`-rotate-90 open:rotate-0`）。
 #[component]
-pub fn ChevronIcon(class: &'static str) -> Element {
+pub fn ChevronIcon(class: &'static str, open: bool) -> Element {
     rsx! {
-        Icon { class, paths: &[("M16 22 6 12 7.4 10.6 16 19.2 24.6 10.6 26 12 16 22z", "")] }
+        Icon {
+            class,
+            state: Some(if open { "open" } else { "closed" }),
+            paths: &[("M16 22 6 12 7.4 10.6 16 19.2 24.6 10.6 26 12 16 22z", "")],
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[component]
+    fn Branches() -> Element {
+        rsx! {
+            ChevronIcon { class: "size-4", open: true }
+            ChevronIcon { class: "size-4", open: false }
+        }
+    }
+
+    /// 開け閉めの印は、開いた枝か閉じた枝かを自分の `data-state` に持つ（向きは置く側のクラスの variant）
+    #[test]
+    fn the_chevron_carries_whether_its_branch_is_open_in_its_data_state() {
+        let mut dom = VirtualDom::new(Branches);
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+        let states: Vec<&str> = html
+            .split("data-state=\"")
+            .skip(1)
+            .map(|t| &t[..t.find('"').unwrap()])
+            .collect();
+        assert_eq!(states, ["open", "closed"], "{html}");
     }
 }

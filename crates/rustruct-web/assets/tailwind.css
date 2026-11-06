@@ -427,9 +427,6 @@
   .bg-fill {
     background-color: var(--color-fill);
   }
-  .bg-ink {
-    background-color: var(--color-ink);
-  }
   .bg-paper {
     background-color: var(--color-paper);
   }
@@ -559,9 +556,6 @@
   .text-ng {
     color: var(--color-ng);
   }
-  .text-paper {
-    color: var(--color-paper);
-  }
   .underline {
     text-decoration-line: underline;
   }
@@ -577,12 +571,6 @@
   .outline-2 {
     outline-style: var(--tw-outline-style);
     outline-width: 2px;
-  }
-  .-outline-offset-2 {
-    outline-offset: calc(2px * -1);
-  }
-  .outline-ng {
-    outline-color: var(--color-ng);
   }
   .first\:pr-3 {
     &:first-child {
@@ -606,6 +594,11 @@
       border-bottom-width: 0px;
     }
   }
+  .open\:rotate-0 {
+    &[data-state="open"] {
+      rotate: 0deg;
+    }
+  }
   .hover\:text-ink {
     &:hover {
       @media (hover: hover) {
@@ -627,6 +620,16 @@
   .focus\:outline-ink {
     &:focus {
       outline-color: var(--color-ink);
+    }
+  }
+  .aria-pressed\:bg-ink {
+    &[aria-pressed="true"] {
+      background-color: var(--color-ink);
+    }
+  }
+  .aria-pressed\:text-paper {
+    &[aria-pressed="true"] {
+      color: var(--color-paper);
     }
   }
   .md\:block {
@@ -749,6 +752,27 @@
       &:where(:not([data-theme="light"], [data-theme="light"] *)) {
         display: none;
       }
+    }
+  }
+  .error\:text-ng {
+    &[data-state="error"] {
+      color: var(--color-ng);
+    }
+  }
+  .error\:outline-2 {
+    &[data-state="error"] {
+      outline-style: var(--tw-outline-style);
+      outline-width: 2px;
+    }
+  }
+  .error\:-outline-offset-2 {
+    &[data-state="error"] {
+      outline-offset: calc(2px * -1);
+    }
+  }
+  .error\:outline-ng {
+    &[data-state="error"] {
+      outline-color: var(--color-ng);
     }
   }
 }

@@ -43,7 +43,8 @@ pub(crate) fn SheetHead(
 ) -> Element {
     rsx! {
         th {
-            class: if error { "h-6 border-r border-line bg-fill px-1 text-center text-label text-ng font-normal whitespace-nowrap last:border-r-0" } else { "h-6 border-r border-line bg-fill px-1 text-center text-label text-muted font-normal whitespace-nowrap last:border-r-0" },
+            class: "h-6 border-r border-line bg-fill px-1 text-center text-label text-muted font-normal whitespace-nowrap last:border-r-0 error:text-ng",
+            "data-state": error.then_some("error"),
             scope,
             {label}
         }
@@ -108,19 +109,10 @@ pub(crate) fn SheetInput(
     #[props(default = true)] numeric: bool,
     oninput: EventHandler<FormEvent>,
 ) -> Element {
-    let text = if numeric {
-        "font-mono text-num text-right"
-    } else {
-        "text-body"
-    };
-    let frame = if error {
-        "outline-2 -outline-offset-2 outline-ng"
-    } else {
-        "focus:outline-2 focus:-outline-offset-2 focus:outline-ink"
-    };
     rsx! {
         input {
-            class: "h-6 w-full bg-paper px-2 {text} {frame}",
+            class: if numeric { "h-6 w-full bg-paper px-2 font-mono text-num text-right focus:outline-2 focus:-outline-offset-2 focus:outline-ink error:outline-2 error:-outline-offset-2 error:outline-ng" } else { "h-6 w-full bg-paper px-2 text-body focus:outline-2 focus:-outline-offset-2 focus:outline-ink error:outline-2 error:-outline-offset-2 error:outline-ng" },
+            "data-state": error.then_some("error"),
             r#type: "text",
             inputmode: if numeric { "decimal" } else { "text" },
             "aria-label": label,
