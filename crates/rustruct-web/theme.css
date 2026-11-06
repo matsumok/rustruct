@@ -13,6 +13,11 @@
   }
 }
 
+/* 状態: 組み込みの variant が無いもの。ARIA の無い要素の data-state と、今いるページの aria-current。
+   クラスは 1 本にし、状態の差分だけをこの variant で書く（ADR site-0016） */
+@custom-variant error (&[data-state="error"]);
+@custom-variant here (&[aria-current="page"]);
+
 @theme static {
   /* 色: 役割名。bg-paper / text-ink / border-line のように使う */
   --color-*: initial;

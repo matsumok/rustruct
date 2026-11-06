@@ -573,7 +573,7 @@ fn QuantitySwitch(quantity: Signal<Quantity>) -> Element {
             "aria-label": "分布図の量",
             for q in Quantity::ALL {
                 button {
-                    class: if quantity() == q { "h-6 flex-1 border-r border-line bg-ink font-mono text-num text-paper last:border-r-0" } else { "h-6 flex-1 border-r border-line bg-paper font-mono text-num last:border-r-0" },
+                    class: "h-6 flex-1 border-r border-line bg-paper font-mono text-num last:border-r-0 aria-pressed:bg-ink aria-pressed:text-paper",
                     r#type: "button",
                     "aria-pressed": if quantity() == q { "true" } else { "false" },
                     onclick: move |_| quantity.set(q),
