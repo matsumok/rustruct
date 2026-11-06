@@ -13,7 +13,7 @@
   }
 }
 
-/* 状態: 要素の data-state の値（ADR site-0008）。クラスは 1 本にし、状態の差分だけをこの variant で書く */
+/* 状態: ARIA の無い要素の data-state の値。クラスは 1 本にし、状態の差分だけをこの variant で書く（ADR site-0016） */
 @custom-variant error (&[data-state="error"]);
 @custom-variant open (&[data-state="open"]);
 

@@ -72,7 +72,7 @@ pub fn theme_css(tokens_json: &str) -> Result<String, Error> {
     );
 
     out.push_str(
-        "/* 状態: 要素の data-state の値（ADR site-0008）。クラスは 1 本にし、状態の差分だけをこの variant で書く */\n\
+        "/* 状態: ARIA の無い要素の data-state の値。クラスは 1 本にし、状態の差分だけをこの variant で書く（ADR site-0016） */\n\
          @custom-variant error (&[data-state=\"error\"]);\n\
          @custom-variant open (&[data-state=\"open\"]);\n\n",
     );
@@ -562,7 +562,7 @@ mod tests {
         }
     }
 
-    /// 状態の差分は `data-state` の値で選ぶ variant に書く（ADR site-0008 の `data-state` の約束）。
+    /// ARIA の無い要素の状態の差分は、`data-state` の値で選ぶ variant に書く（ADR site-0016）。
     /// 任意値の `data-[state=…]:` は使わない
     #[test]
     fn states_come_out_as_variants_on_the_data_state_of_the_element_itself() {
