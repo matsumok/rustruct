@@ -98,6 +98,10 @@ rustruct は、構造計算のツール（Tools）、材料や規格の値（Dat
 - 入力はデータテーブルではなくスプレッドシート（`Sheet`）。格子は `line`、選択セルは `ink` の 2px 内枠。入力セルは大きく、表示用の表は小さく。
 - 入力の組は Sheet → 注記 → 読めない欄の理由 → 警告 の順で、間は `space-1`。組と最初の結果の表の間は `space-6`（ADR site-0015）。
 - 欄の種類は数値・文字・チェック・選択の4つ。Sheet は行見出し（左に見出し、右に欄。1行に1欄か2組）か列見出し（上に見出しの行、下に値の行）のどちらか。欄の `aria-label` は欄の名前。
+- チェックと選択の欄、分布図の量の切替の振る舞いは `dioxus-primitives` の checkbox・select・toggle_group（ADR site-0008、ADR site-0017）。欄はどれもセルいっぱいの押せる器で、フォーカスは書けるセルと同じ `ink` の 2px 内枠。
+  - チェックの欄は、セルの左に `size-4` の箱（`paper` の地に `line-strong` の枠）。オンで箱を `ink` で塗り、`paper` の印（`checkmark`）を出す。セルのどこを押しても切り替わる。
+  - 選択の欄は、選んだ名前を左に、開く印（`chevron--down`）を右に置く。名前の左の空きは数値と文字の欄と同じ `px-2`。収まらない名前は折り返さずに切る。開くとセルの真下に選択肢の一覧を重ねる（`paper` の地に `line` の枠、角は `radius-0`）。選んだ選択肢は `ink` で塗る。閉じるとフォーカスは欄に戻る。
+  - 量の切替は、押されているものをもう一度押しても外さない（いつも 1 つが押されている）。Tab では組に 1 度だけ止まり、組の中は左右の矢印で移る。フォーカスの内枠は Tab で来たときだけ出し、押されて `ink` で塗ったものの上では `paper`。
 - 欄の並べ方と定義（名前・種類・空欄を受けるか・初期値）はページが宣言し、描画と読み取りは1つの部品（`crates/rustruct-web/src/inputs.rs`）が持つ。空欄の規則はページ、値の規則（0 や負を受けるか）は計算核の入口が持つ。
 - 計算核の入口は不正な欄をすべて返し、その理由の文言（「0 より大きい値を入れる」など。欄の名前を含めない）をページが欄に写す。読めない欄は初期値で埋めて入口を呼び、読めない欄と不正な欄をいっぺんに出す。
 - 入力値を変えた瞬間に派生値を更新する。重い解析は即時でなくてよい。全画面を描き直さず、変わった所だけ更新する（行を1つ足すときも）。
@@ -117,9 +121,9 @@ rustruct は、構造計算のツール（Tools）、材料や規格の値（Dat
 ## 状態
 
 - 状態（エラー、開いているか、押されているか、今いるページ）で見た目が変わる要素は、状態を要素の属性に持ち、クラスは 1 本の文字で書く。状態の差分だけを variant で書く（`text-muted error:text-ng`、`bg-paper aria-pressed:bg-ink`）（ADR site-0016）。
-- 属性は、合う ARIA があればそれを使い、Tailwind 組み込みの variant で書く（入力欄のエラーは `aria-invalid` と `aria-invalid:`、量の切替は `aria-pressed` と `aria-pressed:`）。部品が既に出す属性があれば、それから導く（メニューの枝の開閉は collapsible のトリガーの `aria-expanded`）。
+- 属性は、合う ARIA があればそれを使い、Tailwind 組み込みの variant で書く（入力欄のエラーは `aria-invalid` と `aria-invalid:`、量の切替は `aria-pressed` と `aria-pressed:`、選択の欄の選んだ選択肢は `aria-selected:`）。部品が既に出す属性があれば、それから導く（メニューの枝の開閉は collapsible のトリガーの `aria-expanded`、チェックの欄のオンは checkbox の `aria-checked`）。
 - 組み込みの variant が無い状態は `theme.css` の `@custom-variant` で書く。ARIA の無い要素（Sheet の見出し）のエラーは `data-state="error"` と `error:`、今いるページは `aria-current="page"` と `here:`。
-- 属性を持つ要素と見た目を変える要素が違うときは、属性を持つ要素に `group` を付け、中の要素に `group-*:` で書く（メニューの枝の矢印は `group-aria-expanded:rotate-0`、今いるページの見出しは `group-here:underline`）。
+- 属性を持つ要素と見た目を変える要素が違うときは、属性を持つ要素に `group` を付け、中の要素に `group-*:` で書く（メニューの枝の矢印は `group-aria-expanded:rotate-0`、今いるページの見出しは `group-here:underline`、チェックの欄の箱の塗りは `group-aria-checked:bg-ink`）。
 - `@custom-variant` の名前は Tailwind 組み込みの variant とぶつけない。任意値の variant（`data-[state=error]:` など）は使わない。
 - 状態でクラスの文字を選ぶ `if` と、クラスを変数に束ねる形は書かない。状態でない性質（数値の欄か文字の欄か）で変わる部分は、同じ要素に `class:` を 2 つ書き、共通の部分と、違う部分だけを選ぶ `class: if … { "…" } else { "…" }` に分ける（Dioxus がつないで出す）。部品が受けた `class` は `class: "{class}"` でそのまま渡す。拾えない形は `scripts/check-classes.sh` が落とす。
 
@@ -167,5 +171,5 @@ rustruct は、構造計算のツール（Tools）、材料や規格の値（Dat
 ## 図とアイコン
 
 - Studies の図版は計算で描いた SVG。線は `ink` の細線（0.25〜0.5px 相当）、下地は `fill`。塗るときは藍（`accent`）と青碧（`chart-2`）の組だけを使う。
-- アイコンは基本使わない。状態は `radius-full` の小さな点と文言で示す。ヘッダーのボタン（メニュー、ライトとダークの切り替え、アカウント）とメニューの枝の開け閉めだけはアイコンを使う。IBM の Carbon（`@carbon/icons`、Apache-2.0）の `menu`・`close`・`light`・`asleep`・`user` を、`size-5` で文字の色のまま置く。path はコードに写して埋める（`crates/rustruct-web/src/icons.rs`）。メニューの枝の開け閉めは `chevron--down` を `size-4` の `muted` で置き、閉じた枝は右に回す。
+- アイコンは基本使わない。状態は `radius-full` の小さな点と文言で示す。ヘッダーのボタン（メニュー、ライトとダークの切り替え、アカウント）、メニューの枝の開け閉め、Sheet の選択とチェックの欄の印だけはアイコンを使う。IBM の Carbon（`@carbon/icons`、Apache-2.0）の `menu`・`close`・`light`・`asleep`・`user` を、`size-5` で文字の色のまま置く。path はコードに写して埋める（`crates/rustruct-web/src/icons.rs`）。メニューの枝の開け閉めは `chevron--down` を `size-4` の `muted` で置き、閉じた枝は右に回す。選択の欄の開く印も同じ `chevron--down` の `size-4` の `muted` で、回さない。チェックの欄のオンの印は `checkmark` を `size-3` の `paper` で、`ink` の箱の中に置く。
 - ロゴはない。サイト名はいつも `wordmark` の文字で組む。

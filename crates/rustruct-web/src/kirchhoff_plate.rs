@@ -5,7 +5,10 @@
 //! 辺は座標で呼ぶ（x = 0 の辺など）。画面の上下左右は図の向き（x は右、y は上）でここが決め、入力の
 //! Sheet の行見出しに添えて対応を示す。
 
+use std::collections::HashSet;
+
 use dioxus::prelude::*;
+use dioxus_primitives::toggle_group::{ToggleGroup, ToggleItem};
 use numerus::significant;
 use rustruct_calc::kirchhoff_plate::{Extreme, InvalidInput, PlateError, Solution, solve};
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Plate, Support, Supports};
@@ -563,20 +566,30 @@ fn FigureBlock(quantity: Signal<Quantity>, figure: Option<PlateFigure>) -> Eleme
 }
 
 /// 分布図の量の切替。5 つのボタンを 1 行に並べ、押されているものを `ink` で塗る（選択は墨）。
-/// 器は入力と同じ `line` の枠で、外の角だけ `radius-8`（ボタン）
+/// 器は入力と同じ `line` の枠で、外の角だけ `radius-8`（ボタン）。振る舞いは `dioxus-primitives` の
+/// toggle_group（`aria-pressed`、Tab では組に 1 度だけ止まり、組の中は左右の矢印と Home・End で移る）。
+/// 押されているものをもう一度押しても外さない（いつも 1 つが押されている）。キーボードのフォーカスは
+/// `ink` の内枠（押されて `ink` で塗ったものは `paper`）。外に描く既定の輪は器の `overflow-hidden` に切られ、
+/// 塗ったものの上では見えない
 #[component]
 fn QuantitySwitch(quantity: Signal<Quantity>) -> Element {
+    let pressed = Quantity::ALL.iter().position(|q| *q == quantity());
     rsx! {
-        div {
+        ToggleGroup {
             class: "flex overflow-hidden rounded-8 border border-line",
             role: "group",
-            "aria-label": "分布図の量",
-            for q in Quantity::ALL {
-                button {
-                    class: "h-6 flex-1 border-r border-line bg-paper font-mono text-num last:border-r-0 aria-pressed:bg-ink aria-pressed:text-paper",
-                    r#type: "button",
-                    "aria-pressed": if quantity() == q { "true" } else { "false" },
-                    onclick: move |_| quantity.set(q),
+            aria_label: "分布図の量",
+            horizontal: true,
+            pressed: Some(pressed.into_iter().collect::<HashSet<usize>>()),
+            on_pressed_change: move |pressed: HashSet<usize>| {
+                if let Some(index) = pressed.into_iter().next() {
+                    quantity.set(Quantity::ALL[index]);
+                }
+            },
+            for (index , q) in Quantity::ALL.iter().copied().enumerate() {
+                ToggleItem {
+                    class: "h-6 flex-1 border-r border-line bg-paper font-mono text-num last:border-r-0 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ink aria-pressed:bg-ink aria-pressed:text-paper aria-pressed:focus-visible:outline-paper",
+                    index,
                     {q.symbol()}
                 }
             }

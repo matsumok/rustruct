@@ -58,9 +58,12 @@ fn the_page_opens_with_the_initial_conditions_and_point() {
             "入力欄に初期値「{value}」が無い: {main}"
         );
     }
-    // 表18-1 は初期オフ
-    assert!(main.contains("type=\"checkbox\""), "{main}");
-    assert!(!main.contains("checked"), "表18-1 がオンで開く: {main}");
+    // 表18-1 はチェックの欄で、初期オフ
+    assert_eq!(main.matches("role=\"checkbox\"").count(), 1, "{main}");
+    assert!(
+        main.contains("aria-checked=\"false\""),
+        "表18-1 がオンで開く: {main}"
+    );
 }
 
 #[test]

@@ -357,7 +357,7 @@ fn Cell<F: Field>(inputs: Signal<Inputs<F>>, field: F, error: bool) -> Element {
             SheetCheck {
                 label: name,
                 checked: inputs.read().checked(field),
-                onchange: move |e: FormEvent| inputs.write().set(field, e.checked().to_string()),
+                onchange: move |checked: bool| inputs.write().set(field, checked.to_string()),
             }
         },
         Kind::Choice { options, .. } => rsx! {
@@ -365,7 +365,7 @@ fn Cell<F: Field>(inputs: Signal<Inputs<F>>, field: F, error: bool) -> Element {
                 label: name,
                 options,
                 selected: inputs.read().choice(field),
-                onchange: move |e: FormEvent| inputs.write().set(field, e.value()),
+                onchange: move |symbol: char| inputs.write().set(field, symbol),
             }
         },
     }
@@ -374,6 +374,7 @@ fn Cell<F: Field>(inputs: Signal<Inputs<F>>, field: F, error: bool) -> Element {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::markup::{count_tags, tags};
 
     /// 4 種類の欄を 1 つずつ持つ試験用の欄
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -535,10 +536,15 @@ mod tests {
         assert_eq!(inputs.choice(Test::Support), 'R');
     }
 
-    /// `InputGroup` を 1 つ置いたページ。読めない欄を欄の順でなく渡し、Sheet に無い欄の理由も混ぜる
+    /// `InputGroup` を 1 つ置いたページ。読めない欄を欄の順でなく渡し、Sheet に無い欄の理由も混ぜる。
+    /// 選択の欄は初期値でない 2 つ目の選択肢を選んでおく
     #[component]
     fn GroupPage() -> Element {
-        let inputs = use_signal(Inputs::<Test>::new);
+        let inputs = use_signal(|| {
+            let mut inputs = Inputs::<Test>::new();
+            inputs.set(Test::Support, 'S');
+            inputs
+        });
         rsx! {
             InputGroup {
                 inputs,
@@ -573,7 +579,7 @@ mod tests {
             "変形角 1/",
             "表18-1 最小厚さ",
             "x = 0（左）",
-            "固定",
+            "単純支持",
             "注記",
             "Lx（m）: 数値で入れる",
             "積載荷重（N/m²）: 値を入れる",
@@ -589,19 +595,66 @@ mod tests {
         assert!(!html.contains("この Sheet に無い欄"), "{html}");
         // エラーの見出しは、読めない 2 欄とまたぐエラーの 2 欄（data-state）。不正な欄は読めない 2 欄だけ
         // （aria-invalid。またぐエラーの欄は読めている）
-        let marked = |tag: &str, mark: &str| {
-            html.split(&format!("<{tag} "))
-                .skip(1)
-                .filter(|t| t[..t.find('>').unwrap()].contains(mark))
-                .count()
-        };
-        assert_eq!(marked("th", "data-state=\"error\""), 4, "{html}");
-        assert_eq!(marked("input", "aria-invalid=\"true\""), 2, "{html}");
-        for label in ["Lx（m）", "表18-1 最小厚さ", "x = 0（左）"] {
-            assert!(html.contains(&format!("aria-label=\"{label}\"")), "{html}");
-        }
-        assert!(html.contains("type=\"checkbox\""), "{html}");
-        assert!(html.contains("<select"), "{html}");
+        assert_eq!(
+            count_tags(&html, "th", &[("data-state", "error")]),
+            4,
+            "{html}"
+        );
+        assert_eq!(
+            count_tags(&html, "input", &[("aria-invalid", "true")]),
+            2,
+            "{html}"
+        );
+        assert_eq!(
+            count_tags(&html, "input", &[("aria-label", "Lx（m）")]),
+            1,
+            "{html}"
+        );
+        // チェックはボタンの checkbox で、初期値のオフを aria-checked に持つ
+        assert_eq!(
+            count_tags(
+                &html,
+                "button",
+                &[
+                    ("role", "checkbox"),
+                    ("aria-checked", "false"),
+                    ("aria-label", "表18-1 最小厚さ"),
+                ]
+            ),
+            1,
+            "{html}"
+        );
+        // 選択はリストを開くボタンで、閉じている間は選んだ選択肢の名前だけを出す
+        assert_eq!(
+            count_tags(
+                &html,
+                "button",
+                &[
+                    ("aria-haspopup", "listbox"),
+                    ("aria-expanded", "false"),
+                    ("aria-label", "x = 0（左）"),
+                ]
+            ),
+            1,
+            "{html}"
+        );
+        assert!(!html.contains("固定"), "{html}");
+    }
+
+    /// 選択の欄のリストは位置を指定しない `absolute` で、包む箱が Sheet の外になるので、Sheet の
+    /// `overflow-hidden` に切られない。Sheet の中のどの要素も位置を決めるクラスを持たない
+    #[test]
+    fn nothing_in_the_sheet_is_positioned_so_the_choice_list_escapes_its_overflow() {
+        let mut dom = VirtualDom::new(GroupPage);
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+        let positioned: Vec<_> = tags(&html)
+            .iter()
+            .flat_map(|tag| tag.classes())
+            .filter(|class| ["relative", "absolute", "fixed", "sticky"].contains(class))
+            .map(str::to_string)
+            .collect();
+        assert_eq!(positioned, Vec::<String>::new(), "{html}");
     }
 
     /// 読めない欄は理由を集めて初期値で埋め（空欄を受ける欄の空欄の初期値は `None`）、理由は欄の順に並ぶ

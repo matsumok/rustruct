@@ -2900,6 +2900,7 @@ dependencies = [
  "rustruct-calc",
  "rustruct-types",
  "serde_json",
+ "web-sys",
 ]
 
 [[package]]
