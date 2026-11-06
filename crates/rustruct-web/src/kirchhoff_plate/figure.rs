@@ -2,16 +2,17 @@
 //!
 //! 計算核の等間隔グリッドの応答（[`PlateField`]）から 1 つの量のスカラー場を取り出し、`charta` の
 //! 分布図にする。図は板の縦横比どおりに 1 単位（`width-column`）の正方形に収め、周りの縁に 4 辺の支持条件を
-//! 描く: 固定は辺の線と外側の斜線、単純支持は辺の線だけ、自由は線を引かない。色はライトとダークの 2 枚を
-//! 作り、ページがテーマで片方を見せる。
+//! 描く: 固定は辺の線と外側の斜線、単純支持は辺の線だけ、自由は線を引かない。色は CSS 変数で書き、図は
+//! 1 枚（ライトとダークはページの CSS が切り替える）。
 
-use charta::{Grid, Item, Palette, Pt, Scene, Stroke, Theme, distribution, to_svg};
+use charta::{Grid, Item, Palette, Pt, Scene, Stroke, distribution};
 use numerus::at_place;
 use rustruct_calc::kirchhoff_plate::{CORNER_MARGIN, PointResponse, Solution};
 use rustruct_types::kirchhoff_plate::{Edge, Support, Supports};
 
 use super::{EDGES, support_name};
 use crate::COLUMN_WIDTH;
+use crate::chart;
 
 /// 注記に書く、計算核の隅の近くの幅（「5 %」、ADR kirchhoff-plate-0008）。結果の表の注記も使う
 pub(super) fn corner_margin_text() -> String {
@@ -147,8 +148,8 @@ impl PlateField {
 pub struct PlateFigure {
     /// 読み上げの文言。量と 4 辺の支持条件
     pub label: String,
-    pub light_svg: String,
-    pub dark_svg: String,
+    /// 図。色は CSS 変数で、ライトとダークで同じ文字列
+    pub svg: String,
     /// 支持条件の読み方に続ける注記。自由辺のある組では色の幅の決め方（ADR kirchhoff-plate-0008）
     pub notes: Vec<String>,
 }
@@ -156,7 +157,6 @@ pub struct PlateFigure {
 impl PlateFigure {
     pub fn new(field: &PlateField, quantity: Quantity) -> Self {
         let scene = scene(field, quantity);
-        let svg = |theme| to_svg(&scene, &theme).expect("役割名は tokens.json にある");
         let supports = EDGES
             .map(|edge| format!("{edge} の辺は{}", support_name(field.supports.at(edge))))
             .join("、");
@@ -166,8 +166,7 @@ impl PlateFigure {
                 quantity.name(),
                 quantity.symbol()
             ),
-            light_svg: svg(Theme::light()),
-            dark_svg: svg(Theme::dark()),
+            svg: chart::svg(&scene),
             notes: if field.supports.has_free_edge() {
                 vec![format!(
                     "色の幅は、隅から辺長の {} 以内の点を除いて決める",

@@ -1,113 +1,124 @@
-//! 役割名 → 色と書体。値は `docs/design/tokens.json` にだけあり、`build.rs` が表に写す（`docs/stack.md`）。
+//! 役割名 → 色と書体。値は呼び手が持ち、[`Theme::new`] で渡す（charta は値の源を読まない）。
 //!
-//! シーンは色を役割名（`ink`、`paper`、`seq-3`）で持ち、描くときにこの表で引く。ライトとダークは
-//! 同じ役割名で値が入れ替わるだけ。
+//! シーンは色を役割名（`ink`、`paper`、`seq-3`）で持ち、描くときにこの表で引く。ライトとダークを
+//! 描き分けるなら、呼び手が同じ役割名で値の違う表を 2 つ作る。
 
 use crate::scene::Font;
 
-mod tokens {
-    include!(concat!(env!("OUT_DIR"), "/tokens.rs"));
-}
-
-/// ライトかダーク。tokens.json の `color.themes` の id と同じ。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Mode {
-    Light,
-    Dark,
-}
-
 /// 役割名から色（`#rrggbb`）と書体（font-family の並び）を引く表。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Theme {
-    mode: Mode,
+    /// (役割名, 値)。並びは渡された順
+    colors: Vec<(String, String)>,
+    sans: String,
+    mono: String,
 }
 
 impl Theme {
-    pub fn new(mode: Mode) -> Self {
-        Self { mode }
-    }
-
-    pub fn light() -> Self {
-        Self::new(Mode::Light)
-    }
-
-    pub fn dark() -> Self {
-        Self::new(Mode::Dark)
-    }
-
-    pub fn mode(&self) -> Mode {
-        self.mode
-    }
-
-    /// 役割名の色。tokens.json に無い役割名は `None`。
-    pub fn color(&self, role: &str) -> Option<&'static str> {
-        tokens::COLORS
-            .iter()
-            .find(|(name, _, _)| *name == role)
-            .map(|(_, light, dark)| match self.mode {
-                Mode::Light => *light,
-                Mode::Dark => *dark,
-            })
-    }
-
-    /// 書体の font-family の並び（フォールバック込み）。
-    pub fn font(&self, font: Font) -> &'static str {
-        match font {
-            Font::Sans => tokens::FONT_SANS,
-            Font::Mono => tokens::FONT_MONO,
+    /// 色の (役割名, 値) の並びと、2 つの書体の font-family の並び（フォールバック込み）。
+    pub fn new<R: Into<String>, V: Into<String>>(
+        colors: impl IntoIterator<Item = (R, V)>,
+        sans: impl Into<String>,
+        mono: impl Into<String>,
+    ) -> Self {
+        Self {
+            colors: colors
+                .into_iter()
+                .map(|(r, v)| (r.into(), v.into()))
+                .collect(),
+            sans: sans.into(),
+            mono: mono.into(),
         }
     }
 
-    /// tokens.json にある色の役割名をすべて。
-    pub fn roles() -> impl Iterator<Item = &'static str> {
-        tokens::COLORS.iter().map(|(name, _, _)| *name)
+    /// 役割名の色。表に無い役割名は `None`。
+    pub fn color(&self, role: &str) -> Option<&str> {
+        self.colors
+            .iter()
+            .find(|(name, _)| name == role)
+            .map(|(_, value)| value.as_str())
+    }
+
+    /// 書体の font-family の並び（フォールバック込み）。
+    pub fn font(&self, font: Font) -> &str {
+        match font {
+            Font::Sans => &self.sans,
+            Font::Mono => &self.mono,
+        }
+    }
+
+    /// 表にある色の役割名をすべて、渡された順に。
+    pub fn roles(&self) -> impl Iterator<Item = &str> {
+        self.colors.iter().map(|(name, _)| name.as_str())
+    }
+
+    /// 色の列 `{prefix}-1`、`{prefix}-2` … が 1 から途切れずに何段あるか。
+    pub fn stops(&self, prefix: &str) -> usize {
+        (1..)
+            .take_while(|k| self.color(&format!("{prefix}-{k}")).is_some())
+            .count()
     }
 }
 
-/// 継ぎ目: tokens.json の値がそのまま引ける。期待値は `docs/design/tokens.json` に書いてある値。
+/// テストと例の小さな表。値は `#rrggbb` で、段は seq も div も 12。
+#[cfg(test)]
+pub(crate) fn sample() -> Theme {
+    let mut colors: Vec<(String, String)> = [
+        ("paper", "#ffffff"),
+        ("ink", "#1c2024"),
+        ("muted", "#60646c"),
+        ("fill", "#f0f0f3"),
+    ]
+    .map(|(r, v)| (r.to_string(), v.to_string()))
+    .into();
+    for k in 1..=12 {
+        let v = (k * 20) as u8;
+        colors.push((format!("seq-{k}"), format!("#{v:02x}{v:02x}ff")));
+        colors.push((format!("div-{k}"), format!("#ff{v:02x}{v:02x}")));
+    }
+    Theme::new(
+        colors,
+        r#""Sample Sans", sans-serif"#,
+        r#""Sample Mono", monospace"#,
+    )
+}
+
+/// 継ぎ目: 呼び手の渡した表から引ける。
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn is_hex(s: &str) -> bool {
-        s.len() == 7 && s.starts_with('#') && s[1..].chars().all(|c| c.is_ascii_hexdigit())
-    }
-
-    /// `#rrggbb` か、透けのある `#rrggbbaa`（scrim）。
-    fn is_hex_or_alpha(s: &str) -> bool {
-        is_hex(s)
-            || (s.len() == 9 && is_hex(&s[..7]) && s[7..].chars().all(|c| c.is_ascii_hexdigit()))
+    #[test]
+    fn colors_and_fonts_are_the_ones_given() {
+        let t = Theme::new(
+            [("paper", "#ffffff"), ("ink", "#1c2024")],
+            "\"A\", sans-serif",
+            "\"B\", monospace",
+        );
+        assert_eq!(t.color("paper"), Some("#ffffff"));
+        assert_eq!(t.color("ink"), Some("#1c2024"));
+        assert_eq!(t.color("no-such-role"), None);
+        assert_eq!(t.font(Font::Sans), "\"A\", sans-serif");
+        assert_eq!(t.font(Font::Mono), "\"B\", monospace");
+        assert_eq!(t.roles().collect::<Vec<_>>(), ["paper", "ink"]);
     }
 
     #[test]
-    fn roles_are_read_from_tokens_json() {
-        let light = Theme::light();
-        let dark = Theme::dark();
-        for role in [
-            "paper", "ink", "muted", "line", "seq-1", "seq-12", "div-1", "div-12",
-        ] {
-            let l = light.color(role).unwrap_or_else(|| panic!("{role} が無い"));
-            let d = dark.color(role).unwrap_or_else(|| panic!("{role} が無い"));
-            assert!(is_hex(l), "{role} のライトが #rrggbb でない: {l}");
-            assert!(is_hex(d), "{role} のダークが #rrggbb でない: {d}");
-        }
-        assert_eq!(light.color("paper"), Some("#ffffff"));
-        assert_ne!(light.color("paper"), dark.color("paper"));
-        assert_eq!(light.color("no-such-role"), None);
-    }
-
-    #[test]
-    fn references_are_resolved() {
-        // chart-3 は `{ink}` の参照。値になって引ける
-        let t = Theme::light();
-        assert_eq!(t.color("chart-3"), t.color("ink"));
-        assert!(Theme::roles().all(|r| is_hex_or_alpha(t.color(r).unwrap())));
-    }
-
-    #[test]
-    fn fonts_are_the_token_families() {
-        let t = Theme::light();
-        assert!(t.font(Font::Mono).contains("IBM Plex Mono"));
-        assert!(t.font(Font::Sans).contains("IBM Plex Sans JP"));
+    fn stops_count_the_unbroken_run_from_one() {
+        let t = Theme::new(
+            [
+                ("seq-1", "#000000"),
+                ("seq-2", "#111111"),
+                ("seq-3", "#222222"),
+                ("seq-5", "#444444"),
+                ("div-2", "#000000"),
+            ],
+            "",
+            "",
+        );
+        assert_eq!(t.stops("seq"), 3);
+        assert_eq!(t.stops("div"), 0);
+        assert_eq!(sample().stops("seq"), 12);
+        assert_eq!(sample().stops("div"), 12);
     }
 }

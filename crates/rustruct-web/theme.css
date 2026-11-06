@@ -18,7 +18,7 @@
 @custom-variant error (&[data-state="error"]);
 @custom-variant here (&[aria-current="page"]);
 
-@theme {
+@theme static {
   /* 色: 役割名。bg-paper / text-ink / border-line のように使う */
   --color-*: initial;
   --color-paper: #ffffff;
@@ -61,7 +61,9 @@
   --color-div-10: #b8730c;
   --color-div-11: #85501b;
   --color-div-12: #4f3422;
+}
 
+@theme {
   /* 書体: font-sans / font-mono */
   --font-serif: initial;
   --font-mono: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;

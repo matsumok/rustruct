@@ -78,15 +78,18 @@ pub fn theme_css(tokens_json: &str) -> Result<String, Error> {
          @custom-variant here (&[aria-current=\"page\"]);\n\n",
     );
 
-    out.push_str("@theme {\n");
+    // static: クラスで使わない色も変数を出す。図の SVG が `var(--color-seq-3)` で引く（charta の CSS 変数の書き方）
+    out.push_str("@theme static {\n");
 
     out.push_str("  /* 色: 役割名。bg-paper / text-ink / border-line のように使う */\n");
     out.push_str("  --color-*: initial;\n");
     for c in &tokens.colors {
         out.push_str(&format!("  --color-{}: {};\n", c.name, c.light));
     }
+    out.push_str("}\n\n");
 
-    out.push_str("\n  /* 書体: font-sans / font-mono */\n");
+    out.push_str("@theme {\n");
+    out.push_str("  /* 書体: font-sans / font-mono */\n");
     out.push_str("  --font-serif: initial;\n");
     for f in &tokens.families {
         out.push_str(&format!("  --font-{}: {};\n", f.name, f.stack));
@@ -172,6 +175,39 @@ pub fn theme_css(tokens_json: &str) -> Result<String, Error> {
     }
     out.push_str("  }\n}\n");
 
+    Ok(out)
+}
+
+/// tokens.json の文字列から、図の色と書体の表（`charta::Theme` の素）を Rust のソースにする。
+///
+/// `COLORS` は (役割名, ライト, ダーク) で参照は解決済み、`FONT_SANS` と `FONT_MONO` は font-family の並び。
+/// `build.rs` が `$OUT_DIR/chart_theme.rs` に書き、`chart.rs` が `include!` する。配信物に JSON は入らない。
+pub fn chart_theme_rs(tokens_json: &str) -> Result<String, Error> {
+    let tokens = Tokens::parse(tokens_json)?;
+    let family = |name: &str| {
+        tokens
+            .families
+            .iter()
+            .find(|f| f.name == name)
+            .map(|f| f.stack.clone())
+            .ok_or_else(|| Error::Shape(format!("/type/families/{name} が無い")))
+    };
+    let mut out = String::from(
+        "/// 色の (役割名, ライト, ダーク)。tokens.json から build.rs が写した。参照は解決済み。\n\
+         pub(crate) const COLORS: &[(&str, &str, &str)] = &[\n",
+    );
+    for c in &tokens.colors {
+        out.push_str(&format!(
+            "    ({:?}, {:?}, {:?}),\n",
+            c.name, c.light, c.dark
+        ));
+    }
+    out.push_str("];\n");
+    out.push_str(&format!(
+        "pub(crate) const FONT_SANS: &str = {:?};\npub(crate) const FONT_MONO: &str = {:?};\n",
+        family("sans")?,
+        family("mono")?
+    ));
     Ok(out)
 }
 
@@ -479,7 +515,7 @@ fn str_at<'a>(v: &'a Value, pointer: &str) -> Result<&'a str, Error> {
 /// `docs/design/tokens.json` そのものを固定資料として読む。期待値は tokens.json に書いてある値。
 #[cfg(test)]
 mod tests {
-    use super::{column_width, google_fonts_url, theme_css};
+    use super::{chart_theme_rs, column_width, google_fonts_url, theme_css};
     use serde_json::Value;
 
     const TOKENS: &str = include_str!("../../../docs/design/tokens.json");
@@ -770,6 +806,41 @@ mod tests {
         ] {
             assert!(css.contains(line), "{line} が無い:\n{css}");
         }
+    }
+
+    #[test]
+    fn colors_are_emitted_even_when_no_class_uses_them() {
+        // 図の SVG は `var(--color-seq-3)` で引き、クラスには現れない
+        let css = css();
+        let start = css
+            .find("@theme static {")
+            .expect("色の @theme static が無い");
+        let block = &css[start..start + css[start..].find("\n}").unwrap()];
+        assert!(block.contains("--color-*: initial;"));
+        assert!(block.contains("--color-seq-3: "), "{block}");
+        assert!(block.contains("--color-div-12: "), "{block}");
+        assert!(!block.contains("--text-"), "{block}");
+    }
+
+    #[test]
+    fn chart_theme_is_the_resolved_colors_and_the_two_families() {
+        let rs = chart_theme_rs(TOKENS).unwrap();
+        assert!(rs.contains(r##"("paper", "#ffffff", "#111113"),"##), "{rs}");
+        assert!(rs.contains(r##"("ink", "#1c2024", "#edeef0"),"##), "{rs}");
+        // chart-3 は `{ink}` の参照。値になっている
+        assert!(
+            rs.contains(r##"("chart-3", "#1c2024", "#edeef0"),"##),
+            "{rs}"
+        );
+        assert!(!rs.contains("{ink}"));
+        assert!(
+            rs.contains("FONT_SANS: &str = \"\\\"IBM Plex Sans JP\\\""),
+            "{rs}"
+        );
+        assert!(
+            rs.contains("FONT_MONO: &str = \"\\\"IBM Plex Mono\\\""),
+            "{rs}"
+        );
     }
 
     #[test]

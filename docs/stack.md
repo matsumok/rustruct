@@ -12,7 +12,7 @@
 | `rustruct-types` | 共有型。物理量（ADR site-0004）、材料とその性質を求めるメソッド（`docs/materials/`）、Model と保存形式 | serde、rust_decimal（JIS の丸めを 10 進で正確に。ADR materials-0002） |
 | `rustruct-calc` | 計算核。I/O も非同期も持たない純粋関数 | `rustruct-types` |
 | `rustruct-web` | Dioxus fullstack アプリ。`web` / `server` feature で切替。SSG のプリレンダーもここ | 上2つ、`charta`、`numerus` |
-| `charta` | グラフ描画クレート。汎用。`rustruct-types` に依存しない。後で別リポジトリに出せる。設計メモは `crates/charta/README.md` | `numerus`（tokens.json を読む `build.rs` だけ serde_json） |
+| `charta` | グラフ描画クレート。汎用。`rustruct-types` に依存しない。後で別リポジトリに出せる。設計メモは `crates/charta/README.md` | `numerus` のみ。`build.rs` を持たず、tokens.json を読まない。色と書体の値は呼び手が `Theme` で渡す |
 | `numerus` | 表と図に書く数の書き方（有効数字、3 桁区切り、E、列の小数点揃え。ADR site-0013）。汎用。`rustruct-types` に依存しない | なし |
 
 招待者向けサーバー（旧 `rustruct-server`）は作らない。必要になったら ADR site-0002 を書き直してから足す。
@@ -23,7 +23,7 @@
 - 全ページを `dx build --ssg` でプリレンダーし、ブラウザで hydration する（ADR site-0001）
 - ブラウザでしか決まらない値は初回描画で読まず、起動後に `use_effect` で読む
 - CSS は Tailwind v4。`dx` 内蔵の単体 CLI を使い、Node は入れない
-- 値の源は `docs/design/tokens.json` の一箇所。Tailwind の `@theme` ブロック（色・文字・余白・角丸）は Rust の小さなビルド工程で tokens.json から生成し、手では書かない。`charta` も同じ JSON から色を読む（`crates/charta/build.rs` が色と書体の表を `$OUT_DIR` に写し、役割名で引く。配信物に JSON は入らない）
+- 値の源は `docs/design/tokens.json` の一箇所。Tailwind の `@theme` ブロック（色・文字・余白・角丸）は Rust の小さなビルド工程で tokens.json から生成し、手では書かない。JSON の読み手は `rustruct-web` の `build.rs` だけ。図の色と書体も、同じ `build.rs` が（役割名、ライト、ダーク）の表を `$OUT_DIR` に写し、`chart.rs` がそこから `charta` の `Theme` を作って渡す（配信物に JSON は入らない）。ページの図は CSS 変数（`var(--color-seq-3)`）で色を書く 1 枚の SVG で、ライトとダークは `theme.css` の変数が切り替える。そのため色は `@theme static` で、クラスで使わない色の変数も出す
   - 生成器は `crates/rustruct-web/src/theme.rs` の純粋関数で、`build.rs` が `crates/rustruct-web/theme.css` に書く。`tailwind.css` がそれを `@import` し、dx が `assets/tailwind.css` に出力する。`theme.css` と `assets/tailwind.css` はどちらも生成物だが、`asset!` がコンパイル時にファイルを要求するのでリポジトリに入れる（手で編集しない）
   - 生成した `@theme` は色・文字・余白・角丸の名前空間で Tailwind の既定値（`bg-red-500`、`text-sm`、`p-3.5` など）を消す。役割名のクラスだけが存在し、tokens.json にない値はマークアップに書けない。`--spacing` の既定の目盛りも消えるので、`w-*` / `max-w-*` / `gap-*` の数値も `space-0`〜`space-8` の範囲だけになる（`top-0` のような 0 も `space-0` が無いと作られない）
   - `dx serve` は `docs/` を監視しないので、tokens.json を変えたら `.rs` を保存し直すか `dx serve` を再起動する

@@ -540,9 +540,10 @@ fn FigureBlock(quantity: Signal<Quantity>, figure: Option<PlateFigure>) -> Eleme
             QuantitySwitch { quantity }
             match figure {
                 Some(figure) => rsx! {
-                    figure { role: "img", "aria-label": figure.label,
-                        div { class: "dark:hidden", dangerous_inner_html: figure.light_svg }
-                        div { class: "hidden dark:block", dangerous_inner_html: figure.dark_svg }
+                    figure {
+                        role: "img",
+                        "aria-label": figure.label,
+                        dangerous_inner_html: figure.svg,
                     }
                     Notes {
                         li { "斜線の付いた辺は固定" }
