@@ -126,8 +126,8 @@ fn labels(lines: &[(f64, Vec<Pt>)], step: f64, width: f64, height: f64) -> Vec<L
 mod tests {
     use super::*;
     use crate::scene::{Anchor, Font, Paint};
-    use crate::svg::to_svg;
-    use crate::theme::Theme;
+    use crate::svg::{Colors, to_svg};
+    use crate::theme::sample;
     use std::f64::consts::PI;
 
     /// 2 × 3 の板の山（最大 7.3）。
@@ -144,6 +144,17 @@ mod tests {
             10.0 * (PI * x / 2.0).cos() * (PI * y / 2.0).sin()
         })
         .unwrap()
+    }
+
+    /// 帯の色の、見本のテーマでの段の間の色の始まりの役割名。
+    fn from(paint: &Paint) -> String {
+        let Paint::Band { palette, k, n } = paint else {
+            panic!("帯の色でない: {paint:?}");
+        };
+        match palette.blend(*k, *n, &sample()).unwrap() {
+            Paint::Blend { from, .. } => from,
+            p => panic!("段の間の色でない: {p:?}"),
+        }
     }
 
     struct Parts<'a> {
@@ -179,14 +190,14 @@ mod tests {
         assert_eq!(p.bands.len(), 8);
         for band in &p.bands {
             let Item::Path {
-                fill: Some(Paint::Blend { from, .. }),
+                fill: Some(paint),
                 stroke: None,
                 ..
             } = band
             else {
                 panic!("帯の形が違う: {band:?}");
             };
-            assert!(from.starts_with("seq-"));
+            assert!(from(paint).starts_with("seq-"));
         }
         let kind = |item: &Item| match item {
             Item::Path { closed: true, .. } => 0,
@@ -270,17 +281,17 @@ mod tests {
         let p = parts(&scene);
         // ±10 を 16 段の目安で 2 刻み: -10〜10 の 10 本。負は div-1〜6、正は div-7〜12
         assert_eq!(p.bands.len(), 10);
-        let froms: Vec<&str> = p
+        let froms: Vec<String> = p
             .bands
             .iter()
             .map(|b| match b {
                 Item::Path {
-                    fill: Some(Paint::Blend { from, .. }),
-                    ..
-                } => from.as_str(),
+                    fill: Some(paint), ..
+                } => from(paint),
                 _ => unreachable!(),
             })
             .collect();
+        let froms: Vec<&str> = froms.iter().map(String::as_str).collect();
         assert!(
             froms[..5]
                 .iter()
@@ -346,13 +357,13 @@ mod tests {
     }
 
     #[test]
-    fn figure_renders_in_both_themes() {
+    fn figure_renders_in_both_ways_of_writing_colors() {
         for grid in [bump(), signed()] {
             for palette in [Palette::Seq, Palette::Div] {
                 let scene =
                     distribution(&grid, palette, grid.range(), palette.default_steps(), 300.0);
-                for theme in [Theme::light(), Theme::dark()] {
-                    let svg = to_svg(&scene, &theme).unwrap();
+                for colors in [Colors::Values, Colors::Variables] {
+                    let svg = to_svg(&scene, &sample(), colors).unwrap();
                     assert!(svg.contains("paint-order=\"stroke\""));
                     assert!(svg.contains("stroke-width=\"0.25\""));
                 }

@@ -8,7 +8,7 @@
 
 use charta::plot::TEXT_SIZE;
 use charta::{
-    Anchor, Font, HALO_WIDTH, Item, LevelGraph, Paint, Plot, Pt, Scene, Stroke, Theme, axes,
+    Anchor, Colors, Font, HALO_WIDTH, Item, LevelGraph, Paint, Plot, Pt, Scene, Stroke, axes,
     level_graphs, to_svg,
 };
 use numerus::at_place;
@@ -16,6 +16,7 @@ use rustruct_calc::slab_thickness::{Conditions, Spans, evaluate, iso_curves, sha
 use rustruct_types::quantity::Length;
 
 use crate::COLUMN_WIDTH;
+use crate::chart::{Mode, theme};
 
 /// 検討点が無いときの範囲（両軸、m）
 const DEFAULT_VIEW: (f64, f64) = (3.0, 9.0);
@@ -67,7 +68,9 @@ impl SlabFigure {
             .as_ref()
             .map(|(name, spans)| (name.as_str(), *spans));
         let scene = scene(&curves.conditions, point);
-        let svg = |theme| to_svg(&scene, &theme).expect("役割名は tokens.json にある");
+        let svg = |mode| {
+            to_svg(&scene, &theme(mode), Colors::Values).expect("役割名は tokens.json にある")
+        };
         let label = match point {
             Some((name, _)) if !name.is_empty() => {
                 format!("必要スラブ厚の等厚曲線。横軸は Lx、縦軸は Ly。丸の印は検討点 {name}")
@@ -77,8 +80,8 @@ impl SlabFigure {
         };
         Self {
             label,
-            light_svg: svg(Theme::light()),
-            dark_svg: svg(Theme::dark()),
+            light_svg: svg(Mode::Light),
+            dark_svg: svg(Mode::Dark),
         }
     }
 }

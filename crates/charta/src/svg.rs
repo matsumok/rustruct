@@ -1,4 +1,4 @@
-//! シーン → SVG の文字列。色の役割名はここでテーマの値になる。
+//! シーン → SVG の文字列。色の役割名はここで [`Colors`] の書き方の色になる。
 
 use std::fmt::Write;
 
@@ -7,8 +7,21 @@ use crate::color::blend;
 use crate::scene::{Anchor, Item, Paint, Scene, Stroke};
 use crate::theme::Theme;
 
-/// シーンを SVG に書く。役割名が tokens.json に無ければ `Err`。
-pub fn to_svg(scene: &Scene, theme: &Theme) -> Result<String, Error> {
+/// 役割名の色の書き方。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Colors {
+    /// テーマの値（`#rrggbb`）を `fill` / `stroke` の属性に書く。間の色は OKLab で混ぜた値。
+    /// 色を読む描き手（wgpu）や、ページの外に出す静的な SVG のため
+    Values,
+    /// CSS 変数（`var(--color-ink)`）を `style` に書く。間の色は `color-mix(in oklab, …)`。
+    /// 値はページの CSS が持ち、ライトとダークで同じ文字列になる
+    Variables,
+}
+
+/// シーンを SVG に書く。役割名がテーマに無いか、帯の色の列の段数が使えなければ `Err`。
+/// `Colors::Variables` でもテーマで役割名と段数を確かめ、書体はテーマの値を書く。
+pub fn to_svg(scene: &Scene, theme: &Theme, colors: Colors) -> Result<String, Error> {
+    let paints = Paints { theme, colors };
     let mut out = String::new();
     let _ = writeln!(
         out,
@@ -41,9 +54,8 @@ pub fn to_svg(scene: &Scene, theme: &Theme) -> Result<String, Error> {
                 }
                 let _ = writeln!(
                     out,
-                    r#"<path d="{d}" fill="{}"{}/>"#,
-                    paint_or_none(theme, fill.as_ref())?,
-                    stroke_attrs(theme, stroke.as_ref())?
+                    r#"<path d="{d}"{}/>"#,
+                    paints.shape(fill.as_ref(), stroke.as_ref())?
                 );
             }
             Item::Rect {
@@ -56,13 +68,12 @@ pub fn to_svg(scene: &Scene, theme: &Theme) -> Result<String, Error> {
             } => {
                 let _ = writeln!(
                     out,
-                    r#"<rect x="{}" y="{}" width="{}" height="{}" fill="{}"{}/>"#,
+                    r#"<rect x="{}" y="{}" width="{}" height="{}"{}/>"#,
                     num(*x),
                     num(*y),
                     num(*width),
                     num(*height),
-                    paint_or_none(theme, fill.as_ref())?,
-                    stroke_attrs(theme, stroke.as_ref())?
+                    paints.shape(fill.as_ref(), stroke.as_ref())?
                 );
             }
             Item::Circle {
@@ -73,12 +84,11 @@ pub fn to_svg(scene: &Scene, theme: &Theme) -> Result<String, Error> {
             } => {
                 let _ = writeln!(
                     out,
-                    r#"<circle cx="{}" cy="{}" r="{}" fill="{}"{}/>"#,
+                    r#"<circle cx="{}" cy="{}" r="{}"{}/>"#,
                     num(center[0]),
                     num(center[1]),
                     num(*radius),
-                    paint_or_none(theme, fill.as_ref())?,
-                    stroke_attrs(theme, stroke.as_ref())?
+                    paints.shape(fill.as_ref(), stroke.as_ref())?
                 );
             }
             Item::Text {
@@ -97,11 +107,17 @@ pub fn to_svg(scene: &Scene, theme: &Theme) -> Result<String, Error> {
                     Anchor::Middle => "middle",
                     Anchor::End => "end",
                 };
+                let color = paints.attrs(&[
+                    ("fill", paints.paint(fill)?),
+                    match halo {
+                        Some(h) => ("stroke", paints.paint(&h.paint)?),
+                        None => ("", String::new()),
+                    },
+                ]);
                 let halo = match halo {
                     // 縁を文字の下に描く（paint-order）。縁の角は丸める
                     Some(h) => format!(
-                        r#" stroke="{}" stroke-width="{}" stroke-linejoin="round" paint-order="stroke""#,
-                        paint(theme, &h.paint)?,
+                        r#" stroke-width="{}" stroke-linejoin="round" paint-order="stroke""#,
                         num(h.width)
                     ),
                     None => String::new(),
@@ -118,12 +134,11 @@ pub fn to_svg(scene: &Scene, theme: &Theme) -> Result<String, Error> {
                 };
                 let _ = writeln!(
                     out,
-                    r#"<text x="{}" y="{}" font-family="{}" font-size="{}" fill="{}" text-anchor="{anchor}" dominant-baseline="central"{transform}{halo}>{}</text>"#,
+                    r#"<text x="{}" y="{}" font-family="{}" font-size="{}"{color} text-anchor="{anchor}" dominant-baseline="central"{transform}{halo}>{}</text>"#,
                     num(*x),
                     num(*y),
                     escape(theme.font(*font)),
                     num(*size),
-                    paint(theme, fill)?,
                     escape(text)
                 );
             }
@@ -143,33 +158,69 @@ fn num(v: f64) -> String {
     }
 }
 
-fn paint(theme: &Theme, p: &Paint) -> Result<String, Error> {
-    let color = |role: &str| {
-        theme
+/// 役割名 → 色の書き方。`Colors` の 2 つの書き方の違いはここにだけある。
+struct Paints<'a> {
+    theme: &'a Theme,
+    colors: Colors,
+}
+
+impl Paints<'_> {
+    fn role(&self, role: &str) -> Result<String, Error> {
+        let value = self
+            .theme
             .color(role)
-            .ok_or_else(|| Error::UnknownRole(role.to_string()))
-    };
-    match p {
-        Paint::Role(role) => Ok(color(role)?.to_string()),
-        Paint::Blend { from, to, t } => blend(color(from)?, color(to)?, *t),
+            .ok_or_else(|| Error::UnknownRole(role.to_string()))?;
+        Ok(match self.colors {
+            Colors::Values => value.to_string(),
+            Colors::Variables => format!("var(--color-{role})"),
+        })
     }
-}
 
-fn paint_or_none(theme: &Theme, p: Option<&Paint>) -> Result<String, Error> {
-    match p {
-        Some(p) => paint(theme, p),
-        None => Ok("none".to_string()),
+    fn paint(&self, p: &Paint) -> Result<String, Error> {
+        match p {
+            Paint::Role(role) => self.role(role),
+            Paint::Blend { from, to, t } => match self.colors {
+                Colors::Values => blend(&self.role(from)?, &self.role(to)?, *t),
+                // 端は混ぜずにその色
+                Colors::Variables if *t <= 0.0 => self.role(from),
+                Colors::Variables if *t >= 1.0 => self.role(to),
+                Colors::Variables => Ok(format!(
+                    "color-mix(in oklab, {}, {} {}%)",
+                    self.role(from)?,
+                    self.role(to)?,
+                    num(t * 100.0)
+                )),
+            },
+            Paint::Band { palette, k, n } => self.paint(&palette.blend(*k, *n, self.theme)?),
+        }
     }
-}
 
-fn stroke_attrs(theme: &Theme, s: Option<&Stroke>) -> Result<String, Error> {
-    match s {
-        Some(s) => Ok(format!(
-            r#" stroke="{}" stroke-width="{}" stroke-linejoin="round" stroke-linecap="round""#,
-            paint(theme, &s.paint)?,
-            num(s.width)
-        )),
-        None => Ok(String::new()),
+    /// 色の組（`fill`、`stroke`）。値は属性に、CSS 変数は `style` にまとめて書く。名前が空の組は書かない
+    fn attrs(&self, pairs: &[(&str, String)]) -> String {
+        let pairs = pairs.iter().filter(|(name, _)| !name.is_empty());
+        match self.colors {
+            Colors::Values => pairs.map(|(name, v)| format!(r#" {name}="{v}""#)).collect(),
+            Colors::Variables => {
+                let style: Vec<String> = pairs.map(|(name, v)| format!("{name}: {v}")).collect();
+                format!(r#" style="{}""#, style.join("; "))
+            }
+        }
+    }
+
+    /// パス・矩形・円の塗りと線。塗りが無ければ `none`
+    fn shape(&self, fill: Option<&Paint>, stroke: Option<&Stroke>) -> Result<String, Error> {
+        let fill = match fill {
+            Some(p) => self.paint(p)?,
+            None => "none".to_string(),
+        };
+        Ok(match stroke {
+            Some(s) => format!(
+                r#"{} stroke-width="{}" stroke-linejoin="round" stroke-linecap="round""#,
+                self.attrs(&[("fill", fill), ("stroke", self.paint(&s.paint)?)]),
+                num(s.width)
+            ),
+            None => self.attrs(&[("fill", fill)]),
+        })
     }
 }
 
@@ -188,11 +239,13 @@ fn escape(s: &str) -> String {
     out
 }
 
-/// 継ぎ目: シーン → SVG の文字列。色は tokens.json の値、文字は白抜き、未知の役割名は Err。
+/// 継ぎ目: シーン → SVG の文字列。色はテーマの値か CSS 変数、文字は白抜き、未知の役割名は Err。
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Palette;
     use crate::scene::{Font, Scene};
+    use crate::theme::sample;
 
     fn line(stroke: Stroke) -> Item {
         Item::Path {
@@ -203,8 +256,27 @@ mod tests {
         }
     }
 
+    fn fill(paint: Paint) -> Scene {
+        let mut scene = Scene::new(10.0, 10.0);
+        scene.items.push(Item::Path {
+            subpaths: vec![vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]],
+            closed: true,
+            fill: Some(paint),
+            stroke: None,
+        });
+        scene
+    }
+
+    fn values(scene: &Scene) -> String {
+        to_svg(scene, &sample(), Colors::Values).unwrap()
+    }
+
+    fn variables(scene: &Scene) -> String {
+        to_svg(scene, &sample(), Colors::Variables).unwrap()
+    }
+
     #[test]
-    fn roles_become_token_colors_of_the_theme() {
+    fn roles_become_the_values_of_the_theme() {
         let mut scene = Scene::new(100.0, 50.0);
         scene.items.push(line(Stroke::new("ink", 0.25)));
         scene.items.push(Item::Rect {
@@ -215,46 +287,97 @@ mod tests {
             fill: Some(Paint::role("fill")),
             stroke: None,
         });
-        let light = to_svg(&scene, &Theme::light()).unwrap();
-        let dark = to_svg(&scene, &Theme::dark()).unwrap();
-        assert!(light.starts_with(r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50" viewBox="0 0 100 50">"#));
-        assert!(light.trim_end().ends_with("</svg>"));
+        let svg = values(&scene);
+        assert!(svg.starts_with(r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50" viewBox="0 0 100 50">"#));
+        assert!(svg.trim_end().ends_with("</svg>"));
         assert!(
-            light.contains(
+            svg.contains(
                 r##"<path d="M0 0L10 5.5" fill="none" stroke="#1c2024" stroke-width="0.25""##
             ),
-            "{light}"
+            "{svg}"
         );
-        assert!(light.contains(&format!(
-            r#"fill="{}""#,
-            Theme::light().color("fill").unwrap()
-        )));
-        assert!(dark.contains(&format!(
-            r#"stroke="{}""#,
-            Theme::dark().color("ink").unwrap()
-        )));
-        assert_ne!(light, dark);
+        assert!(svg.contains(r##"<rect x="1" y="2" width="3" height="4" fill="#f0f0f3"/>"##));
+        // 別の値の表なら別の色
+        let other = Theme::new([("ink", "#edeef0"), ("fill", "#000000")], "", "");
+        let svg = to_svg(&scene, &other, Colors::Values).unwrap();
+        assert!(svg.contains(r##"stroke="#edeef0""##), "{svg}");
+    }
+
+    #[test]
+    fn roles_become_css_variables_in_the_style() {
+        let mut scene = Scene::new(100.0, 50.0);
+        scene.items.push(line(Stroke::new("ink", 0.25)));
+        scene.items.push(Item::Rect {
+            x: 1.0,
+            y: 2.0,
+            width: 3.0,
+            height: 4.0,
+            fill: Some(Paint::role("fill")),
+            stroke: None,
+        });
+        let svg = variables(&scene);
+        assert!(
+            svg.contains(r#"<path d="M0 0L10 5.5" style="fill: none; stroke: var(--color-ink)" stroke-width="0.25""#),
+            "{svg}"
+        );
+        assert!(svg.contains(
+            r#"<rect x="1" y="2" width="3" height="4" style="fill: var(--color-fill)"/>"#
+        ));
+        assert!(!svg.contains('#'), "{svg}");
+        // 値の違う表でも同じ文字列
+        let other = Theme::new([("ink", "#edeef0"), ("fill", "#000000")], "", "");
+        assert_eq!(to_svg(&scene, &other, Colors::Variables).unwrap(), svg);
     }
 
     #[test]
     fn blend_paints_are_mixed_from_two_roles() {
-        let mut scene = Scene::new(10.0, 10.0);
-        scene.items.push(Item::Path {
-            subpaths: vec![vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]],
-            closed: true,
-            fill: Some(Paint::Blend {
+        let at = |t| {
+            fill(Paint::Blend {
                 from: "seq-1".into(),
                 to: "seq-2".into(),
-                t: 0.0,
-            }),
-            stroke: None,
-        });
-        let svg = to_svg(&scene, &Theme::light()).unwrap();
+                t,
+            })
+        };
+        let svg = values(&at(0.0));
         assert!(svg.contains(r#"d="M0 0L1 0L1 1Z""#));
-        assert!(svg.contains(&format!(
-            r#"fill="{}""#,
-            Theme::light().color("seq-1").unwrap()
-        )));
+        assert!(svg.contains(&format!(r#"fill="{}""#, sample().color("seq-1").unwrap())));
+        assert!(variables(&at(0.0)).contains(r#"style="fill: var(--color-seq-1)""#));
+        assert!(variables(&at(1.0)).contains(r#"style="fill: var(--color-seq-2)""#));
+        let svg = variables(&at(0.37));
+        assert!(
+            svg.contains(
+                r#"style="fill: color-mix(in oklab, var(--color-seq-1), var(--color-seq-2) 37%)""#
+            ),
+            "{svg}"
+        );
+    }
+
+    #[test]
+    fn band_paints_take_the_stops_of_the_theme() {
+        // 12 段の seq に 4 本の帯: 2 本目は seq-4 と seq-5 の間の 2/3
+        let scene = fill(Palette::Seq.band_paint(1, 4));
+        let svg = variables(&scene);
+        assert!(
+            svg.contains("color-mix(in oklab, var(--color-seq-4), var(--color-seq-5) 66.67%)"),
+            "{svg}"
+        );
+        let svg = values(&scene);
+        let mixed = blend(
+            sample().color("seq-4").unwrap(),
+            sample().color("seq-5").unwrap(),
+            2.0 / 3.0,
+        )
+        .unwrap();
+        assert!(svg.contains(&format!(r#"fill="{mixed}""#)), "{svg}");
+        // 段が足りなければ Err
+        let few = Theme::new([("seq-1", "#000000")], "", "");
+        assert_eq!(
+            to_svg(&scene, &few, Colors::Variables),
+            Err(Error::Stops {
+                prefix: "seq".into(),
+                count: 1
+            })
+        );
     }
 
     #[test]
@@ -271,18 +394,19 @@ mod tests {
             rotate: -30.0,
             halo: Some(Stroke::new("paper", 2.5)),
         });
-        let svg = to_svg(&scene, &Theme::light()).unwrap();
+        let svg = values(&scene);
         assert!(
-            svg.contains(r#"font-family="&quot;IBM Plex Mono&quot;"#),
+            svg.contains(r#"font-family="&quot;Sample Mono&quot;, monospace""#),
             "{svg}"
         );
         assert!(svg.contains(r#"font-size="9""#));
-        assert!(svg.contains(r#"text-anchor="middle""#));
+        assert!(svg.contains(r##"fill="#1c2024" stroke="#ffffff" text-anchor="middle""##));
         assert!(svg.contains(r#"transform="rotate(-30 5 6)""#));
-        assert!(svg.contains(
-            r##"stroke="#ffffff" stroke-width="2.5" stroke-linejoin="round" paint-order="stroke""##
-        ));
+        assert!(svg.contains(r#"stroke-width="2.5" stroke-linejoin="round" paint-order="stroke""#));
         assert!(svg.contains(">a&lt;b &amp; &quot;c&quot;</text>"));
+        assert!(variables(&scene).contains(
+            r#"style="fill: var(--color-ink); stroke: var(--color-paper)" text-anchor="middle""#
+        ));
     }
 
     #[test]
@@ -294,7 +418,7 @@ mod tests {
             fill: Some(Paint::role("paper")),
             stroke: Some(Stroke::new("ink", 1.0)),
         });
-        let svg = to_svg(&scene, &Theme::light()).unwrap();
+        let svg = values(&scene);
         assert!(
             svg.contains(r##"<circle cx="4" cy="5.5" r="3.5" fill="#ffffff" stroke="#1c2024" stroke-width="1""##),
             "{svg}"
@@ -302,12 +426,14 @@ mod tests {
     }
 
     #[test]
-    fn unknown_role_is_an_error() {
+    fn unknown_role_is_an_error_in_both_ways() {
         let mut scene = Scene::new(10.0, 10.0);
         scene.items.push(line(Stroke::new("no-such-role", 1.0)));
-        assert_eq!(
-            to_svg(&scene, &Theme::light()),
-            Err(Error::UnknownRole("no-such-role".into()))
-        );
+        for colors in [Colors::Values, Colors::Variables] {
+            assert_eq!(
+                to_svg(&scene, &sample(), colors),
+                Err(Error::UnknownRole("no-such-role".into()))
+            );
+        }
     }
 }

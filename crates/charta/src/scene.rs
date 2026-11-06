@@ -5,10 +5,10 @@
 /// 画面の座標。x は右、y は下が正（SVG と同じ）。
 pub type Pt = [f64; 2];
 
-/// 色の役割名（`ink`、`paper`、`seq-3`）。値は `docs/design/tokens.json` にだけある。
+/// 色の役割名（`ink`、`paper`、`seq-3`）。値は呼び手の渡す [`Theme`](crate::Theme) にある。
 pub type Role = String;
 
-/// 塗りや線の色。役割名そのものか、2 つの役割名の間の色（帯の段を 12 色の間から取るとき）。
+/// 塗りや線の色。役割名そのものか、2 つの役割名の間の色か、帯の段の色。
 #[derive(Debug, Clone, PartialEq)]
 pub enum Paint {
     Role(Role),
@@ -17,6 +17,13 @@ pub enum Paint {
         from: Role,
         to: Role,
         t: f64,
+    },
+    /// 色の列 `palette` で、`n` 本の帯の `k` 番目（下から）の色。列の段数は描くときに
+    /// [`Theme`](crate::Theme) の役割名から数え、[`Palette::blend`](crate::Palette::blend) で `Blend` にする。
+    Band {
+        palette: crate::Palette,
+        k: usize,
+        n: usize,
     },
 }
 
@@ -42,7 +49,7 @@ impl Stroke {
     }
 }
 
-/// 書体。tokens.json の `type.families` の 2 つ。
+/// 書体。和文も書ける本文の書体と、等幅の書体の 2 つ。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Font {
     Sans,
