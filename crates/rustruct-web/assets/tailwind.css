@@ -556,21 +556,32 @@
   .text-ng {
     color: var(--color-ng);
   }
-  .underline {
-    text-decoration-line: underline;
-  }
-  .decoration-accent {
-    text-decoration-color: var(--color-accent);
-  }
-  .underline-offset-4 {
-    text-underline-offset: 4px;
-  }
   .accent-ink {
     accent-color: var(--color-ink);
   }
   .outline-2 {
     outline-style: var(--tw-outline-style);
     outline-width: 2px;
+  }
+  .group-aria-expanded\:rotate-0 {
+    &:is(:where(.group)[aria-expanded="true"] *) {
+      rotate: 0deg;
+    }
+  }
+  .group-here\:underline {
+    &:is(:where(.group)[aria-current="page"] *) {
+      text-decoration-line: underline;
+    }
+  }
+  .group-here\:decoration-accent {
+    &:is(:where(.group)[aria-current="page"] *) {
+      text-decoration-color: var(--color-accent);
+    }
+  }
+  .group-here\:underline-offset-4 {
+    &:is(:where(.group)[aria-current="page"] *) {
+      text-underline-offset: 4px;
+    }
   }
   .first\:pr-3 {
     &:first-child {
@@ -592,11 +603,6 @@
     &:last-child {
       border-bottom-style: var(--tw-border-style);
       border-bottom-width: 0px;
-    }
-  }
-  .open\:rotate-0 {
-    &[data-state="open"] {
-      rotate: 0deg;
     }
   }
   .hover\:text-ink {

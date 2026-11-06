@@ -189,20 +189,18 @@ fn MenuNode(node: Route, here: Route, depth: usize, on_close: EventHandler<()>) 
     let children = node.children();
     let mut open = use_signal(|| node.holds(&here));
     let heading = node.text().heading;
-    // 四部は heading、その下のページは body。今いるページには下線
-    let class = match (depth == 0, node == here) {
-        (true, false) => "text-heading",
-        (true, true) => "text-heading underline decoration-accent underline-offset-4",
-        (false, false) => "text-body",
-        (false, true) => "text-body underline decoration-accent underline-offset-4",
-    };
+    // 四部は heading、その下のページは body。今いるページ（リンクの aria-current）には下線
     let link = rsx! {
         Link {
             to: node.clone(),
-            class: "py-2",
+            class: "group py-2",
             "aria-current": aria_current(&here, &node),
             onclick: move |_| on_close.call(()),
-            span { class, {heading} }
+            span {
+                class: "group-here:underline group-here:decoration-accent group-here:underline-offset-4",
+                class: if depth == 0 { "text-heading" } else { "text-body" },
+                {heading}
+            }
         }
     };
     let path = rsx! {
@@ -222,10 +220,10 @@ fn MenuNode(node: Route, here: Route, depth: usize, on_close: EventHandler<()>) 
                     div { class: "flex items-center",
                         {link}
                         CollapsibleTrigger {
-                            class: "px-3 py-2 text-muted",
+                            class: "group px-3 py-2 text-muted",
                             "aria-label": if open() { "{heading}を閉じる" } else { "{heading}を開く" },
-                            // 閉じた枝の印は右向き
-                            ChevronIcon { class: "size-4 -rotate-90 open:rotate-0", open: open() }
+                            // 閉じた枝の印は右向き。開いているかはトリガーの aria-expanded（collapsible が出す）
+                            ChevronIcon { class: "size-4 -rotate-90 group-aria-expanded:rotate-0" }
                         }
                     }
                     {path}

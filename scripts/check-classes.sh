@@ -118,7 +118,9 @@ classes=$(perl -0777 -ne 'while (/(?<![\w-])class\s*:\s*(if\b[^{]*\{\s*"[^"]*"\s
 for c in $classes; do
   # セレクタでは : . / を \ で逃がす（.sm\:grid-cols-2 の形）
   sel=$(printf '%s' "$c" | sed -E 's#([:./])#\\\1#g')
-  if ! grep -qF ".$sel {" "$css"; then
+  # group は印だけで自分の規則を持たず、group-*: の規則の中に :where(.group) で現れる
+  case "$c" in group) want=":where(.$sel)" ;; *) want=".$sel {" ;; esac
+  if ! grep -qF "$want" "$css"; then
     echo "NG: $c が $css に無い（dx serve か dx build で生成し直して commit する）"; fail=1
   fi
 done

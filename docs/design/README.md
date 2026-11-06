@@ -117,7 +117,9 @@ rustruct は、構造計算のツール（Tools）、材料や規格の値（Dat
 ## 状態
 
 - 状態（エラー、開いているか、押されているか、今いるページ）で見た目が変わる要素は、状態を要素の属性に持ち、クラスは 1 本の文字で書く。状態の差分だけを variant で書く（`text-muted error:text-ng`、`bg-paper aria-pressed:bg-ink`）（ADR site-0016）。
-- 属性は、合う ARIA があればそれを使い、Tailwind 組み込みの variant で書く（入力欄のエラーは `aria-invalid` と `aria-invalid:`、量の切替は `aria-pressed` と `aria-pressed:`）。ARIA の無い要素（Sheet の見出し）は `data-state` に持ち、`theme.css` の `@custom-variant` で書く（`error`）。
+- 属性は、合う ARIA があればそれを使い、Tailwind 組み込みの variant で書く（入力欄のエラーは `aria-invalid` と `aria-invalid:`、量の切替は `aria-pressed` と `aria-pressed:`）。部品が既に出す属性があれば、それから導く（メニューの枝の開閉は collapsible のトリガーの `aria-expanded`）。
+- 組み込みの variant が無い状態は `theme.css` の `@custom-variant` で書く。ARIA の無い要素（Sheet の見出し）のエラーは `data-state="error"` と `error:`、今いるページは `aria-current="page"` と `here:`。
+- 属性を持つ要素と見た目を変える要素が違うときは、属性を持つ要素に `group` を付け、中の要素に `group-*:` で書く（メニューの枝の矢印は `group-aria-expanded:rotate-0`、今いるページの見出しは `group-here:underline`）。
 - `@custom-variant` の名前は Tailwind 組み込みの variant とぶつけない。任意値の variant（`data-[state=error]:` など）は使わない。
 - 状態でクラスの文字を選ぶ `if` と、クラスを変数に束ねる形は書かない。状態でない性質（数値の欄か文字の欄か）で変わる部分は、同じ要素に `class:` を 2 つ書き、共通の部分と、違う部分だけを選ぶ `class: if … { "…" } else { "…" }` に分ける（Dioxus がつないで出す）。部品が受けた `class` は `class: "{class}"` でそのまま渡す。拾えない形は `scripts/check-classes.sh` が落とす。
 

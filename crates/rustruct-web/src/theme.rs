@@ -72,9 +72,10 @@ pub fn theme_css(tokens_json: &str) -> Result<String, Error> {
     );
 
     out.push_str(
-        "/* 状態: ARIA の無い要素の data-state の値。クラスは 1 本にし、状態の差分だけをこの variant で書く（ADR site-0016） */\n\
+        "/* 状態: 組み込みの variant が無いもの。ARIA の無い要素の data-state と、今いるページの aria-current。\n\
+         \x20  クラスは 1 本にし、状態の差分だけをこの variant で書く（ADR site-0016） */\n\
          @custom-variant error (&[data-state=\"error\"]);\n\
-         @custom-variant open (&[data-state=\"open\"]);\n\n",
+         @custom-variant here (&[aria-current=\"page\"]);\n\n",
     );
 
     out.push_str("@theme {\n");
@@ -562,17 +563,20 @@ mod tests {
         }
     }
 
-    /// ARIA の無い要素の状態の差分は、`data-state` の値で選ぶ variant に書く（ADR site-0016）。
+    /// 組み込みの variant が無い状態は、要素の属性で選ぶ variant に書く: ARIA の無い要素の `data-state` と、
+    /// 今いるページの `aria-current`（ADR site-0016）。
     /// 任意値の `data-[state=…]:` は使わない
     #[test]
-    fn states_come_out_as_variants_on_the_data_state_of_the_element_itself() {
+    fn states_without_a_built_in_variant_come_out_as_custom_variants_on_the_element_itself() {
         let css = css();
         for line in [
             r#"@custom-variant error (&[data-state="error"]);"#,
-            r#"@custom-variant open (&[data-state="open"]);"#,
+            r#"@custom-variant here (&[aria-current="page"]);"#,
         ] {
             assert!(css.contains(line), "{line} が無い:\n{css}");
         }
+        // 組み込みの open:（<details> の [open]）を上書きしない
+        assert!(!css.contains("@custom-variant open"), "{css}");
     }
 
     #[test]
