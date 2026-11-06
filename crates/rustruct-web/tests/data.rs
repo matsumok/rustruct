@@ -115,6 +115,29 @@ fn concrete_page_opens_at_fc_24_with_its_results() {
     );
 }
 
+/// Fc は入力の組の Sheet の行見出しの 1 欄（見出しは `th`、欄の `aria-label` は欄の名前）。手組みの `label` は無い
+#[test]
+fn concrete_page_puts_fc_in_a_sheet_with_a_row_head() {
+    let html = render_path("/data/concrete");
+    assert_in_order(
+        &html,
+        &[
+            "<table",
+            "<th",
+            "scope=\"row\"",
+            ">Fc（N/mm²）</th>",
+            "aria-label=\"Fc（N/mm²）\"",
+            "value=\"24\"",
+            "</table>",
+            "γ",
+        ],
+    );
+    assert!(
+        !html.contains("<label"),
+        "手組みの label が残っている: {html}"
+    );
+}
+
 /// 計算できたときの表示。(γ, E, ワーニング)
 fn computed(input: &str) -> (String, String, Option<String>) {
     match ConcreteReadout::from_fc_input(input) {
@@ -176,13 +199,14 @@ fn readout_warns_outside_18_to_100_but_still_computes() {
     );
 }
 
+/// 理由は入力の組の文言（欄の名前を含めない。Sheet の下に「Fc（N/mm²）: 理由」と出る）
 #[test]
 fn readout_is_unusable_with_an_error_when_fc_cannot_be_used() {
     for (input, error) in [
-        ("", "Fc を入力"),
-        ("abc", "数値を入力"),
-        ("0", "Fc が正の有限値でない"),
-        ("-5", "Fc が正の有限値でない"),
+        ("", "値を入れる"),
+        ("abc", "数値で入れる"),
+        ("0", "0 より大きい値を入れる"),
+        ("-5", "0 より大きい値を入れる"),
     ] {
         assert_eq!(
             ConcreteReadout::from_fc_input(input),

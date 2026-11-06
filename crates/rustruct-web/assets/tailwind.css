@@ -11,7 +11,6 @@
     --color-paper: #ffffff;
     --color-fill: #f0f0f3;
     --color-line: #e0e1e6;
-    --color-line-strong: #8b8d98;
     --color-ink: #1c2024;
     --color-muted: #60646c;
     --color-ng: #ce2c31;
@@ -376,9 +375,6 @@
   .gap-y-6 {
     row-gap: var(--spacing-6);
   }
-  .self-start {
-    align-self: flex-start;
-  }
   .overflow-hidden {
     overflow: hidden;
   }
@@ -404,10 +400,6 @@
     border-style: var(--tw-border-style);
     border-width: 1px;
   }
-  .border-2 {
-    border-style: var(--tw-border-style);
-    border-width: 2px;
-  }
   .border-t {
     border-top-style: var(--tw-border-style);
     border-top-width: 1px;
@@ -425,12 +417,6 @@
   }
   .border-line {
     border-color: var(--color-line);
-  }
-  .border-line-strong {
-    border-color: var(--color-line-strong);
-  }
-  .border-ng {
-    border-color: var(--color-ng);
   }
   .bg-fill {
     background-color: var(--color-fill);
