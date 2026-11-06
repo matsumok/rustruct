@@ -3,18 +3,19 @@
 
 use dioxus::prelude::*;
 
-use crate::{Page, Route, RouteList};
+use crate::Route;
+use crate::page::{Page, RouteList};
 
 /// Tools の一覧の見出しにする分野。Tool の無い分野は見出しも出さない。分野を足すときは `ALL` に一覧の順で並べる
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum Field {
+pub(crate) enum Domain {
     /// 鉄筋コンクリート
     Rc,
     /// 材料に依らない梁・板の弾性解（ADR site-0010）
     Mechanics,
 }
 
-impl Field {
+impl Domain {
     const ALL: [Self; 2] = [Self::Rc, Self::Mechanics];
 
     fn name(self) -> &'static str {
@@ -32,11 +33,11 @@ pub(crate) fn ToolsIndex() -> Element {
     rsx! {
         Page { route: Route::Tools {},
             div { class: "flex flex-col gap-7",
-                for field in Field::ALL {
-                    if Route::tools_in(field).next().is_some() {
+                for domain in Domain::ALL {
+                    if Route::tools_in(domain).next().is_some() {
                         section { class: "flex flex-col gap-3",
-                            h2 { class: "border-t border-ink pt-2 text-heading", {field.name()} }
-                            RouteList { routes: Route::tools_in(field).collect::<Vec<_>>() }
+                            h2 { class: "border-t border-ink pt-2 text-heading", {domain.name()} }
+                            RouteList { routes: Route::tools_in(domain).collect::<Vec<_>>() }
                         }
                     }
                 }
