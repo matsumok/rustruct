@@ -2,6 +2,7 @@
 //! 言葉は `docs/tools/kirchhoff-plate/GLOSSARY.md`。数値は `rustruct-calc` が出し、ここでは表示の文字列を見る。
 
 mod common;
+use common::markup::count_tags;
 use common::{assert_in_order, element, reasons, text_of};
 use rustruct_types::kirchhoff_plate::{Edge, Support};
 use rustruct_web::{
@@ -318,15 +319,17 @@ fn the_page_shows_the_deflection_figure_after_the_results_with_five_switches() {
         &text_of(&main),
         &["釣り合い", "たわみ w（mm）", "w", "Mx", "My", "Qx", "Qy"],
     );
-    // 既定はたわみ。押されている切替は 1 つ（値の引用符は描き方で付いたり付かなかったりする）
-    let pressed = |value: &str| {
-        main.matches(&format!("aria-pressed=\"{value}\"")).count()
-            + main.matches(&format!("aria-pressed={value}")).count()
-    };
+    // 既定はたわみ。押されている切替は 1 つ
+    let pressed = |value| count_tags(&main, "button", &[("aria-pressed", value)]);
     assert_eq!((pressed("true"), pressed("false")), (1, 4), "{main}");
     // 切替は名前の付いた組
-    assert!(
-        main.contains("role=\"group\" aria-label=\"分布図の量\""),
+    assert_eq!(
+        count_tags(
+            &main,
+            "div",
+            &[("aria-label", "分布図の量"), ("role", "group")]
+        ),
+        1,
         "{main}"
     );
     // 図は 1 枚（ライトとダークは CSS 変数で切り替わる）。等値線の数値が読め、下向きの荷重でたわみは負にならない

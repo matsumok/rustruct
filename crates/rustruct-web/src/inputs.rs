@@ -374,6 +374,7 @@ fn Cell<F: Field>(inputs: Signal<Inputs<F>>, field: F, error: bool) -> Element {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::markup::{count_tags, tags};
 
     /// 4 種類の欄を 1 つずつ持つ試験用の欄
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -594,26 +595,30 @@ mod tests {
         assert!(!html.contains("この Sheet に無い欄"), "{html}");
         // エラーの見出しは、読めない 2 欄とまたぐエラーの 2 欄（data-state）。不正な欄は読めない 2 欄だけ
         // （aria-invalid。またぐエラーの欄は読めている）
-        assert_eq!(marked(&html, "th", &["data-state=\"error\""]), 4, "{html}");
         assert_eq!(
-            marked(&html, "input", &["aria-invalid=\"true\""]),
+            count_tags(&html, "th", &[("data-state", "error")]),
+            4,
+            "{html}"
+        );
+        assert_eq!(
+            count_tags(&html, "input", &[("aria-invalid", "true")]),
             2,
             "{html}"
         );
         assert_eq!(
-            marked(&html, "input", &["aria-label=\"Lx（m）\""]),
+            count_tags(&html, "input", &[("aria-label", "Lx（m）")]),
             1,
             "{html}"
         );
         // チェックはボタンの checkbox で、初期値のオフを aria-checked に持つ
         assert_eq!(
-            marked(
+            count_tags(
                 &html,
                 "button",
                 &[
-                    "role=\"checkbox\"",
-                    "aria-checked=\"false\"",
-                    "aria-label=\"表18-1 最小厚さ\""
+                    ("role", "checkbox"),
+                    ("aria-checked", "false"),
+                    ("aria-label", "表18-1 最小厚さ"),
                 ]
             ),
             1,
@@ -621,13 +626,13 @@ mod tests {
         );
         // 選択はリストを開くボタンで、閉じている間は選んだ選択肢の名前だけを出す
         assert_eq!(
-            marked(
+            count_tags(
                 &html,
                 "button",
                 &[
-                    "aria-haspopup=\"listbox\"",
-                    "aria-expanded=false",
-                    "aria-label=\"x = 0（左）\""
+                    ("aria-haspopup", "listbox"),
+                    ("aria-expanded", "false"),
+                    ("aria-label", "x = 0（左）"),
                 ]
             ),
             1,
@@ -636,15 +641,20 @@ mod tests {
         assert!(!html.contains("固定"), "{html}");
     }
 
-    /// `tag` の要素のうち、開きタグに `marks` をすべて持つものの数
-    fn marked(html: &str, tag: &str, marks: &[&str]) -> usize {
-        html.split(&format!("<{tag} "))
-            .skip(1)
-            .filter(|t| {
-                let open = &t[..t.find('>').unwrap()];
-                marks.iter().all(|mark| open.contains(mark))
-            })
-            .count()
+    /// 選択の欄のリストは位置を指定しない `absolute` で、包む箱が Sheet の外になるので、Sheet の
+    /// `overflow-hidden` に切られない。Sheet の中のどの要素も位置を決めるクラスを持たない
+    #[test]
+    fn nothing_in_the_sheet_is_positioned_so_the_choice_list_escapes_its_overflow() {
+        let mut dom = VirtualDom::new(GroupPage);
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+        let positioned: Vec<_> = tags(&html)
+            .iter()
+            .flat_map(|tag| tag.classes())
+            .filter(|class| ["relative", "absolute", "fixed", "sticky"].contains(class))
+            .map(str::to_string)
+            .collect();
+        assert_eq!(positioned, Vec::<String>::new(), "{html}");
     }
 
     /// 読めない欄は理由を集めて初期値で埋め（空欄を受ける欄の空欄の初期値は `None`）、理由は欄の順に並ぶ
