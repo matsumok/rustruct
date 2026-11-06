@@ -111,11 +111,13 @@ pub(crate) fn SheetInput(
 ) -> Element {
     rsx! {
         input {
-            class: if numeric { "h-6 w-full bg-paper px-2 font-mono text-num text-right focus:outline-2 focus:-outline-offset-2 focus:outline-ink error:outline-2 error:-outline-offset-2 error:outline-ng" } else { "h-6 w-full bg-paper px-2 text-body focus:outline-2 focus:-outline-offset-2 focus:outline-ink error:outline-2 error:-outline-offset-2 error:outline-ng" },
-            "data-state": error.then_some("error"),
+            // 同じ要素の class: は Dioxus がつないで出す。違う部分（数値か文字か）だけを if で選ぶ
+            class: "h-6 w-full bg-paper px-2 focus:outline-2 focus:-outline-offset-2 focus:outline-ink aria-invalid:outline-2 aria-invalid:-outline-offset-2 aria-invalid:outline-ng",
+            class: if numeric { "font-mono text-num text-right" } else { "text-body" },
             r#type: "text",
             inputmode: if numeric { "decimal" } else { "text" },
             "aria-label": label,
+            "aria-invalid": error.then_some("true"),
             value,
             oninput: move |e| oninput.call(e),
         }
