@@ -8,11 +8,12 @@ use rustruct_types::concrete::{BarPosition, Concrete, ConcreteKind};
 use rustruct_types::quantity::Stress;
 use rustruct_types::rebar::{BarDesignation, RebarKind};
 
+use crate::Route;
 use crate::inputs::{Definition, Field, InputGroup, Inputs, Kind, Layout, Reason};
+use crate::page::{Page, RouteList};
 use crate::table::{
     Block, Caption, Cell, Column, Columns, Divider, Formula, Notes, Table, TableColumn,
 };
-use crate::{Page, Route, RouteList};
 
 /// ヤング係数 E の欄。有効数字 3 桁で、値に E まで書く（「2.27E+04」。ADR site-0013）。
 /// 見出しは単位だけ（「E（N/mm²）」）。Data のコンクリートのページと必要スラブ厚さのページが同じ書き方を使う
