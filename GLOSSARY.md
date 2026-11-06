@@ -14,7 +14,7 @@
 _Avoid_: 計算ツール、アプリ、ページ
 
 **分野**:
-Tools の一覧で Tool を束ねる見出し。材料ごとの RC・Steel・Timber と、解析の Dynamics・Mechanics の5つ。Mechanics は材料に依らない梁・板の弾性解の Tool。必要スラブ厚さは RC、地震応答は Dynamics、Kirchhoff 板の曲げは Mechanics。
+Tools の一覧で Tool を束ねる見出し。材料ごとの RC・Steel・Timber と、解析の Dynamics・Mechanics の5つ。Mechanics は材料に依らない梁・板の弾性解の Tool。必要スラブ厚さは RC、地震応答は Dynamics、Kirchhoff 板の曲げは Mechanics。コードでは Domain。
 _Avoid_: カテゴリ、構造種別、S、木造、力学（見出しでは英語で呼ぶ）
 
 **Data**:
@@ -30,7 +30,7 @@ _Avoid_: Sketch、デモ、ビジュアライゼーション、作品
 _Avoid_: ブログ、記事、ポスト
 
 **シェル**:
-どのページにも同じに出る、中身の外側。ヘッダー（サイト名・パンくず・ライトとダークの切り替え・アカウント）と、スマホのメニュー。コードでは Frame（#92 で shell.rs に置く）。
+どのページにも同じに出る、中身の外側。ヘッダー（サイト名・パンくず・ライトとダークの切り替え・アカウント）と、スマホのメニュー。コードでは Frame（shell.rs）。
 _Avoid_: 殻（dx が出す index.html の骨を指す）、共通部、枠、レイアウト
 
 ### 利用者
