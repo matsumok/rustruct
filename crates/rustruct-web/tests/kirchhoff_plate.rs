@@ -64,8 +64,26 @@ fn the_page_opens_with_the_initial_inputs_in_the_sheet() {
             "入力欄に初期値 {value} が無い: {main}"
         );
     }
-    // 四辺とも固定が選ばれている
-    assert_eq!(main.matches("selected").count(), 4, "{main}");
+    // 四辺とも、選択の欄（リストを開くボタン）に固定が選ばれている
+    assert_eq!(
+        main.matches("aria-haspopup=\"listbox\"").count(),
+        4,
+        "{main}"
+    );
+    assert_in_order(
+        &text_of(main),
+        &[
+            "x = 0（左）",
+            "固定",
+            "x = Lx（右）",
+            "固定",
+            "y = 0（下）",
+            "固定",
+            "y = Ly（上）",
+            "固定",
+            "板の中央",
+        ],
+    );
 }
 
 #[test]
@@ -300,9 +318,17 @@ fn the_page_shows_the_deflection_figure_after_the_results_with_five_switches() {
         &text_of(&main),
         &["釣り合い", "たわみ w（mm）", "w", "Mx", "My", "Qx", "Qy"],
     );
-    // 既定はたわみ。押されている切替は 1 つ
-    assert_eq!(main.matches("aria-pressed=\"true\"").count(), 1, "{main}");
-    assert_eq!(main.matches("aria-pressed=\"false\"").count(), 4, "{main}");
+    // 既定はたわみ。押されている切替は 1 つ（値の引用符は描き方で付いたり付かなかったりする）
+    let pressed = |value: &str| {
+        main.matches(&format!("aria-pressed=\"{value}\"")).count()
+            + main.matches(&format!("aria-pressed={value}")).count()
+    };
+    assert_eq!((pressed("true"), pressed("false")), (1, 4), "{main}");
+    // 切替は名前の付いた組
+    assert!(
+        main.contains("role=\"group\" aria-label=\"分布図の量\""),
+        "{main}"
+    );
     // ライトとダークの 2 枚。等値線の数値が読め、下向きの荷重でたわみは負にならない
     assert_eq!(main.matches("<svg xmlns").count(), 2, "{main}");
     let numbers = figure_numbers(&main);

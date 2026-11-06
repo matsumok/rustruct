@@ -1,4 +1,4 @@
-//! ヘッダーのボタンとメニューの開け閉めのアイコン（`docs/ui-decisions.md`「画面幅」）。
+//! ヘッダーのボタン、メニューの開け閉め、Sheet の選択とチェックの欄のアイコン（`docs/design/README.md`「図とアイコン」）。
 //!
 //! IBM の Carbon（`@carbon/icons` 11.90.0、32 の格子の SVG）の path をそのまま写した。
 //! Copyright IBM Corp. Apache License 2.0（写しは `src/icons/LICENSE`）。
@@ -114,6 +114,17 @@ pub fn ChevronIcon(class: &'static str) -> Element {
         Icon {
             class: "{class}",
             paths: &[("M16 22 6 12 7.4 10.6 16 19.2 24.6 10.6 26 12 16 22z", "")],
+        }
+    }
+}
+
+/// チェック（`checkmark`）。Sheet のチェックの欄のオンの印
+#[component]
+pub fn CheckIcon(class: &'static str) -> Element {
+    rsx! {
+        Icon {
+            class: "{class}",
+            paths: &[("M13 24 4 15 5.414 13.586 13 21.171 26.586 7.586 28 9 13 24z", "")],
         }
     }
 }

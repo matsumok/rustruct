@@ -11,6 +11,7 @@
     --color-paper: #ffffff;
     --color-fill: #f0f0f3;
     --color-line: #e0e1e6;
+    --color-line-strong: #8b8d98;
     --color-ink: #1c2024;
     --color-muted: #60646c;
     --color-ng: #ce2c31;
@@ -262,6 +263,9 @@
   .left-0 {
     left: var(--spacing-0);
   }
+  .z-10 {
+    z-index: 10;
+  }
   .z-20 {
     z-index: 20;
   }
@@ -291,6 +295,10 @@
   }
   .table {
     display: table;
+  }
+  .size-3 {
+    width: var(--spacing-3);
+    height: var(--spacing-3);
   }
   .size-4 {
     width: var(--spacing-4);
@@ -350,6 +358,9 @@
   }
   .justify-between {
     justify-content: space-between;
+  }
+  .justify-center {
+    justify-content: center;
   }
   .justify-end {
     justify-content: flex-end;
@@ -423,6 +434,9 @@
   }
   .border-line {
     border-color: var(--color-line);
+  }
+  .border-line-strong {
+    border-color: var(--color-line-strong);
   }
   .bg-fill {
     background-color: var(--color-fill);
@@ -556,12 +570,26 @@
   .text-ng {
     color: var(--color-ng);
   }
-  .accent-ink {
-    accent-color: var(--color-ink);
+  .text-paper {
+    color: var(--color-paper);
   }
   .outline-2 {
     outline-style: var(--tw-outline-style);
     outline-width: 2px;
+  }
+  .blur {
+    --tw-blur: blur(8px);
+    filter: var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,);
+  }
+  .group-aria-checked\:border-ink {
+    &:is(:where(.group)[aria-checked="true"] *) {
+      border-color: var(--color-ink);
+    }
+  }
+  .group-aria-checked\:bg-ink {
+    &:is(:where(.group)[aria-checked="true"] *) {
+      background-color: var(--color-ink);
+    }
   }
   .group-aria-expanded\:rotate-0 {
     &:is(:where(.group)[aria-expanded="true"] *) {
@@ -628,6 +656,22 @@
       outline-color: var(--color-ink);
     }
   }
+  .focus-visible\:outline-2 {
+    &:focus-visible {
+      outline-style: var(--tw-outline-style);
+      outline-width: 2px;
+    }
+  }
+  .focus-visible\:-outline-offset-2 {
+    &:focus-visible {
+      outline-offset: calc(2px * -1);
+    }
+  }
+  .focus-visible\:outline-ink {
+    &:focus-visible {
+      outline-color: var(--color-ink);
+    }
+  }
   .aria-invalid\:outline-2 {
     &[aria-invalid="true"] {
       outline-style: var(--tw-outline-style);
@@ -652,6 +696,30 @@
   .aria-pressed\:text-paper {
     &[aria-pressed="true"] {
       color: var(--color-paper);
+    }
+  }
+  .aria-pressed\:focus-visible\:outline-paper {
+    &[aria-pressed="true"] {
+      &:focus-visible {
+        outline-color: var(--color-paper);
+      }
+    }
+  }
+  .aria-selected\:bg-ink {
+    &[aria-selected="true"] {
+      background-color: var(--color-ink);
+    }
+  }
+  .aria-selected\:text-paper {
+    &[aria-selected="true"] {
+      color: var(--color-paper);
+    }
+  }
+  .aria-selected\:focus\:outline-paper {
+    &[aria-selected="true"] {
+      &:focus {
+        outline-color: var(--color-paper);
+      }
     }
   }
   .md\:block {
@@ -928,6 +996,59 @@
   inherits: false;
   initial-value: solid;
 }
+@property --tw-blur {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-brightness {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-contrast {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-grayscale {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-hue-rotate {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-invert {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-opacity {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-saturate {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-sepia {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-drop-shadow {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-drop-shadow-color {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-drop-shadow-alpha {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 100%;
+}
+@property --tw-drop-shadow-size {
+  syntax: "*";
+  inherits: false;
+}
 @layer properties {
   @supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))) {
     *, ::before, ::after, ::backdrop {
@@ -939,6 +1060,19 @@
       --tw-border-style: solid;
       --tw-font-weight: initial;
       --tw-outline-style: solid;
+      --tw-blur: initial;
+      --tw-brightness: initial;
+      --tw-contrast: initial;
+      --tw-grayscale: initial;
+      --tw-hue-rotate: initial;
+      --tw-invert: initial;
+      --tw-opacity: initial;
+      --tw-saturate: initial;
+      --tw-sepia: initial;
+      --tw-drop-shadow: initial;
+      --tw-drop-shadow-color: initial;
+      --tw-drop-shadow-alpha: 100%;
+      --tw-drop-shadow-size: initial;
     }
   }
 }
