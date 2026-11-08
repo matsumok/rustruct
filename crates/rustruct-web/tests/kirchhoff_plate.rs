@@ -2,6 +2,7 @@
 //! 言葉は `docs/tools/kirchhoff-plate/GLOSSARY.md`。数値は `rustruct-calc` が出し、ここでは表示の文字列を見る。
 
 mod common;
+use common::markup::count_tags;
 use common::{assert_in_order, element, reasons, text_of};
 use rustruct_types::kirchhoff_plate::{Edge, Support};
 use rustruct_web::{
@@ -64,8 +65,26 @@ fn the_page_opens_with_the_initial_inputs_in_the_sheet() {
             "入力欄に初期値 {value} が無い: {main}"
         );
     }
-    // 四辺とも固定が選ばれている
-    assert_eq!(main.matches("selected").count(), 4, "{main}");
+    // 四辺とも、選択の欄（リストを開くボタン）に固定が選ばれている
+    assert_eq!(
+        main.matches("aria-haspopup=\"listbox\"").count(),
+        4,
+        "{main}"
+    );
+    assert_in_order(
+        &text_of(main),
+        &[
+            "x = 0（左）",
+            "固定",
+            "x = Lx（右）",
+            "固定",
+            "y = 0（下）",
+            "固定",
+            "y = Ly（上）",
+            "固定",
+            "板の中央",
+        ],
+    );
 }
 
 #[test]
@@ -301,8 +320,18 @@ fn the_page_shows_the_deflection_figure_after_the_results_with_five_switches() {
         &["釣り合い", "たわみ w（mm）", "w", "Mx", "My", "Qx", "Qy"],
     );
     // 既定はたわみ。押されている切替は 1 つ
-    assert_eq!(main.matches("aria-pressed=\"true\"").count(), 1, "{main}");
-    assert_eq!(main.matches("aria-pressed=\"false\"").count(), 4, "{main}");
+    let pressed = |value| count_tags(&main, "button", &[("aria-pressed", value)]);
+    assert_eq!((pressed("true"), pressed("false")), (1, 4), "{main}");
+    // 切替は名前の付いた組
+    assert_eq!(
+        count_tags(
+            &main,
+            "div",
+            &[("aria-label", "分布図の量"), ("role", "group")]
+        ),
+        1,
+        "{main}"
+    );
     // 図は 1 枚（ライトとダークは CSS 変数で切り替わる）。等値線の数値が読め、下向きの荷重でたわみは負にならない
     assert_eq!(main.matches("<svg xmlns").count(), 1, "{main}");
     let numbers = figure_numbers(&main);

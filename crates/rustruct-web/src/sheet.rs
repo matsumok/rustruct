@@ -7,6 +7,10 @@
 //! 単位は見出しに括弧で書く（「Lx（m）」）。
 
 use dioxus::prelude::*;
+use dioxus_primitives::checkbox::{Checkbox, CheckboxIndicator, CheckboxState};
+use dioxus_primitives::select::{Select, SelectList, SelectOption, SelectTrigger};
+
+use crate::icons::{CheckIcon, ChevronIcon};
 
 /// 入力の Sheet の枠。中に `thead`・`tbody` を置く。列は等分（入力で幅が動かない）
 #[component]
@@ -59,41 +63,109 @@ pub(crate) fn SheetCell(children: Element) -> Element {
     }
 }
 
-/// Sheet のセルに入れるチェックの欄。`size-4` の素のチェックボックスを `ink` で、セルの高さの中央に
+/// Sheet のセルに入れるチェックの欄。振る舞いは `dioxus-primitives` の checkbox（`role="checkbox"` と
+/// `aria-checked`、Space で切り替え）。セル全体が押せるボタンで、フォーカスは書けるセルと同じ `ink` の内枠。
+/// 中の `size-4` の箱は、書ける器の `line-strong` の枠で、オンのとき `ink` で塗って `paper` の印を出す
 #[component]
-pub(crate) fn SheetCheck(
-    label: String,
-    checked: bool,
-    onchange: EventHandler<FormEvent>,
-) -> Element {
+pub(crate) fn SheetCheck(label: String, checked: bool, onchange: EventHandler<bool>) -> Element {
     rsx! {
-        div { class: "flex h-6 items-center px-2",
-            input {
-                class: "size-4 accent-ink",
-                r#type: "checkbox",
-                "aria-label": label,
-                checked,
-                onchange: move |e| onchange.call(e),
+        Checkbox {
+            class: "group flex h-6 w-full items-center bg-paper px-2 focus:outline-2 focus:-outline-offset-2 focus:outline-ink",
+            aria_label: label,
+            checked: Some(if checked { CheckboxState::Checked } else { CheckboxState::Unchecked }),
+            on_checked_change: move |state: CheckboxState| onchange.call(state.into()),
+            span { class: "flex size-4 items-center justify-center border border-line-strong bg-paper text-paper group-aria-checked:border-ink group-aria-checked:bg-ink",
+                CheckboxIndicator { class: "flex", CheckIcon { class: "size-3" } }
             }
         }
     }
 }
 
-/// Sheet のセルに入れる選択の欄。素の `select` で、選択肢は（記号, 名前）の並び。値は記号
+/// 選択の欄のリストを閉じたとき、フォーカスがリストの中にあればボタンに戻す（Enter・Space・Esc・選択肢を
+/// 押して閉じたとき。素の `select` と同じく、選んだ後も欄に留まる）。primitives の select は戻さず、閉じた
+/// リストが消えるとフォーカスが `body` に落ちる。外を押して閉じたときは、フォーカスはもう移った先にあるので動かさない。
+/// ボタンはリストを `aria-controls` で指す（primitives が付ける）。リストは閉じる処理の中で読み、フォーカスは
+/// `spawn` で処理を抜けてから移す（処理の中で移すと、フォーカスの抜けた選択肢の blur が入れ子で走り、WASM が止まる）。
+/// ブラウザの外（SSG とテスト）では何もしない
+fn return_focus_to_trigger() {
+    #[cfg(target_arch = "wasm32")]
+    {
+        use web_sys::HtmlElement;
+        use web_sys::wasm_bindgen::JsCast;
+
+        let Some(document) = web_sys::window().and_then(|window| window.document()) else {
+            return;
+        };
+        let Some(list) = document
+            .active_element()
+            .and_then(|focused| focused.closest("[role=listbox]").ok().flatten())
+        else {
+            return;
+        };
+        let Ok(controls) = document.query_selector_all("[aria-controls]") else {
+            return;
+        };
+        let trigger = (0..controls.length())
+            .filter_map(|index| controls.item(index))
+            .filter_map(|node| node.dyn_into::<HtmlElement>().ok())
+            .find(|element| element.get_attribute("aria-controls") == Some(list.id()));
+        if let Some(trigger) = trigger {
+            spawn(async move {
+                _ = trigger.focus();
+            });
+        }
+    }
+}
+
+/// Sheet のセルに入れる選択の欄。選択肢は（記号, 名前）の並びで、値は記号。振る舞いは `dioxus-primitives` の
+/// select（リストを開くボタン、矢印と Enter と Esc、打った文字で選択肢に移る、読み上げの `listbox`）。
+/// ボタンは書けるセルと同じ形で、選んだ名前と開く印（`chevron--down`）を出す。リストはセルの真下に重ね、
+/// 選んだ選択肢を `ink` で塗り（量の切替と同じ）、フォーカスは書けるセルと同じ `ink` の内枠。
+/// リストは位置を指定しない `absolute` で、置かれる位置はボタンの下のまま、包む箱は Sheet の外になる。
+/// Sheet の角を丸める `overflow-hidden` に切られないのはこのため（セルや Sheet に `relative` を付けない。
+/// `inputs.rs` のテストが見る）
 #[component]
 pub(crate) fn SheetSelect(
     label: String,
     options: Vec<(char, &'static str)>,
-    selected: char,
-    onchange: EventHandler<FormEvent>,
+    selected: ReadSignal<char>,
+    onchange: EventHandler<char>,
 ) -> Element {
+    let name = options
+        .iter()
+        .find(|(symbol, _)| *symbol == selected())
+        .map(|(_, name)| *name);
+    let value = use_memo(move || Some(selected()));
     rsx! {
-        select {
-            class: "h-6 w-full bg-paper px-2 text-body focus:outline-2 focus:-outline-offset-2 focus:outline-ink",
-            "aria-label": label,
-            onchange: move |e| onchange.call(e),
-            for (symbol , name) in options {
-                option { value: "{symbol}", selected: selected == symbol, {name} }
+        Select::<char> {
+            value: ReadSignal::from(value),
+            on_value_change: move |symbol: Option<char>| {
+                if let Some(symbol) = symbol {
+                    onchange.call(symbol);
+                }
+            },
+            on_open_change: move |open: bool| {
+                if !open {
+                    return_focus_to_trigger();
+                }
+            },
+            SelectTrigger {
+                class: "flex h-6 w-full items-center justify-between gap-1 bg-paper px-2 text-body focus:outline-2 focus:-outline-offset-2 focus:outline-ink",
+                aria_label: label,
+                // 収まらない名前は素の select と同じく折り返さずに切る
+                span { class: "min-w-0 overflow-hidden whitespace-nowrap", {name} }
+                ChevronIcon { class: "size-4 text-muted" }
+            }
+            SelectList { class: "absolute z-10 border border-line bg-paper focus:outline-2 focus:-outline-offset-2 focus:outline-ink",
+                for (index , (symbol , name)) in options.into_iter().enumerate() {
+                    SelectOption::<char> {
+                        class: "flex h-6 items-center whitespace-nowrap px-2 text-body focus:outline-2 focus:-outline-offset-2 focus:outline-ink aria-selected:bg-ink aria-selected:text-paper aria-selected:focus:outline-paper",
+                        index,
+                        value: symbol,
+                        text_value: name.to_string(),
+                        {name}
+                    }
+                }
             }
         }
     }

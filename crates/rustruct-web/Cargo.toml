@@ -22,6 +22,10 @@ dioxus-primitives = { git = "https://github.com/DioxusLabs/components", rev = "9
 dioxus-ssr.workspace = true
 
 # tokens.json → @theme の生成器（src/theme.rs）は build.rs と test だけが使う。配信物には入らない
+# 選択の欄のリストを閉じたとき、フォーカスをボタンに戻す（src/sheet.rs）。ブラウザの WASM だけ
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { workspace = true, features = ["Document", "Element", "HtmlElement", "NodeList", "Window"] }
+
 [build-dependencies]
 serde_json.workspace = true
 

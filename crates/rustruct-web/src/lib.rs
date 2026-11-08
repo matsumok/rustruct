@@ -10,6 +10,11 @@ use dioxus::prelude::*;
 #[cfg(test)]
 mod theme;
 
+/// 開きタグを属性で数えるテストの道具。結合テストの `common` と同じもの
+#[cfg(test)]
+#[path = "../tests/common/markup.rs"]
+mod markup;
+
 /// 継ぎ目 A: パス → HTML 文字列。ネイティブだけ（ブラウザは hydration で同じ App を描く）。
 #[cfg(not(target_arch = "wasm32"))]
 mod prerender;
