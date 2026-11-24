@@ -436,6 +436,17 @@ fn the_figure_follows_the_aspect_of_the_plate_within_one_column_and_names_each_s
 }
 
 #[test]
+fn the_figure_of_the_initial_inputs_is_at_most_96_497_bytes_of_svg() {
+    // 帯を範囲ごとの外周で描く（#128）。上限は、帯をセルと三角形の小片で敷き詰めていたときの 385,989 B の 1/4
+    const LIMIT: usize = 96_497;
+    let main = element(&render_path("/tools/kirchhoff-plate"), "main").to_string();
+    let start = main.find("<svg xmlns").expect("図がある");
+    let end = start + main[start..].find("</svg>").expect("図が閉じる") + "</svg>".len();
+    let size = end - start;
+    assert!(size <= LIMIT, "図の SVG {size} B");
+}
+
+#[test]
 fn a_plate_that_cannot_be_solved_has_no_figure() {
     let mut unstable = PlateInputs::default();
     set_all(&mut unstable, Support::Free);

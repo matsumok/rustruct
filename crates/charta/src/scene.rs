@@ -83,7 +83,8 @@ pub enum Anchor {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Item {
-    /// 折れ線（複数）。`closed` なら各折れ線を閉じる。帯は 1 つのパスに小片を全部入れる
+    /// 折れ線（複数）。`closed` なら各折れ線を閉じる。帯は 1 つのパスに外周と穴の内周を全部入れ、穴は塗りの
+    /// nonzero の規則で抜ける（外周と内周は向きが逆）
     Path {
         subpaths: Vec<Vec<Pt>>,
         closed: bool,
