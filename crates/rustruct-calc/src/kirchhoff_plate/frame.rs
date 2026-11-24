@@ -59,7 +59,7 @@ impl Frame {
     /// 辺の上の点（ξ = ±1、η = ±b）が丸めで板の外や辺のすぐ内に出ない
     pub fn user_point(self, xi: f64, eta: f64) -> (f64, f64) {
         let (rep_lx, rep_ly) = self.representative_lengths();
-        let b = rep_ly / rep_lx;
+        let b = self.b();
         self.mapping.user_point(
             rep_lx * (xi + 1.0) / 2.0,
             rep_ly * (eta / b + 1.0) / 2.0,
