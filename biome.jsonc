@@ -1,6 +1,6 @@
 // エディタ（Zed の Biome 拡張）向け。CI では Biome を走らせていない。
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.6.9/schema.json",
   // .gitignore（target/ など）を Biome にも適用する。
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
