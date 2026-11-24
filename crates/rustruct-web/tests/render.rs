@@ -2,6 +2,7 @@
 //! クラス名の並びは見ない。本文の文字と順序、どこで要素が分かれているか、`<title>` だけを見る。
 
 mod common;
+use common::markup::{count_tags, elements, tags, title};
 use common::{assert_in_order, element, text_of};
 use rustruct_web::{NOT_FOUND_PATH, render_path, static_paths};
 
@@ -45,7 +46,7 @@ fn home_items_link_to_their_section() {
     let html = render_path("/");
     for path in ["/tools", "/data", "/studies", "/notes"] {
         assert!(
-            html.contains(&format!("href=\"{path}\"")),
+            count_tags(&html, "a", &[("href", path)]) > 0,
             "{path} へのリンクが無い: {html}"
         );
     }
@@ -88,25 +89,24 @@ fn section_page_has_path_title_and_the_empty_sentence_only() {
 
 /// ページの `<h1>` の文字。1ページに1つ。
 fn h1_text(html: &str) -> String {
-    let start = html.find("<h1").expect("h1 が無い");
-    let end = html[start..].find("</h1>").expect("h1 が閉じていない") + start;
-    assert!(!html[end..].contains("<h1"), "h1 が2つ以上ある: {html}");
-    text_of(&html[start..end])
+    assert_eq!(count_tags(html, "h1", &[]), 1, "h1 が 1 つでない: {html}");
+    text_of(element(html, "h1"))
+}
+
+/// 要素の中の最初の `<a>` の行き先。リンクが無ければ `None`
+fn first_href(html: &str) -> Option<String> {
+    tags(html)
+        .iter()
+        .find(|tag| tag.name == "a")
+        .map(|a| a.get("href").expect("a に href が無い").to_string())
 }
 
 /// トップの一覧の各項目: (href, リンクの中の文字)。本文（`<main>`）の中のリンクだけ。
 fn home_items(home: &str) -> Vec<(String, String)> {
-    let mut items = Vec::new();
-    let mut rest = element(home, "main");
-    while let Some(at) = rest.find("<a ") {
-        let a = &rest[at..];
-        let close = a.find("</a>").expect("a が閉じていない");
-        let href_at = a.find("href=\"").expect("href が無い") + "href=\"".len();
-        let href = &a[href_at..href_at + a[href_at..].find('"').expect("href が閉じていない")];
-        items.push((href.to_string(), text_of(&a[..close])));
-        rest = &a[close..];
-    }
-    items
+    elements(element(home, "main"), "a")
+        .into_iter()
+        .map(|a| (first_href(a).expect("a に href が無い"), text_of(a)))
+        .collect()
 }
 
 #[test]
@@ -159,7 +159,7 @@ fn unknown_path_is_not_found_inside_the_same_frame() {
     );
     assert_eq!(h1_text(&html), "Not found");
     assert!(
-        html.contains("href=\"/\""),
+        count_tags(&html, "a", &[("href", "/")]) > 0,
         "wordmark からトップへ戻れない: {html}"
     );
     assert!(
@@ -212,16 +212,22 @@ fn root_is_not_listed_on_home() {
     assert!(!text.contains("/root"), "トップに /root が出ている: {text}");
 }
 
-/// `<head>` の中身。
+/// `<head>` の要素。
 fn head_of(html: &str) -> &str {
-    let start = html.find("<head>").expect("head が無い");
-    let end = html.find("</head>").expect("head が閉じていない");
-    &html[start..end]
+    element(html, "head")
+}
+
+/// `<head>` の description の meta の `content`。無ければ `None`
+fn description_of(html: &str) -> Option<&str> {
+    tags(head_of(html))
+        .into_iter()
+        .find(|tag| tag.name == "meta" && tag.get("name") == Some("description"))
+        .and_then(|meta| meta.get("content"))
 }
 
 #[test]
 fn title_is_page_name_then_site_name() {
-    for (path, title) in [
+    for (path, want) in [
         ("/", "Home · rustruct.matsumok.com"),
         ("/tools", "Tools · rustruct.matsumok.com"),
         (
@@ -241,9 +247,10 @@ fn title_is_page_name_then_site_name() {
         ("/no/such/page", "Not found · rustruct.matsumok.com"),
     ] {
         let html = render_path(path);
-        assert!(
-            head_of(&html).contains(&format!("<title>{title}</title>")),
-            "{path} の <title> が「{title}」でない: {html}"
+        assert_eq!(
+            title(head_of(&html)),
+            Some(want),
+            "{path} の <title> が「{want}」でない: {html}"
         );
     }
 }
@@ -262,12 +269,11 @@ fn every_page_has_a_description_meta_derived_from_the_route() {
         ("/no/such/page", "ページが見つからない。"),
     ] {
         let html = render_path(path);
-        let head = head_of(&html);
-        assert!(
-            head.contains(&format!(
-                "<meta name=\"description\" content=\"{description}\""
-            )),
-            "{path} の description が「{description}」でない: {head}"
+        assert_eq!(
+            description_of(&html),
+            Some(description),
+            "{path} の description が「{description}」でない: {}",
+            head_of(&html)
         );
     }
 }
@@ -275,16 +281,15 @@ fn every_page_has_a_description_meta_derived_from_the_route() {
 /// SSG が書き出す住所すべてに、空でない description がある（SSG の出力の検査 `check_ssg_output` は文言を見ない）。
 #[test]
 fn every_ssg_page_has_a_non_empty_description_meta() {
-    let key = "<meta name=\"description\" content=\"";
     for path in static_paths() {
         let html = render_path(&path);
-        let head = head_of(&html);
-        let start = head
-            .find(key)
-            .unwrap_or_else(|| panic!("{path} に description が無い: {head}"))
-            + key.len();
-        let len = head[start..].find('"').expect("content が閉じていない");
-        assert!(len > 0, "{path} の description が空: {head}");
+        let description = description_of(&html)
+            .unwrap_or_else(|| panic!("{path} に description が無い: {}", head_of(&html)));
+        assert!(
+            !description.is_empty(),
+            "{path} の description が空: {}",
+            head_of(&html)
+        );
     }
 }
 
@@ -312,7 +317,7 @@ fn header_has_the_wordmark_the_address_the_theme_and_the_account_only() {
         "ヘッダーの文字はサイト名と住所だけ: {header}"
     );
     assert!(
-        header.contains("href=\"/\""),
+        count_tags(header, "a", &[("href", "/")]) > 0,
         "wordmark からトップへ戻れない: {header}"
     );
     for label in ["メニューを開く", "ライトとダークを切り替える", "アカウント"]
@@ -348,20 +353,10 @@ fn head_applies_the_remembered_theme_before_the_page_is_drawn() {
 /// ヘッダーのパンくず（`<nav>`）の各段: (href か None, 文字)。
 fn breadcrumb(html: &str) -> Vec<(Option<String>, String)> {
     let nav = element(element(html, "header"), "nav");
-    let mut crumbs = Vec::new();
-    let mut rest = nav;
-    while let Some(at) = rest.find("<li") {
-        let li = &rest[at..];
-        let close = li.find("</li>").expect("li が閉じていない");
-        let item = &li[..close];
-        let href = item.find("href=\"").map(|h| {
-            let h = h + "href=\"".len();
-            item[h..h + item[h..].find('"').expect("href が閉じていない")].to_string()
-        });
-        crumbs.push((href, text_of(item)));
-        rest = &li[close..];
-    }
-    crumbs
+    elements(nav, "li")
+        .into_iter()
+        .map(|li| (first_href(li), text_of(li)))
+        .collect()
 }
 
 #[test]

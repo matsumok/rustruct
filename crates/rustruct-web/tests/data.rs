@@ -2,6 +2,7 @@
 //! 数値は `rustruct-types` が出し、ここでは表示の文字列を見る。期待値は `docs/materials/adr/` の表の写し。
 
 mod common;
+use common::markup::count_tags;
 use common::{assert_in_order, text_of};
 use rustruct_web::{ConcreteReadout, render_path};
 
@@ -21,7 +22,7 @@ fn data_lists_concrete_then_rebar_with_path_name_and_blurb() {
     );
     for path in ["/data/concrete", "/data/rebar"] {
         assert!(
-            html.contains(&format!("href=\"{path}\"")),
+            count_tags(&html, "a", &[("href", path)]) > 0,
             "{path} へのリンクが無い: {html}"
         );
     }
@@ -105,8 +106,9 @@ fn concrete_page_shows_the_unit_weight_table_by_fc_range() {
 #[test]
 fn concrete_page_opens_at_fc_24_with_its_results() {
     let html = render_path("/data/concrete");
-    assert!(
-        html.contains("value=\"24\""),
+    assert_eq!(
+        count_tags(&html, "input", &[("value", "24")]),
+        1,
         "Fc の初期値が 24 でない: {html}"
     );
     assert_in_order(

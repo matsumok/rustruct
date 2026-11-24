@@ -61,29 +61,22 @@ mod output {
 
     use super::static_paths;
     use crate::Route;
+    use crate::markup;
 
     /// HTML の `<title>` の中身。
     pub fn page_title(html: &str) -> Option<&str> {
-        let start = html.find("<title>")? + "<title>".len();
-        let len = html[start..].find("</title>")?;
-        Some(&html[start..start + len])
+        markup::title(html)
     }
 
     /// HTML が読むサイトの CSS の住所（`<link rel="stylesheet" href="/…">`）。外のフォントの CSS は除く。
     pub fn stylesheet(html: &str) -> Option<&str> {
-        tags(html, "link")
-            .filter(|tag| attr(tag, "rel") == Some("stylesheet"))
-            .filter_map(|tag| attr(tag, "href"))
-            .find(|href| is_site_address(href))
+        site_address(html, "link", ("rel", "stylesheet"), "href")
     }
 
     /// HTML が WASM を読ませるスクリプトの住所。dx は本文の後に `<script type="module" async src="…">` を置く
     /// （同じ住所の preload の link や、別の素の script も並ぶ）。
     pub fn loader_script(html: &str) -> Option<&str> {
-        tags(html, "script")
-            .filter(|tag| attr(tag, "type") == Some("module"))
-            .filter_map(|tag| attr(tag, "src"))
-            .find(|src| is_site_address(src))
+        site_address(html, "script", ("type", "module"), "src")
     }
 
     /// 読込スクリプトが取りに行く WASM の住所（`"/./assets/<名前>-<ハッシュ>.wasm"` の文字列）。
@@ -98,22 +91,19 @@ mod output {
             .find(|address| is_site_address(address))
     }
 
-    /// `<name …>` の開きタグを順に。
-    fn tags<'a>(html: &'a str, name: &str) -> impl Iterator<Item = &'a str> {
-        let open = format!("<{name} ");
-        html.match_indices(&open)
-            .map(|(at, _)| at)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .filter_map(move |at| html[at..].find('>').map(|len| &html[at..at + len]))
-    }
-
-    /// 開きタグの `name="…"` の値。
-    fn attr<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
-        let key = format!(" {name}=\"");
-        let start = tag.find(&key)? + key.len();
-        let len = tag[start..].find('"')?;
-        Some(&tag[start..start + len])
+    /// `name` の開きタグのうち、属性 `key` を値 `value` で持つものの `address` 属性で、最初のこのサイトの住所。
+    /// 属性の順と引用符の有無（dx は `defer=true` のように外すこともある）には頼らない。
+    fn site_address<'a>(
+        html: &'a str,
+        name: &str,
+        (key, value): (&str, &str),
+        address: &str,
+    ) -> Option<&'a str> {
+        markup::tags(html)
+            .iter()
+            .filter(|tag| tag.name == name && tag.get(key) == Some(value))
+            .filter_map(|tag| tag.get(address))
+            .find(|found| is_site_address(found))
     }
 
     /// このサイトの住所（`/` で始まり、`//` で他のホストを指さない）。
