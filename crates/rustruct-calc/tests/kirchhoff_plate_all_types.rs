@@ -1,7 +1,8 @@
 //! 解ける 19 の支持条件の型すべてを、型の一覧（`SupportType::ALL` から不安定な 2 型を除いたもの）で回して
 //! 確かめる。型ごとにテストを書き分けない。期待値は理論から言える値だけ（境界条件、釣り合い、対称、分割数を
 //! 倍にしたときの変化、帯板と梁の極限、ν の換算）。各型は代表の向きの組（型の 4 文字がそのまま x = 0、y = 0、
-//! x = Lx、y = Ly の辺）で解き、利用者の組への写しは対称のテストで確かめる。入口 `solve`（有限要素）からだけ見る
+//! x = Lx、y = Ly の辺）で解く。利用者の組への写しは計算核の中の単体テスト（`kirchhoff_plate/tests.rs`）が有限要素で
+//! 解かずに 76 の組で確かめ、ここは 1 つの型で通しで見る。入口 `solve`（有限要素）からだけ見る
 
 mod common;
 use common::{Scale, assert_deviations_within_tolerance, assert_within, at, plate, rigidity};
@@ -390,29 +391,28 @@ fn assert_maps(user: &Solution, other: &Solution, sym: Symmetry, tolerance: f64,
 #[test]
 fn every_combination_of_a_type_is_its_representative_mapped() {
     // 型に属する組をすべて（代表の向きの組を 8 つの対称で写したもの）入れ、代表の向きの板の解を写したものに
-    // なること。どの組も計算核の中では同じ代表の向きの板を解くので、差は座標の換算の丸め
+    // なること。どの組も計算核の中では同じ代表の向きの板を解くので、差は座標の換算の丸め。76 の組の写しは
+    // 計算核の中の単体テストが有限要素で解かずに見るので、ここは `solve` が換算を正しく組むことの通しの確かめ
+    // として、どの対称でも自分自身に重ならない型 FRSS（8 つの組がすべて別）だけを解く
     let (lx, ly) = (2000.0, 3000.0);
-    for ty in SupportType::ALL.into_iter().filter(|t| t.is_stable()) {
-        let representative = ty.representative();
-        let base = solve(&plate(lx, ly, 0.2, 10.0, representative)).unwrap();
-        let mut seen = Vec::new();
-        for sym in SYMMETRIES {
-            let supports = sym.supports(representative);
-            if seen.contains(&supports) {
-                continue;
-            }
-            seen.push(supports);
-            let (ulx, uly) = sym.lengths(lx, ly);
-            let user = solve(&plate(ulx, uly, 0.2, 10.0, supports)).unwrap();
-            assert_eq!(user.support_type(), ty, "{}", supports.symbol());
-            assert_maps(
-                &user,
-                &base,
-                sym,
-                ROUND_OFF,
-                &format!("{} の組 {}", ty.symbol(), supports.symbol()),
-            );
-        }
+    let ty = SupportType::FRSS;
+    let representative = ty.representative();
+    let base = solve(&plate(lx, ly, 0.2, 10.0, representative)).unwrap();
+    let mut seen = Vec::new();
+    for sym in SYMMETRIES {
+        let supports = sym.supports(representative);
+        assert!(!seen.contains(&supports), "{} が重なる", supports.symbol());
+        seen.push(supports);
+        let (ulx, uly) = sym.lengths(lx, ly);
+        let user = solve(&plate(ulx, uly, 0.2, 10.0, supports)).unwrap();
+        assert_eq!(user.support_type(), ty, "{}", supports.symbol());
+        assert_maps(
+            &user,
+            &base,
+            sym,
+            ROUND_OFF,
+            &format!("{} の組 {}", ty.symbol(), supports.symbol()),
+        );
     }
 }
 
