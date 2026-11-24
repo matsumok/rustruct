@@ -12,7 +12,8 @@ macro_rules! quantity {
 
 quantity!(
     /// 長さ。
-    Length, "mm"
+    Length,
+    "mm"
 );
 
 impl Length {
@@ -33,7 +34,8 @@ impl Length {
 
 quantity!(
     /// 面積。
-    Area, "mm²"
+    Area,
+    "mm²"
 );
 
 impl Area {
@@ -47,7 +49,8 @@ impl Area {
 
 quantity!(
     /// 単位長さあたりの質量（鉄筋の単位質量など）。
-    LinearMass, "t/mm"
+    LinearMass,
+    "t/mm"
 );
 
 impl LinearMass {
@@ -62,7 +65,8 @@ impl LinearMass {
 
 quantity!(
     /// 応力度・強度・ヤング係数。
-    Stress, "N/mm²"
+    Stress,
+    "N/mm²"
 );
 
 impl Stress {
@@ -76,7 +80,8 @@ impl Stress {
 
 quantity!(
     /// 単位体積重量。
-    UnitWeight, "N/mm³"
+    UnitWeight,
+    "N/mm³"
 );
 
 impl UnitWeight {
@@ -94,7 +99,8 @@ impl UnitWeight {
 
 quantity!(
     /// 単位面積あたりの荷重（Kirchhoff 板の等分布荷重、スラブの仕上げ荷重と積載荷重）。次元は [`Stress`] と同じだが意味が違うので型を分ける。
-    AreaLoad, "N/mm²"
+    AreaLoad,
+    "N/mm²"
 );
 
 impl AreaLoad {
@@ -126,7 +132,8 @@ impl AreaLoad {
 
 quantity!(
     /// 単位幅あたりの曲げモーメント（板の Mx・My）。
-    MomentPerLength, "N·mm/mm"
+    MomentPerLength,
+    "N·mm/mm"
 );
 
 impl MomentPerLength {
@@ -147,7 +154,8 @@ impl MomentPerLength {
 
 quantity!(
     /// 単位長さあたりの力（板のせん断力と辺の反力）。せん断力と反力は名前で区別し、型は分けない。
-    ForcePerLength, "N/mm"
+    ForcePerLength,
+    "N/mm"
 );
 
 impl ForcePerLength {
@@ -168,7 +176,8 @@ impl ForcePerLength {
 
 quantity!(
     /// 集中する力（板の隅反力）。
-    Force, "N"
+    Force,
+    "N"
 );
 
 impl Force {

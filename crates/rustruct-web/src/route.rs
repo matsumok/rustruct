@@ -21,33 +21,44 @@ pub(crate) fn split_wordmark() -> (&'static str, &'static str) {
     WORDMARK.split_at(dot)
 }
 
-/// サイトの住所。全ページが `Frame`（ヘッダーと本文の枠）の中に入る。
-#[derive(Routable, Clone, PartialEq, Debug)]
-#[rustfmt::skip]
-pub enum Route {
-    #[layout(Frame)]
-        #[route("/")]
-        Home {},
-        #[route("/tools", ToolsIndex)]
-        Tools {},
-        #[route("/tools/kirchhoff-plate", KirchhoffPlatePage)]
-        ToolsKirchhoffPlate {},
-        #[route("/tools/slab-thickness", SlabThicknessPage)]
-        ToolsSlabThickness {},
-        #[route("/data", DataIndex)]
-        Data {},
-        #[route("/data/concrete", ConcretePage)]
-        DataConcrete {},
-        #[route("/data/rebar", RebarPage)]
-        DataRebar {},
-        #[route("/studies", SectionPage)]
-        Studies {},
-        #[route("/notes", SectionPage)]
-        Notes {},
-        #[route("/root", RootPage)]
-        Root {},
-        #[route("/:..segments")]
-        NotFound { segments: Vec<String> },
+pub use routes::Route;
+
+// Rust 1.100 で `Infallible` が `!` の別名になり、`Routable` の derive が作る from_str の
+// `.map_err(|err| ...(err))`（`Vec<String>` の catch-all の Err は `Infallible`）が unreachable_code に当たる。
+// enum に付けた allow は derive の作る impl に届かないので、ルーターだけを入れた module に付ける。
+// Dioxus が直したら外す（DioxusLabs/dioxus#6095）
+#[allow(unreachable_code)]
+mod routes {
+    use super::*;
+
+    /// サイトの住所。全ページが `Frame`（ヘッダーと本文の枠）の中に入る。
+    #[derive(Routable, Clone, PartialEq, Debug)]
+    #[rustfmt::skip]
+    pub enum Route {
+        #[layout(Frame)]
+            #[route("/")]
+            Home {},
+            #[route("/tools", ToolsIndex)]
+            Tools {},
+            #[route("/tools/kirchhoff-plate", KirchhoffPlatePage)]
+            ToolsKirchhoffPlate {},
+            #[route("/tools/slab-thickness", SlabThicknessPage)]
+            ToolsSlabThickness {},
+            #[route("/data", DataIndex)]
+            Data {},
+            #[route("/data/concrete", ConcretePage)]
+            DataConcrete {},
+            #[route("/data/rebar", RebarPage)]
+            DataRebar {},
+            #[route("/studies", SectionPage)]
+            Studies {},
+            #[route("/notes", SectionPage)]
+            Notes {},
+            #[route("/root", RootPage)]
+            Root {},
+            #[route("/:..segments")]
+            NotFound { segments: Vec<String> },
+    }
 }
 
 /// ルートが載る一覧。
