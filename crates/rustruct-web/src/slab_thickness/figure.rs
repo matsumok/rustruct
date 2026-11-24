@@ -45,7 +45,7 @@ const MARK_WIDTH: f64 = 1.0;
 /// 等厚曲線を引く素。検査を通った条件と、検討点の名称とスパン。入力から一度だけ作る
 #[derive(Debug, Clone, PartialEq)]
 pub struct SlabCurves {
-    pub(super) conditions: CheckedConditions,
+    pub(super) checked: CheckedConditions,
     /// スパンが読めないときは無し。範囲は検討点の無いもので、印を置かない
     pub(super) point: Option<(String, Spans)>,
 }
@@ -74,7 +74,7 @@ impl SlabFigure {
         };
         Self {
             label,
-            scene: scene(&curves.conditions, point),
+            scene: scene(&curves.checked, point),
         }
     }
 }
@@ -111,7 +111,7 @@ impl View {
     }
 }
 
-fn scene(conditions: &CheckedConditions, point: Option<(&str, Spans)>) -> Scene {
+fn scene(checked: &CheckedConditions, point: Option<(&str, Spans)>) -> Scene {
     let m = Length::as_m;
     let points: Vec<(f64, f64)> = point.iter().map(|(_, s)| (m(s.x), m(s.y))).collect();
     let view = View::around(&points);
@@ -137,7 +137,7 @@ fn scene(conditions: &CheckedConditions, point: Option<(&str, Spans)>) -> Scene 
             y: Length::m(y),
         };
         // 条件は検査済みで、隅はどちらの軸も MIN_SPAN 以上なので、スパンの誤りも出ない
-        conditions
+        checked
             .evaluate(spans)
             .expect("範囲の隅のスパンは MIN_SPAN 以上")
             .required_thickness
@@ -147,7 +147,7 @@ fn scene(conditions: &CheckedConditions, point: Option<(&str, Spans)>) -> Scene 
     let t_min = thickness_at(from, view.y.0.max(MIN_SPAN));
     let t_max = thickness_at(view.x.1, view.y.1);
     let (thicknesses, step) = thicknesses(t_min, t_max);
-    let curves = conditions.iso_curves(
+    let curves = checked.iso_curves(
         &xs.iter().map(|&x| Length::m(x)).collect::<Vec<_>>(),
         &thicknesses
             .iter()
@@ -178,7 +178,7 @@ fn scene(conditions: &CheckedConditions, point: Option<(&str, Spans)>) -> Scene 
             ));
         }
     }
-    for (k, line) in summary(conditions).into_iter().enumerate() {
+    for (k, line) in summary(checked).into_iter().enumerate() {
         overlay.push(text(
             [
                 left + INSET,

@@ -222,7 +222,8 @@ impl SlabOutcome {
             [SlabField::SpanX, SlabField::SpanY].map(|field| Length::m(reading.number(field)));
         let spans = Spans { x, y };
 
-        // 条件の検査は 1 回。通れば検討点はその値で評価し、通らなければ条件とスパンの不正な欄をいっぺんに集める
+        // 条件が検査を通れば、検討点はその値で評価する（検査は 1 回）。通らなければ、条件とスパンの不正な欄を
+        // いっぺんに集めるのは計算核の `evaluate` に任せる（その中でもう一度検査する）
         let checked = check(&conditions);
         let evaluated = match &checked {
             Ok(checked) => checked.evaluate(spans),
@@ -263,8 +264,8 @@ impl SlabOutcome {
         let curves = checked
             .ok()
             .filter(|_| conditions_valid)
-            .map(|conditions| SlabCurves {
-                conditions,
+            .map(|checked| SlabCurves {
+                checked,
                 point: spans_valid.then_some((name, spans)),
             });
 
