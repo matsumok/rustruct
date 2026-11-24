@@ -3,9 +3,9 @@
 //!
 //! 公開の入口は 3 つ。条件を 1 回検査して検査を通った条件を返す [`check`]、条件とスパンをいっぺんに
 //! 検査して 1 つの検討点を評価する [`evaluate`]、荷重とコンクリートだけで決まる共有値 [`shared_values`]。
-//! 検査を通った条件（[`CheckedConditions`]）は共有値と算定の土台（`Basis`）を持ち、検討点の評価と
-//! 等厚曲線群はその関数なので失敗しない（評価が返す誤りはスパンの欄だけ）。画面に出す E・γ₁・wp は算定に
-//! 使った値と食い違わない。E・γ₁ は [`Concrete`] が Fc から導く。
+//! 検査を通った条件（[`CheckedConditions`]）は共有値を持ち、算定の土台（`Basis`）をそこから作る。
+//! 検討点の評価と等厚曲線群はその関数なので失敗しない（評価が返す誤りはスパンの欄だけ）。画面に出す
+//! E・γ₁・wp は算定に使った値と食い違わない。E・γ₁ は [`Concrete`] が Fc から導く。
 //!
 //! 内部の計算は長さ mm、力 N（荷重は N/mm²、単位体積重量は N/mm³）の数で行い、入口と出口で量の型に直す。
 
@@ -135,13 +135,13 @@ pub struct IsoCurve {
     pub ys: Vec<Option<Length>>,
 }
 
-/// 検査を通った条件。[`check`] だけが作る。元の条件と共有値、算定の土台と有効なクライテリアを持つ。
+/// 検査を通った条件。[`check`] だけが作る。元の条件と共有値、有効なクライテリアを持ち、算定の土台は共有値と
+/// 変形増大係数から使う所で作る（同じ値を二か所に持たない）。
 /// 評価も等厚曲線群もこの値の関数なので、検査は一度で済み、画面に出す E・γ₁・wp は算定に使った値と食い違わない
 #[derive(Debug, Clone, PartialEq)]
 pub struct CheckedConditions {
     conditions: Conditions,
     shared: SharedValues,
-    basis: Basis,
     active: Vec<ActiveCriterion>,
 }
 
@@ -166,16 +166,9 @@ pub fn check(conditions: &Conditions) -> Result<CheckedConditions, Vec<InvalidIn
             return Err(invalid);
         }
     };
-    let basis = Basis {
-        young_modulus: shared.young_modulus.as_n_per_mm2(),
-        rc_unit_weight: shared.rc_unit_weight.as_n_per_mm3(),
-        wp: shared.wp.as_n_per_mm2(),
-        amplification: conditions.amplification,
-    };
     Ok(CheckedConditions {
         conditions: *conditions,
         shared,
-        basis,
         active,
     })
 }
@@ -191,6 +184,16 @@ impl CheckedConditions {
         self.shared
     }
 
+    /// 算定の土台。共有値を算定式の単位の数にし、変形増大係数を添える
+    fn basis(&self) -> Basis {
+        Basis {
+            young_modulus: self.shared.young_modulus.as_n_per_mm2(),
+            rc_unit_weight: self.shared.rc_unit_weight.as_n_per_mm3(),
+            wp: self.shared.wp.as_n_per_mm2(),
+            amplification: self.conditions.amplification,
+        }
+    }
+
     /// 1 つの検討点の評価。有効なクライテリアをすべて満たす最小の厚さと、その厚さでのたわみ。
     /// 増大後たわみが許容たわみとちょうど等しくなるのは、たわみに効く条件が決定条件のときだけ
     /// （表18-1 が決めると、たわみは許容に届かない）。条件は検査済みなので、返す誤りはスパンの欄だけ
@@ -199,7 +202,7 @@ impl CheckedConditions {
         if !invalid.is_empty() {
             return Err(invalid);
         }
-        let (basis, active) = (&self.basis, &self.active);
+        let (basis, active) = (&self.basis(), &self.active);
         let (x, y) = (spans.x.as_mm(), spans.y.as_mm());
         let lx = x.min(y);
         let lambda = x.max(y) / lx;
@@ -227,6 +230,7 @@ impl CheckedConditions {
     /// 変形角・たわみ絶対量・表18-1 とも閉形式。下枝（y < x）は、たわみ絶対量は閉形式、変形角は Newton 法、
     /// 表18-1 は二分法で引く
     pub fn iso_curves(&self, xs: &[Length], thicknesses: &[Length]) -> Vec<IsoCurve> {
+        let basis = self.basis();
         thicknesses
             .iter()
             .map(|&t| IsoCurve {
@@ -234,8 +238,7 @@ impl CheckedConditions {
                 ys: xs
                     .iter()
                     .map(|&x| {
-                        combined_curve_y(&self.active, &self.basis, t.as_mm(), x.as_mm())
-                            .map(Length::mm)
+                        combined_curve_y(&self.active, &basis, t.as_mm(), x.as_mm()).map(Length::mm)
                     })
                     .collect(),
             })
@@ -244,7 +247,7 @@ impl CheckedConditions {
 }
 
 /// 条件から決まり、スパンに依らない算定の土台。[`SharedValues`] と同じ値を、算定式の単位の数で持つ
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy)]
 struct Basis {
     /// ヤング係数 E [N/mm²]
     young_modulus: f64,
