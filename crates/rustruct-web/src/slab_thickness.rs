@@ -19,6 +19,7 @@ use rustruct_types::concrete::{Concrete, ConcreteKind};
 use rustruct_types::quantity::{AreaLoad, Length, Stress};
 
 use crate::Route;
+use crate::chart;
 use crate::data::young_modulus;
 use crate::inputs::{Definition, Field, InputGroup, Inputs, Kind, Layout, Reason};
 use crate::page::Page;
@@ -450,9 +451,10 @@ fn FigureBlock(figure: Option<SlabFigure>) -> Element {
             Caption { "必要スラブ厚の等厚曲線（mm）" }
             match figure {
                 Some(figure) => rsx! {
-                    figure { role: "img", "aria-label": figure.label,
-                        div { class: "dark:hidden", dangerous_inner_html: figure.light_svg }
-                        div { class: "hidden dark:block", dangerous_inner_html: figure.dark_svg }
+                    figure {
+                        role: "img",
+                        "aria-label": figure.label,
+                        dangerous_inner_html: chart::svg(&figure.scene),
                     }
                     Notes {
                         li { "曲線は 10 mm ごと、色は 20 mm ごと" }

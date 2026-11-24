@@ -2,6 +2,7 @@
 //! 言葉は `docs/tools/slab-thickness/GLOSSARY.md`。数値は `rustruct-calc` が出し、ここでは表示の文字列を見る。
 
 mod common;
+use charta::{Font, Item, Pt, Scene};
 use common::{assert_in_order, element, reasons, text_of};
 use rustruct_web::{SlabField, SlabFigure, SlabInputs, SlabOutcome, SlabReadout, render_path};
 
@@ -238,24 +239,43 @@ fn figure(change: impl FnOnce(&mut SlabInputs)) -> Option<SlabFigure> {
     Some(SlabFigure::new(&curves))
 }
 
-/// SVG の文字（白抜きの数値、目盛りの数値、軸の名前、条件の要約、検討点の名前）
-fn svg_texts(svg: &str) -> Vec<String> {
-    svg.split("<text")
-        .skip(1)
-        .map(|t| t[t.find('>').unwrap() + 1..t.find("</text>").unwrap()].to_string())
+/// 図の文字（白抜きの数値、目盛りの数値、軸の名前、条件の要約、検討点の名前）
+fn texts(scene: &Scene) -> Vec<&str> {
+    scene
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
         .collect()
 }
 
-/// 等厚曲線の上の数値（白抜きの等幅の文字）
-fn thickness_numbers(svg: &str) -> Vec<f64> {
-    svg.split("<text")
-        .skip(1)
-        .filter(|t| t[..t.find('>').unwrap()].contains("paint-order"))
-        .filter_map(|t| {
-            t[t.find('>').unwrap() + 1..t.find("</text>").unwrap()]
-                .replace(',', "")
-                .parse()
-                .ok()
+/// 等厚曲線の上の数値（白抜きの等幅の文字。条件の要約と検討点の名前は和文の書体）
+fn thickness_numbers(scene: &Scene) -> Vec<f64> {
+    scene
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Text {
+                text,
+                font: Font::Mono,
+                halo: Some(_),
+                ..
+            } => Some(text.replace(',', "").parse().expect("数値")),
+            _ => None,
+        })
+        .collect()
+}
+
+/// 検討点の印の中心
+fn marks(scene: &Scene) -> Vec<Pt> {
+    scene
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Circle { center, .. } => Some(*center),
+            _ => None,
         })
         .collect()
 }
@@ -267,8 +287,8 @@ fn the_page_shows_the_iso_thickness_figure_after_the_results() {
         &text_of(&main),
         &["たわみ（mm）", "許容", "必要スラブ厚の等厚曲線（mm）"],
     );
-    // ライトとダークの 2 枚
-    assert_eq!(main.matches("<svg xmlns").count(), 2, "{main}");
+    // 図は 1 枚（ライトとダークは CSS 変数で切り替わる）
+    assert_eq!(main.matches("<svg xmlns").count(), 1, "{main}");
     assert!(main.contains("role=\"img\""), "{main}");
 }
 
@@ -281,21 +301,21 @@ fn the_curves_around_the_point_are_numbered_every_10_mm_and_bracket_its_thicknes
         .expect("初期値で解ける")
         .parse()
         .unwrap();
-    let numbers = thickness_numbers(&figure.light_svg);
-    assert!(!numbers.is_empty(), "{}", figure.light_svg);
+    let numbers = thickness_numbers(&figure.scene);
+    assert!(!numbers.is_empty(), "{:?}", figure.scene);
     assert!(
         numbers.iter().all(|t| t % 10.0 == 0.0 && *t >= 80.0),
         "{numbers:?}"
     );
     assert!(numbers.iter().any(|t| *t < t_req), "{numbers:?} / {t_req}");
     assert!(numbers.iter().any(|t| *t > t_req), "{numbers:?} / {t_req}");
-    assert_eq!(thickness_numbers(&figure.dark_svg), numbers);
 }
 
 #[test]
 fn the_initial_view_is_a_square_centered_on_the_point() {
     // 検討点 (4.0, 5.0) が 1 つ: 幅 2 m の正方形。目盛りは 0.5 m おき
-    let texts = svg_texts(&figure(|_| {}).unwrap().light_svg);
+    let initial = figure(|_| {}).unwrap();
+    let texts = texts(&initial.scene);
     for t in [
         "3.0",
         "3.5",
@@ -307,32 +327,33 @@ fn the_initial_view_is_a_square_centered_on_the_point() {
         "Lx（m）",
         "Ly（m）",
     ] {
-        assert!(texts.iter().any(|s| s == t), "{t} が無い: {texts:?}");
+        assert!(texts.contains(&t), "{t} が無い: {texts:?}");
     }
-    assert!(!texts.iter().any(|s| s == "2.5" || s == "6.5"), "{texts:?}");
-    let texts = svg_texts(
-        &figure(|i| {
-            i.set(SlabField::SpanX, "8");
-            i.set(SlabField::SpanY, "8");
-        })
-        .unwrap()
-        .light_svg,
+    assert!(
+        !texts.contains(&"2.5") && !texts.contains(&"6.5"),
+        "{texts:?}"
     );
+    let wide = figure(|i| {
+        i.set(SlabField::SpanX, "8");
+        i.set(SlabField::SpanY, "8");
+    })
+    .unwrap();
+    let texts = self::texts(&wide.scene);
     for t in ["7.0", "9.0"] {
-        assert!(texts.iter().any(|s| s == t), "{t} が無い: {texts:?}");
+        assert!(texts.contains(&t), "{t} が無い: {texts:?}");
     }
 }
 
 #[test]
 fn the_point_is_marked_with_its_name() {
-    let svg = figure(|i| i.set(SlabField::Name, "S2")).unwrap().light_svg;
-    assert_eq!(svg.matches("<circle").count(), 1, "{svg}");
-    assert!(svg_texts(&svg).iter().any(|s| s == "S2"), "{svg}");
+    let scene = figure(|i| i.set(SlabField::Name, "S2")).unwrap().scene;
+    assert_eq!(marks(&scene).len(), 1, "{scene:?}");
+    assert!(texts(&scene).contains(&"S2"), "{scene:?}");
 }
 
 #[test]
 fn the_summary_lists_the_conditions_and_only_the_active_criteria() {
-    let texts = svg_texts(&figure(|_| {}).unwrap().light_svg).join("\n");
+    let texts = texts(&figure(|_| {}).unwrap().scene).join("\n");
     for t in ["Fc=24", "wp=2,800", "α=16", "δ/lx≤1/400"] {
         assert!(texts.contains(t), "{t} が無い: {texts}");
     }
@@ -341,16 +362,14 @@ fn the_summary_lists_the_conditions_and_only_the_active_criteria() {
         "{texts}"
     );
 
-    let texts = svg_texts(
-        &figure(|i| {
-            i.set(SlabField::DeflectionRatio, "");
-            i.set(SlabField::DeflectionAbsolute, "20");
-            i.set(SlabField::MinThickness, "true");
-        })
-        .unwrap()
-        .light_svg,
-    )
-    .join("\n");
+    let scene = figure(|i| {
+        i.set(SlabField::DeflectionRatio, "");
+        i.set(SlabField::DeflectionAbsolute, "20");
+        i.set(SlabField::MinThickness, "true");
+    })
+    .unwrap()
+    .scene;
+    let texts = self::texts(&scene).join("\n");
     assert!(
         texts.contains("δ≤20") && texts.contains("表18-1"),
         "{texts}"
@@ -369,42 +388,51 @@ fn no_figure_while_the_conditions_are_unreadable_or_without_criteria() {
 
 #[test]
 fn an_unreadable_point_leaves_the_default_view_without_a_mark() {
-    let svg = figure(|i| i.set(SlabField::SpanX, "abc"))
+    let scene = figure(|i| i.set(SlabField::SpanX, "abc"))
         .expect("条件が読めれば図は出る")
-        .light_svg;
-    assert!(!svg.contains("<circle"), "{svg}");
+        .scene;
+    assert!(marks(&scene).is_empty(), "{scene:?}");
     // 検討点が無いときの範囲は両軸 3〜9 m
-    let texts = svg_texts(&svg);
+    let texts = texts(&scene);
     for t in ["4", "6", "8"] {
-        assert!(texts.iter().any(|s| s == t), "{t} が無い: {texts:?}");
+        assert!(texts.contains(&t), "{t} が無い: {texts:?}");
     }
 }
 
-/// 塗った帯の輪郭（`fill` が色の閉じた path）。画面の点の列
-fn bands(svg: &str) -> Vec<Vec<(f64, f64)>> {
-    svg.split("<path")
-        .skip(1)
-        .map(|t| &t[..t.find('>').unwrap()])
-        .filter(|tag| tag.contains("fill=\"#"))
-        .map(|tag| {
-            let at = tag.find(" d=\"").unwrap() + 4;
-            let d = &tag[at..at + tag[at..].find('"').unwrap()];
-            d.split(['M', 'L', 'Z'])
-                .filter(|p| !p.is_empty())
-                .map(|p| {
-                    let (x, y) = p.split_once(' ').unwrap();
-                    (x.parse().unwrap(), y.parse().unwrap())
-                })
-                .collect()
+/// 塗った帯の小片（塗りのある閉じた折れ線）。画面の点の列
+fn bands(scene: &Scene) -> Vec<&[Pt]> {
+    scene
+        .items
+        .iter()
+        .flat_map(|item| match item {
+            Item::Path {
+                subpaths,
+                closed: true,
+                fill: Some(_),
+                ..
+            } => subpaths.iter().map(Vec::as_slice).collect(),
+            _ => Vec::new(),
         })
         .collect()
 }
 
+/// 枠（最初の矩形）の左上と一辺
+fn frame(scene: &Scene) -> (f64, f64, f64) {
+    scene
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Item::Rect { x, y, width, .. } => Some((*x, *y, *width)),
+            _ => None,
+        })
+        .expect("枠がある")
+}
+
 /// 点が多角形の内にあるか（偶奇の規則）
-fn inside(polygon: &[(f64, f64)], (x, y): (f64, f64)) -> bool {
+fn inside(polygon: &[Pt], [x, y]: Pt) -> bool {
     let mut odd = false;
-    for (i, &(xa, ya)) in polygon.iter().enumerate() {
-        let (xb, yb) = polygon[(i + 1) % polygon.len()];
+    for (i, &[xa, ya]) in polygon.iter().enumerate() {
+        let [xb, yb] = polygon[(i + 1) % polygon.len()];
         if (ya > y) != (yb > y) && x < xa + (y - ya) / (yb - ya) * (xb - xa) {
             odd = !odd;
         }
@@ -415,32 +443,24 @@ fn inside(polygon: &[(f64, f64)], (x, y): (f64, f64)) -> bool {
 #[test]
 fn curves_under_80_mm_are_drawn_and_numbered_but_their_regions_are_left_unpainted() {
     // 2.5 m 四方: 範囲（1.5〜3.5 m）の左下は 80 mm に届かず、右上は超える
-    let svg = figure(|i| {
+    let scene = figure(|i| {
         i.set(SlabField::SpanX, "2.5");
         i.set(SlabField::SpanY, "2.5");
     })
     .unwrap()
-    .light_svg;
-    let numbers = thickness_numbers(&svg);
+    .scene;
+    let numbers = thickness_numbers(&scene);
     assert!(numbers.contains(&80.0), "{numbers:?}");
     assert!(numbers.contains(&70.0), "{numbers:?}");
     // 枠の左下の隅（80 mm 未満）はどの帯にも入らない。80 mm の曲線の上の右上の隅は入る
-    let frame = &svg[svg.find("<rect").unwrap()..];
-    let (x, y) = (attr(frame, "x"), attr(frame, "y"));
-    let side = attr(frame, "width");
-    let bands = bands(&svg);
+    let (x, y, side) = frame(&scene);
+    let bands = bands(&scene);
     assert!(!bands.is_empty());
     assert!(
-        !bands.iter().any(|b| inside(b, (x + 1.0, y + side - 1.0))),
+        !bands.iter().any(|b| inside(b, [x + 1.0, y + side - 1.0])),
         "左下を塗った"
     );
-    assert!(bands.iter().any(|b| inside(b, (x + side - 1.0, y + 1.0))));
-}
-
-/// 属性の値（最初の 1 つ）
-fn attr(tag: &str, name: &str) -> f64 {
-    let at = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
-    tag[at..at + tag[at..].find('"').unwrap()].parse().unwrap()
+    assert!(bands.iter().any(|b| inside(b, [x + side - 1.0, y + 1.0])));
 }
 
 #[test]
@@ -448,17 +468,24 @@ fn curve_numbers_keep_off_the_point_mark_and_its_name() {
     // 検討点はいつも範囲の中心、数値を並べる対角線の上にある。どの厚さに近くても印と名前を避ける
     for k in 0..12 {
         let lx = format!("{:.2}", 4.0 + 0.05 * k as f64);
-        let svg = figure(|i| i.set(SlabField::SpanX, lx.as_str()))
+        let scene = figure(|i| i.set(SlabField::SpanX, lx.as_str()))
             .unwrap()
-            .light_svg;
-        let circle = &svg[svg.find("<circle").unwrap()..];
-        let (cx, cy) = (attr(circle, "cx"), attr(circle, "cy"));
-        for t in svg.split("<text").skip(1) {
-            let tag = &t[..t.find('>').unwrap()];
-            if !(tag.contains("paint-order") && tag.contains("font-size=\"9\"")) {
+            .scene;
+        let [[cx, cy]] = marks(&scene)[..] else {
+            panic!("印が 1 つでない: {scene:?}")
+        };
+        for item in &scene.items {
+            // 等厚曲線の数値（白抜きの等幅の文字）
+            let Item::Text {
+                x,
+                y,
+                font: Font::Mono,
+                halo: Some(_),
+                ..
+            } = *item
+            else {
                 continue;
-            }
-            let (x, y) = (attr(tag, "x"), attr(tag, "y"));
+            };
             // 印の周り: 中心どうしが、印の半径と数値の文字の高さの半分より近い（名前は印の右上）
             let near_mark = (x - cx).hypot(y - cy) < 10.0;
             let on_name = x > cx && x < cx + 30.0 && y < cy && y > cy - 20.0;
@@ -475,16 +502,16 @@ fn the_color_edge_curves_around_the_point_are_numbered_even_where_the_mark_sits_
     // 検討点は数値を並べる対角線の上にある。印と名前にかかる曲線も、同じ曲線の別の場所に数値が出る
     for k in 0..12 {
         let lx = format!("{:.2}", 4.0 + 0.05 * k as f64);
-        let svg = figure(|i| i.set(SlabField::SpanX, lx.as_str()))
+        let scene = figure(|i| i.set(SlabField::SpanX, lx.as_str()))
             .unwrap()
-            .light_svg;
+            .scene;
         let t_req: f64 = readout(|i| i.set(SlabField::SpanX, lx.as_str()))
             .point
             .required_thickness
             .expect("解ける")
             .parse()
             .unwrap();
-        let numbers = thickness_numbers(&svg);
+        let numbers = thickness_numbers(&scene);
         let below = (t_req / 20.0).floor() * 20.0;
         for t in [below, below + 20.0] {
             assert!(numbers.contains(&t), "Lx {lx}: {t} が無い {numbers:?}");

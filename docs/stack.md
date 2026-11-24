@@ -12,7 +12,7 @@
 | `rustruct-types` | 共有型。物理量（ADR site-0004）、材料とその性質を求めるメソッド（`docs/materials/`）、Model と保存形式 | serde、rust_decimal（JIS の丸めを 10 進で正確に。ADR materials-0002） |
 | `rustruct-calc` | 計算核。I/O も非同期も持たない純粋関数 | `rustruct-types` |
 | `rustruct-web` | Dioxus fullstack アプリ。`web` / `server` feature で切替。SSG のプリレンダーもここ | 上2つ、`charta`、`numerus` |
-| `charta` | グラフ描画クレート。汎用。`rustruct-types` に依存しない。後で別リポジトリに出せる。設計メモは `crates/charta/README.md` | `numerus` のみ。`build.rs` を持たず、tokens.json を読まない。色と書体の値は呼び手が `Theme` で渡す |
+| `charta` | グラフ描画クレート。汎用。`rustruct-types` に依存しない。後で別リポジトリに出せる。設計メモは `crates/charta/README.md`。`rustruct-web` の図の module は `Scene` を返し、SVG にするのはページの `chart::svg` だけ | `numerus` のみ。`build.rs` を持たず、tokens.json を読まない。色と書体の値は呼び手が `Theme` で渡す |
 | `numerus` | 表と図に書く数の書き方（有効数字、3 桁区切り、E、列の小数点揃え。ADR site-0013）。汎用。`rustruct-types` に依存しない | なし |
 
 招待者向けサーバー（旧 `rustruct-server`）は作らない。必要になったら ADR site-0002 を書き直してから足す。
