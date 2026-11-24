@@ -11,6 +11,15 @@ publish = false
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
+# 作業用のフォルダごとに target を持つので、dev（test が継ぐ）のデバッグ情報を絞る。依存は無し、
+# 自前の crate は panic の行番号だけ。cargo test --workspace --no-run の target が 3.4G から 1.5G になる
+# （2026-11-25 に測った）
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 # 計算核だけは dev（test が継ぐ）でも最適化する。有限要素の連立は最適化なしだと数十倍遅く、
 # rustruct-calc の素の cargo test（#[ignore] の縦横比 2・4 の分割数のテストを除く）が 21 秒から 18 分になる
 # （2026-11-03 に測った）

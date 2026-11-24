@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
 # SSG の出力を headless Chrome で開き、hydration が成功したかを DOM とコンソールから見る。
 #   sh scripts/hydrate-check.sh [URL か出力ディレクトリ] [住所...]
-#   既定: target/dx/rustruct-web/release/web/public を 127.0.0.1:8090 で配る。住所は / /tools/ /404/
+#   既定: target/dx/rustruct-web/release/web/public を 127.0.0.1 の空いているポートで配る。住所は / /tools/ /404/
+# DOM と log は回ごとに別の一時ディレクトリに置く（同時に回しても混ざらない）。ブラウザのプロファイルは終わりに消す
 #   例: sh scripts/hydrate-check.sh https://rustruct.matsumok.com / /studies/
 # 見るもの（住所ごと）:
 #   - 起動後の DOM に data-dioxus-id（hydration がリスナーを付けた印）があり、data-node-hydration（プリレンダー時の
@@ -15,8 +16,7 @@ cd "$(dirname "$0")/.."
 target=${1:-target/dx/rustruct-web/release/web/public}
 [ "$#" -gt 0 ] && shift
 [ "$#" -gt 0 ] || set -- / /tools/ /404/
-dir=${TMPDIR:-/tmp}/hydrate-check
-rm -rf "$dir"; mkdir -p "$dir"
+dir=$(mktemp -d "${TMPDIR:-/tmp}/hydrate-check.XXXXXX")
 fail=0
 
 browser=
@@ -34,10 +34,11 @@ case "$target" in
   http://*|https://*) url=${target%/} ;;
   *)
     [ -d "$target" ] || { echo "$target が無い（先に dx build --ssg --release --force-sequential）" >&2; exit 1; }
-    python3 -m http.server 8090 --bind 127.0.0.1 --directory "$target" >"$dir/server.log" 2>&1 &
+    port=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+    python3 -m http.server "$port" --bind 127.0.0.1 --directory "$target" >"$dir/server.log" 2>&1 &
     srv=$!
     sleep 1
-    url=http://127.0.0.1:8090
+    url=http://127.0.0.1:$port
     ;;
 esac
 
@@ -58,5 +59,6 @@ for p in "$@"; do
 done
 
 [ -n "$srv" ] && kill "$srv"
+rm -rf "$dir/profile"
 [ "$fail" -eq 0 ] && echo "OK: hydration は成功（DOM と log は $dir）"
 exit "$fail"

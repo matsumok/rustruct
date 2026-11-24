@@ -94,8 +94,8 @@ fn serve(dir: PathBuf, first_404s: usize) -> String {
 }
 
 fn check_live(url: &str, deploy: &Path) -> (Output, String) {
-    let tmp =
-        std::env::temp_dir().join(format!("rustruct-live-{}", url.rsplit(':').next().unwrap()));
+    let tmp = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("rustruct-live-{}", url.rsplit(':').next().unwrap()));
     std::fs::create_dir_all(&tmp).unwrap();
     let output = Command::new("sh")
         .arg(workspace_root().join("scripts/check-live.sh"))

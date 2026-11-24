@@ -66,8 +66,10 @@ pub fn workspace_root() -> PathBuf {
 }
 
 /// 空の一時ディレクトリ。テストごとに別の名前にして、並列に走っても混ざらない。
+/// 置き場は cargo が target ごとに用意する CARGO_TARGET_TMPDIR。作業用のフォルダ同士で混ざらず、
+/// 共有の $TMPDIR（RAM の上で小さい）も使わない。プロセス番号はサンドボックスの中では毎回同じなので名前に使わない
 pub fn temp_dir(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("rustruct-{name}-{}", std::process::id()));
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("rustruct-{name}"));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     dir

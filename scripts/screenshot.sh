@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
 # dx serve の画面を幅ごとにライト・ダークで撮る。エージェントが見た目を自分で確かめるための道具。
 #   sh scripts/screenshot.sh [URL] [出力ディレクトリ] [幅…]
-#   既定: http://localhost:8080  $TMPDIR（無ければ /tmp）  375 820 1280（スマホ・iPad・PC。ADR site-0007）
+#   既定: http://localhost:8080  回ごとに作る一時ディレクトリ（$TMPDIR、無ければ /tmp の下）  375 820 1280（スマホ・iPad・PC。ADR site-0007）
+#   出力ディレクトリを渡さなければ、同時に撮っても他の回の画像を上書きしない
 #   高さは SCREENSHOT_HEIGHT（既定 800）。ページの下のほうを見るときに伸ばす
 #   hydration の後に待つ時間は SCREENSHOT_WAIT（ミリ秒、既定 500）
 # 出力: <dir>/<幅>-light.png と <dir>/<幅>-dark.png
@@ -12,7 +13,7 @@
 # サンドボックスの中からは起動できないので、エージェントはサンドボックスを外して実行する。
 set -eu
 url=${1:-http://localhost:8080}
-dir=${2:-${TMPDIR:-/tmp}}
+dir=${2:-$(mktemp -d "${TMPDIR:-/tmp}/screenshot.XXXXXX")}
 if [ "$#" -gt 2 ]; then shift 2; else set -- 375 820 1280; fi
 height=${SCREENSHOT_HEIGHT:-800}
 wait=${SCREENSHOT_WAIT:-500}
