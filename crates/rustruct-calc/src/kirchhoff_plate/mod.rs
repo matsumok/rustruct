@@ -9,15 +9,20 @@
 //!
 //! 内部では、支持条件の組を 21 種の型と写し方に分け（[`SupportType`]、ADR kirchhoff-plate-0003）、代表の向きの板を
 //! 中央原点・x の半辺長 1 の無次元の板として、長方形の共形要素の有限要素（`finite_element`）で解く（ADR kirchhoff-plate-0002）。
+//! 利用者の座標（隅が原点、mm）と解き方の座標の換算は往きも帰りも `frame` の一箇所で、向きと結果の量の写しは
+//! 写し方（`support_type` の `Mapping`）が持つ。
 //! 解き方（`solver`）が返すのは無次元のたわみの導関数（と辺の反力）だけで、曲げモーメント・せん断力・隅反力への
 //! 換算はこのファイルの一箇所。四辺固定と四辺単純支持の級数解（`series`）は参照解で、照合テストだけが
 //! [`solve_with_series`] から呼ぶ。
 
 mod band;
 mod finite_element;
+mod frame;
 mod series;
 mod solver;
 mod support_type;
+#[cfg(test)]
+mod tests;
 
 use std::fmt;
 
@@ -26,10 +31,11 @@ pub use rustruct_types::kirchhoff_plate::Plate;
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Support};
 use rustruct_types::quantity::{Force, ForcePerLength, Length, MomentPerLength};
 
+use frame::Frame;
 pub use series::TERMS;
 use solver::{Derivatives, EdgePoint, Solver};
+use support_type::RepresentativeResponse;
 pub use support_type::SupportType;
-use support_type::{Mapping, RepresentativeResponse};
 
 /// 有限要素の短い辺の分割数。長い辺は辺長に合わせて増やす（`finite_element`）。利用者の入力にも Model にも
 /// 持たない定数で、値は分割数を倍にしたときの変化が収まることで決めた（ADR kirchhoff-plate-0006）
@@ -149,12 +155,12 @@ pub struct DeflectionMaximum {
     pub w: Length,
 }
 
-/// 解。入力と、正規化で決まった型と写し方、代表の向きの板の解き方（係数を持つ）。
-/// 代表の向きの辺長や曲げ剛性は入力から導けるので持たない
+/// 解。入力と、正規化で決まった型、利用者の座標と解き方の座標の換算（写し方を持つ）、代表の向きの板の解き方
+/// （係数を持つ）。曲げ剛性は入力から導けるので持たない
 pub struct Solution {
     plate: Plate,
     support_type: SupportType,
-    mapping: Mapping,
+    frame: Frame,
     solver: Box<dyn Solver>,
 }
 
@@ -170,14 +176,14 @@ pub fn solve(plate: &Plate) -> Result<Solution, PlateError> {
 ///
 /// `divisions` が 4 以上の偶数でないとき。分割数は呼び手（テスト）が決める定数で、利用者の入力ではない
 pub fn solve_with_divisions(plate: &Plate, divisions: usize) -> Result<Solution, PlateError> {
-    let (support_type, mapping, b) = normalize(plate)?;
+    let (support_type, frame) = normalize(plate)?;
     let nu = plate.poisson_ratio.value();
-    let solver = finite_element::solve(b, nu, support_type.representative(), divisions)
+    let solver = finite_element::solve(frame.b(), nu, support_type.representative(), divisions)
         .ok_or(PlateError::Singular)?;
     Ok(Solution {
         plate: *plate,
         support_type,
-        mapping,
+        frame,
         solver: Box::new(solver),
     })
 }
@@ -185,28 +191,30 @@ pub fn solve_with_divisions(plate: &Plate, divisions: usize) -> Result<Solution,
 /// 参照解。画面からは呼ばない。照合テストが、有限要素の解を級数解と比べるのに使う。四辺固定と四辺単純支持
 /// だけに級数解があり、ほかの型は `Ok(None)`。`terms` は級数の項数で、参照解の値は [`TERMS`]
 pub fn solve_with_series(plate: &Plate, terms: usize) -> Result<Option<Solution>, PlateError> {
-    let (support_type, mapping, b) = normalize(plate)?;
+    let (support_type, frame) = normalize(plate)?;
     let nu = plate.poisson_ratio.value();
     Ok(
-        series::solve(support_type, b, nu, terms)?.map(|solver| Solution {
+        series::solve(support_type, frame.b(), nu, terms)?.map(|solver| Solution {
             plate: *plate,
             support_type,
-            mapping,
+            frame,
             solver,
         }),
     )
 }
 
-/// 入力を確かめ、支持条件の組を型と写し方に分け、代表の向きの板の y の半辺長 b = Ly'/Lx' を求める。
-/// 不安定な型はここで弾く
-fn normalize(plate: &Plate) -> Result<(SupportType, Mapping, f64), PlateError> {
+/// 入力を確かめ、支持条件の組を型と写し方に分け、写し方と辺長から座標の換算を組む（代表の向きの板の y の
+/// 半辺長 b = Ly'/Lx' もこれが持つ）。不安定な型はここで弾く
+fn normalize(plate: &Plate) -> Result<(SupportType, Frame), PlateError> {
     validate(plate)?;
     let (support_type, mapping) = SupportType::with_mapping(plate.supports);
     if !support_type.is_stable() {
         return Err(PlateError::Unstable(support_type));
     }
-    let (rep_lx, rep_ly) = mapping.representative_lengths(plate.lx.as_mm(), plate.ly.as_mm());
-    Ok((support_type, mapping, rep_ly / rep_lx))
+    Ok((
+        support_type,
+        Frame::new(mapping, plate.lx.as_mm(), plate.ly.as_mm()),
+    ))
 }
 
 /// 値の規則を欄ごとに見て、不正な欄を欄の順にすべて集める
@@ -254,9 +262,12 @@ impl Solution {
         if !(0.0..=lx).contains(&x_mm) || !(0.0..=ly).contains(&y_mm) {
             return None;
         }
-        let (rx, ry) = self.mapping.representative_point(x_mm, y_mm, lx, ly);
-        let d = self.solver.interior(self.xi(rx), self.eta(ry));
-        let r = self.mapping.point_response_back(self.point_response(d));
+        let (xi, eta) = self.frame.solver_point(x_mm, y_mm);
+        let d = self.solver.interior(xi, eta);
+        let r = self
+            .frame
+            .mapping()
+            .point_response_back(self.point_response(d));
         Some(PointResponse {
             x,
             y,
@@ -302,14 +313,8 @@ impl Solution {
         (0..=divisions)
             .map(|i| {
                 let along = length * i as f64 / divisions as f64;
-                let (rep_edge, rep_along) = self
-                    .mapping
-                    .representative_edge_position(edge, along, lx, ly);
-                let nd = match rep_edge {
-                    Edge::X0 | Edge::XLx => self.eta(rep_along),
-                    Edge::Y0 | Edge::YLy => self.xi(rep_along),
-                };
-                let r = self.edge_response(rep_edge, self.solver.edge(rep_edge, nd));
+                let (rep_edge, rep_along) = self.frame.solver_edge_position(edge, along);
+                let r = self.edge_response(rep_edge, self.solver.edge(rep_edge, rep_along));
                 EdgeSample {
                     along: Length::mm(along),
                     moment: MomentPerLength::nmm_per_mm(if moment_vanishes {
@@ -318,7 +323,7 @@ impl Solution {
                         r.moment
                     }),
                     shear: ForcePerLength::n_per_mm(
-                        self.mapping.edge_shear_back(rep_edge, r.shear),
+                        self.frame.mapping().edge_shear_back(rep_edge, r.shear),
                     ),
                     reaction: ForcePerLength::n_per_mm(r.reaction),
                 }
@@ -329,8 +334,10 @@ impl Solution {
     /// 辺の反力の合計 [N]（辺に沿った積分、支える向きが正）。辺の反力の合計 − 隅反力の合計 = 荷重の合計
     /// （ADR kirchhoff-plate-0004）。有限要素は節点の反力の和そのもので、参照解の級数は辺の反力の数値積分
     pub fn total_reaction(&self, edge: Edge) -> Force {
-        let a = self.half_x();
-        let v = self.solver.edge_reaction_total(self.mapping.edge(edge));
+        let a = self.frame.half_x();
+        let v = self
+            .solver
+            .edge_reaction_total(self.frame.mapping().edge(edge));
         Force::n(self.p() * a * a * v)
     }
 
@@ -433,16 +440,8 @@ impl Solution {
     /// 自由な板など）は、原点に近い側（y、次に x の小さいほう）を返す
     pub fn deflection_maximum(&self) -> DeflectionMaximum {
         let (lx, ly) = (self.plate.lx.as_mm(), self.plate.ly.as_mm());
-        let (rep_lx, rep_ly) = self.representative_lengths();
         let (xi, eta) = self.solver.deflection_maximum();
-        // 辺長に対する比で戻す。辺の上の点（ξ = ±1、η = ±b）が丸めで板の外や辺のすぐ内に出ない
-        let b = rep_ly / rep_lx;
-        let (x, y) = self.mapping.user_point(
-            rep_lx * (xi + 1.0) / 2.0,
-            rep_ly * (eta / b + 1.0) / 2.0,
-            lx,
-            ly,
-        );
+        let (x, y) = self.frame.user_point(xi, eta);
         let w = |x: f64, y: f64| {
             self.at(Length::mm(x), Length::mm(y))
                 .expect("板の上の点")
@@ -477,25 +476,16 @@ impl Solution {
     /// 固定辺を含む隅（辺の上で傾きが 0 なので w_xy も 0）と、自由辺どうしの隅（支持が無い）では、構造で
     /// ちょうど 0 を返す。ほかの隅（単純支持の辺どうし、単純支持の辺と自由辺）は w_xy から求める
     pub fn corner_reaction(&self, corner: Corner) -> Force {
-        let rep = self.mapping.corner(corner);
+        let rep = self.frame.mapping().corner(corner);
         let w_xy = self.solver.corner_w_xy(rep);
         let orientation = match rep {
             Corner::X0Y0 | Corner::XLxYLy => 1.0,
             Corner::XLxY0 | Corner::X0YLy => -1.0,
         };
-        let a = self.half_x();
+        let a = self.frame.half_x();
         Force::n(2.0 * (1.0 - self.nu()) * self.p() * a * a * orientation * w_xy)
     }
 
-    /// 代表の向きの板の辺長 (Lx', Ly') [mm]
-    fn representative_lengths(&self) -> (f64, f64) {
-        self.mapping
-            .representative_lengths(self.plate.lx.as_mm(), self.plate.ly.as_mm())
-    }
-    /// 代表の向きの板の x の半辺長 a [mm]。無次元化の長さの単位
-    fn half_x(&self) -> f64 {
-        self.representative_lengths().0 / 2.0
-    }
     /// 曲げ剛性 D = E t³ / (12 (1 − ν²)) [N·mm]。内部でしか使わないので型にしない（ADR site-0004）
     fn rigidity(&self) -> f64 {
         let t = self.plate.thickness.as_mm();
@@ -508,18 +498,10 @@ impl Solution {
     fn nu(&self) -> f64 {
         self.plate.poisson_ratio.value()
     }
-    /// 代表の向きの板の隅原点の x [mm] → 中央原点の無次元の x
-    fn xi(&self, x: f64) -> f64 {
-        x / self.half_x() - 1.0
-    }
-    fn eta(&self, y: f64) -> f64 {
-        (y - self.representative_lengths().1 / 2.0) / self.half_x()
-    }
-
     /// 無次元の導関数から内部の単位の応答へ。たわみ w = (p a⁴ / D) ŵ、M = −p a² (ŵ_xx + ν ŵ_yy)、
     /// Q = −p a (ŵ_xxx + ŵ_xyy)。a は代表の向きの板の x の半辺長
     fn point_response(&self, d: Derivatives) -> RepresentativeResponse {
-        let (a, p, nu) = (self.half_x(), self.p(), self.nu());
+        let (a, p, nu) = (self.frame.half_x(), self.p(), self.nu());
         RepresentativeResponse {
             w: p * a.powi(4) / self.rigidity() * d.w,
             mx: -p * a * a * (d.w_xx + nu * d.w_yy),
@@ -534,7 +516,7 @@ impl Solution {
     /// 有次元にする
     fn edge_response(&self, edge: Edge, point: EdgePoint) -> EdgeResponse {
         let r = self.point_response(point.derivatives);
-        let reaction = self.p() * self.half_x() * point.reaction;
+        let reaction = self.p() * self.frame.half_x() * point.reaction;
         match edge {
             Edge::X0 | Edge::XLx => EdgeResponse {
                 moment: r.mx,

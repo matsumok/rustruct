@@ -263,7 +263,8 @@ pub struct RepresentativeResponse {
 }
 
 /// 写し方の中を見るテスト。型への分類（81 通り → 21 型）は外から `tests/kirchhoff_plate_support_type.rs`、
-/// 写しが結果の量に効くところは `solve` 越しに `tests/kirchhoff_plate_all_types.rs` が確かめる
+/// 写しが座標と結果の量に効くところは、入口の `Solution` をテスト用の解き方で組む単体テスト（`tests.rs`）が
+/// 76 の組で、`solve` 越しの通しは `tests/kirchhoff_plate_all_types.rs` が 1 つの型で確かめる
 #[cfg(test)]
 mod tests {
     use super::*;
