@@ -17,7 +17,9 @@ pub struct Isoline {
     pub lines: Vec<Vec<Pt>>,
 }
 
-/// `lo` 以上 `hi` 未満の帯の小片。最初の帯の `lo` と最後の帯の `hi` は無限大で、帯は面を隙間なく覆う。
+/// `lo` 以上 `hi` 未満の帯。最初の帯の `lo` と最後の帯の `hi` は無限大で、帯は面を隙間なく覆う。
+/// `polygons` はつながった範囲ごとの外周（反時計回り）と、範囲の中の穴の内周（時計回り）。
+/// 塗りの nonzero の規則で穴が抜ける。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Band {
     pub lo: f64,
@@ -92,6 +94,9 @@ pub fn contour(grid: &Grid, levels: &[f64]) -> (Vec<Isoline>, Vec<Band>) {
             lines: join(segs),
         })
         .collect();
+    for band in &mut bands {
+        band.polygons = outline(&band.polygons);
+    }
     (isolines, bands)
 }
 
@@ -169,13 +174,110 @@ fn crossing(tri: &[Vertex; 3], level: f64) -> Option<(Pt, Pt)> {
     }
 }
 
-fn key(p: Pt) -> (u64, u64) {
+/// 1 つの帯の小片（どれも反時計回り）を、つながった範囲ごとの外周にまとめる。隣り合う小片が
+/// 共有する辺は向きが逆なので打ち消し合い、残った辺をつなぐと外周は反時計回り、穴の内周は時計回り
+/// になる（塗りの nonzero の規則で穴が抜ける）。辺の端点は bit で比べる（[`interpolate`] が隣の
+/// 三角形から見ても同じ浮動小数を返す）。要らない点は [`simplify`] で外す。
+fn outline(pieces: &[Vec<Pt>]) -> Vec<Vec<Pt>> {
+    // 残っている辺（始点、終点）。打ち消された辺は None
+    let mut edges: Vec<Option<(Pt, Pt)>> = Vec::new();
+    let mut alive: HashMap<(Key, Key), usize> = HashMap::new();
+    for piece in pieces {
+        for k in 0..piece.len() {
+            let (p, q) = (piece[k], piece[(k + 1) % piece.len()]);
+            if key(p) == key(q) {
+                continue;
+            }
+            if let Some(i) = alive.remove(&(key(q), key(p))) {
+                edges[i] = None;
+            } else {
+                alive.insert((key(p), key(q)), edges.len());
+                edges.push(Some((p, q)));
+            }
+        }
+    }
+
+    let mut from: HashMap<Key, Vec<usize>> = HashMap::new();
+    for (i, edge) in edges.iter().enumerate() {
+        if let Some((p, _)) = edge {
+            from.entry(key(*p)).or_default().push(i);
+        }
+    }
+    let mut used = vec![false; edges.len()];
+    let mut rings = Vec::new();
+    for start in 0..edges.len() {
+        let Some((p, _)) = edges[start] else { continue };
+        if used[start] {
+            continue;
+        }
+        let mut ring = vec![p];
+        let mut at = start;
+        loop {
+            used[at] = true;
+            let (_, q) = edges[at].expect("残っている辺");
+            if key(q) == key(p) {
+                break;
+            }
+            ring.push(q);
+            match from
+                .get(&key(q))
+                .and_then(|out| out.iter().copied().find(|&i| !used[i]))
+            {
+                Some(i) => at = i,
+                None => break,
+            }
+        }
+        rings.extend(simplify(ring));
+    }
+    rings
+}
+
+/// 閉じた折れ線から、要らない点を外す: 前の点と同じ点、行って戻る折り返しの先、前後の点と縦か横に
+/// 一直線に並ぶ点（グリッドの線と板の縁の上）。3 点に満たなくなった輪（面積の無い往復）は `None`。
+/// 往復は、水準にごく近いグリッドの点で、補間した点とグリッドの点が bit で揃わないときに残る。
+fn simplify(ring: Vec<Pt>) -> Option<Vec<Pt>> {
+    let redundant = |a: Pt, b: Pt, c: Pt| {
+        key(a) == key(c) || (a[0] == b[0] && b[0] == c[0]) || (a[1] == b[1] && b[1] == c[1])
+    };
+    let mut out: Vec<Pt> = Vec::with_capacity(ring.len());
+    for p in ring {
+        loop {
+            if out.last().is_some_and(|&q| key(q) == key(p)) {
+                break;
+            }
+            let n = out.len();
+            if n >= 2 && redundant(out[n - 2], out[n - 1], p) {
+                out.pop();
+                continue;
+            }
+            out.push(p);
+            break;
+        }
+    }
+    // 始点のまわり（終点 → 始点 → 2 点目）
+    while out.len() >= 3 {
+        let n = out.len();
+        if key(out[n - 1]) == key(out[0]) || redundant(out[n - 2], out[n - 1], out[0]) {
+            out.pop();
+        } else if redundant(out[n - 1], out[0], out[1]) {
+            out.remove(0);
+        } else {
+            break;
+        }
+    }
+    (out.len() >= 3).then_some(out)
+}
+
+/// 点を bit で比べる鍵。
+type Key = (u64, u64);
+
+fn key(p: Pt) -> Key {
     (p[0].to_bits(), p[1].to_bits())
 }
 
 /// 線分を端点でつないで折れ線にする。閉じた線は始点を終点に重ねて返す。
 fn join(segments: Vec<(Pt, Pt)>) -> Vec<Vec<Pt>> {
-    let mut at: HashMap<(u64, u64), Vec<usize>> = HashMap::new();
+    let mut at: HashMap<Key, Vec<usize>> = HashMap::new();
     for (k, (p, q)) in segments.iter().enumerate() {
         at.entry(key(*p)).or_default().push(k);
         at.entry(key(*q)).or_default().push(k);
@@ -219,7 +321,8 @@ mod tests {
         Grid::from_fn(axis.clone(), axis, f).unwrap()
     }
 
-    fn area(polygon: &[Pt]) -> f64 {
+    /// 符号つきの面積。反時計回り（外周）は正、時計回り（穴の内周）は負
+    fn signed_area(polygon: &[Pt]) -> f64 {
         let n = polygon.len();
         (0..n)
             .map(|k| {
@@ -227,7 +330,6 @@ mod tests {
                 p[0] * q[1] - q[0] * p[1]
             })
             .sum::<f64>()
-            .abs()
             / 2.0
     }
 
@@ -272,7 +374,7 @@ mod tests {
         assert_eq!(bands[3].lo, 0.75);
         assert_eq!(bands[3].hi, f64::INFINITY);
         for (k, band) in bands.iter().enumerate() {
-            let total: f64 = band.polygons.iter().map(|p| area(p)).sum();
+            let total: f64 = band.polygons.iter().map(|p| signed_area(p)).sum();
             assert!((total - 0.25).abs() < 1e-9, "帯 {k} の面積 {total}");
             let (lo, hi) = (0.25 * k as f64, 0.25 * (k + 1) as f64);
             for p in band.polygons.iter().flatten() {
@@ -315,6 +417,59 @@ mod tests {
     }
 
     #[test]
+    fn cone_bands_are_one_outline_per_connected_range_with_the_hole_as_an_inner_ring() {
+        // z = √(x² + y²)、水準 0.5 と 1.2。帯は中の円板 1 つ、穴のあいた輪 1 つ（四隅で切れる）、四隅の 4 つ
+        let grid = square(-1.0, 1.0, 40, |x, y| x.hypot(y));
+        let (isolines, bands) = contour(&grid, &[0.5, 1.2]);
+        let counts: Vec<usize> = bands.iter().map(|b| b.polygons.len()).collect();
+        assert_eq!(counts, [1, 2, 4], "範囲の数");
+
+        // 輪は外周（正の面積）と穴の内周（負の面積）。穴は中の円板と同じ大きさ
+        let disk = signed_area(&bands[0].polygons[0]);
+        let mut ring: Vec<f64> = bands[1].polygons.iter().map(|p| signed_area(p)).collect();
+        ring.sort_by(f64::total_cmp);
+        assert!(ring[0] < 0.0 && ring[1] > 0.0, "{ring:?}");
+        assert!(
+            (ring[0] + disk).abs() < 1e-9,
+            "穴 {} と円板 {disk}",
+            ring[0]
+        );
+        assert!(
+            (disk - std::f64::consts::PI * 0.25).abs() < 0.01,
+            "円板 {disk}"
+        );
+
+        // 帯は正方形を隙間なく、重ならずに覆う
+        let total: f64 = bands
+            .iter()
+            .flat_map(|b| &b.polygons)
+            .map(|p| signed_area(p))
+            .sum();
+        assert!((total - 4.0).abs() < 1e-9, "面積の和 {total}");
+
+        // 外周の点は、正方形の縁か、帯の境の等値線の上にだけある（セルや三角形の小片の隅は残らない）
+        let on_isoline = |p: Pt, level: f64| {
+            isolines
+                .iter()
+                .filter(|iso| iso.level == level)
+                .flat_map(|iso| iso.lines.iter().flatten())
+                .any(|q| (q[0] - p[0]).hypot(q[1] - p[1]) < 1e-9)
+        };
+        for band in &bands {
+            for p in band.polygons.iter().flatten() {
+                assert!(
+                    on_boundary(*p, -1.0, 1.0)
+                        || on_isoline(*p, band.lo)
+                        || on_isoline(*p, band.hi),
+                    "帯 {}–{} の点 {p:?} が縁にも境にも無い",
+                    band.lo,
+                    band.hi
+                );
+            }
+        }
+    }
+
+    #[test]
     fn saddle_function_gives_two_branches() {
         // z = x·y。水準 0.1 は第 1・第 3 象限の双曲線の 2 枝
         let grid = square(-1.0, 1.0, 20, |x, y| x * y);
@@ -331,6 +486,34 @@ mod tests {
     }
 
     #[test]
+    fn saddle_function_bands_split_into_the_quadrants() {
+        // z = x·y、水準 ±0.1。負の帯は第 2・第 4 象限、正の帯は第 1・第 3 象限に 2 つずつ、間の帯は十字の 1 つ
+        let grid = square(-1.0, 1.0, 20, |x, y| x * y);
+        let (_, bands) = contour(&grid, &[-0.1, 0.1]);
+        let counts: Vec<usize> = bands.iter().map(|b| b.polygons.len()).collect();
+        assert_eq!(counts, [2, 1, 2]);
+        // 象限 1 つの xy > 0.1 の面積は ∫[0.1, 1] (1 − 0.1/x) dx = 0.9 − 0.1·ln 10
+        let quadrant = 0.9 - 0.1 * 10f64.ln();
+        for k in [0, 2] {
+            for p in &bands[k].polygons {
+                let a = signed_area(p);
+                assert!((a - quadrant).abs() < 0.01, "帯 {k} の範囲 {a}");
+                let signs: Vec<bool> = p
+                    .iter()
+                    .filter(|q| q[0] != 0.0)
+                    .map(|q| q[0] > 0.0)
+                    .collect();
+                assert!(signs.iter().all(|&s| s == signs[0]), "範囲が象限をまたぐ");
+            }
+        }
+        let cross = signed_area(&bands[1].polygons[0]);
+        assert!(
+            (cross - (4.0 - 4.0 * quadrant)).abs() < 0.04,
+            "十字 {cross}"
+        );
+    }
+
+    #[test]
     fn saddle_cell_is_resolved_by_the_center_value() {
         // 対角の 2 隅が高いセル。中心（平均）が水準より低ければ高い隅が孤立し、高ければ低い隅が孤立する
         let cell = |z: [f64; 4]| {
@@ -341,8 +524,11 @@ mod tests {
                 && line.iter().any(|p| (p[1] - y).abs() < 1e-12)
         };
 
-        // (0,0) と (1,1) が高く、平均 0.45 < 0.5: 高い隅のまわりに 1 本ずつ
-        let (iso, _) = contour(&cell([1.0, 0.0, 0.8, 0.0]), &[0.5]);
+        let counts = |bands: &[Band]| bands.iter().map(|b| b.polygons.len()).collect::<Vec<_>>();
+
+        // (0,0) と (1,1) が高く、平均 0.45 < 0.5: 高い隅のまわりに 1 本ずつ。高い帯は隅ごとに 2 つに分かれる
+        let (iso, bands) = contour(&cell([1.0, 0.0, 0.8, 0.0]), &[0.5]);
+        assert_eq!(counts(&bands), [1, 2]);
         assert_eq!(iso[0].lines.len(), 2);
         assert!(
             iso[0].lines.iter().any(|l| touches(l, 0.0, 0.0)),
@@ -353,8 +539,9 @@ mod tests {
             "(1,1) を囲む線が無い"
         );
 
-        // 平均 0.6 > 0.5: 低い隅 (1,0) と (0,1) のまわりに 1 本ずつ
-        let (iso, _) = contour(&cell([1.0, 0.2, 1.0, 0.2]), &[0.5]);
+        // 平均 0.6 > 0.5: 低い隅 (1,0) と (0,1) のまわりに 1 本ずつ。低い帯が隅ごとに 2 つに分かれる
+        let (iso, bands) = contour(&cell([1.0, 0.2, 1.0, 0.2]), &[0.5]);
+        assert_eq!(counts(&bands), [2, 1]);
         assert_eq!(iso[0].lines.len(), 2);
         assert!(
             iso[0].lines.iter().any(|l| touches(l, 1.0, 0.0)),
@@ -373,11 +560,16 @@ mod tests {
         assert!(isolines.iter().all(|iso| iso.lines.is_empty()));
         let areas: Vec<f64> = bands
             .iter()
-            .map(|b| b.polygons.iter().map(|p| area(p)).sum())
+            .map(|b| b.polygons.iter().map(|p| signed_area(p)).sum())
             .collect();
         assert!(
             (areas[1] - 1.0).abs() < 1e-12 && areas[0] == 0.0 && areas[2] == 0.0,
             "{areas:?}"
         );
+        // 縁の上で一直線に並ぶグリッドの点は残さず、正方形の 4 隅だけ
+        assert_eq!(bands[1].polygons.len(), 1);
+        let mut corners = bands[1].polygons[0].clone();
+        corners.sort_by(|p, q| p.partial_cmp(q).unwrap());
+        assert_eq!(corners, [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]]);
     }
 }
