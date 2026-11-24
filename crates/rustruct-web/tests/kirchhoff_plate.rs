@@ -436,14 +436,14 @@ fn the_figure_follows_the_aspect_of_the_plate_within_one_column_and_names_each_s
 }
 
 #[test]
-fn the_figure_of_the_initial_inputs_is_a_quarter_of_the_svg_that_tiled_the_bands() {
-    // 帯をセルと三角形の小片で敷き詰めていたとき（#128 の前）の、初期の入力のページの図の大きさ
-    const TILED: usize = 385_989;
+fn the_figure_of_the_initial_inputs_is_at_most_96_497_bytes_of_svg() {
+    // 帯を範囲ごとの外周で描く（#128）。上限は、帯をセルと三角形の小片で敷き詰めていたときの 385,989 B の 1/4
+    const LIMIT: usize = 96_497;
     let main = element(&render_path("/tools/kirchhoff-plate"), "main").to_string();
     let start = main.find("<svg xmlns").expect("図がある");
     let end = start + main[start..].find("</svg>").expect("図が閉じる") + "</svg>".len();
     let size = end - start;
-    assert!(size * 4 <= TILED, "図の SVG {size} B");
+    assert!(size <= LIMIT, "図の SVG {size} B");
 }
 
 #[test]

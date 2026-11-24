@@ -30,21 +30,23 @@ pub struct Band {
 /// `levels` は等値線の水準（昇順）。帯は `levels.len() + 1` 本で、`k` 番目は `levels[k-1]` から `levels[k]`。
 pub fn contour(grid: &Grid, levels: &[f64]) -> (Vec<Isoline>, Vec<Band>) {
     let nb = levels.len() + 1;
-    let mut bands: Vec<Band> = (0..nb)
-        .map(|k| Band {
-            lo: if k == 0 {
+    // 帯ごとの境（下と上）と、セルや三角形を切った小片
+    let bounds: Vec<(f64, f64)> = (0..nb)
+        .map(|k| {
+            let lo = if k == 0 {
                 f64::NEG_INFINITY
             } else {
                 levels[k - 1]
-            },
-            hi: if k == nb - 1 {
+            };
+            let hi = if k == nb - 1 {
                 f64::INFINITY
             } else {
                 levels[k]
-            },
-            polygons: Vec::new(),
+            };
+            (lo, hi)
         })
         .collect();
+    let mut pieces: Vec<Vec<Vec<Pt>>> = vec![Vec::new(); nb];
     let mut segments: Vec<Vec<(Pt, Pt)>> = vec![Vec::new(); levels.len()];
 
     let (xs, ys) = (grid.xs(), grid.ys());
@@ -64,17 +66,15 @@ pub fn contour(grid: &Grid, levels: &[f64]) -> (Vec<Isoline>, Vec<Band>) {
             // 4 隅が同じ帯ならセルごと 1 つの小片にする（線は通らない）
             let band = band_index(levels, corners[0].v);
             if corners.iter().all(|c| band_index(levels, c.v) == band) {
-                bands[band]
-                    .polygons
-                    .push(corners.iter().map(|c| c.p).collect());
+                pieces[band].push(corners.iter().map(|c| c.p).collect());
                 continue;
             }
             for t in 0..4 {
                 let tri = [corners[t], corners[(t + 1) % 4], center];
-                for band in bands.iter_mut() {
-                    let polygon = clip_band(&tri, band.lo, band.hi);
+                for (band, &(lo, hi)) in pieces.iter_mut().zip(&bounds) {
+                    let polygon = clip_band(&tri, lo, hi);
                     if polygon.len() >= 3 {
-                        band.polygons.push(polygon);
+                        band.push(polygon);
                     }
                 }
                 for (segs, &level) in segments.iter_mut().zip(levels) {
@@ -94,9 +94,15 @@ pub fn contour(grid: &Grid, levels: &[f64]) -> (Vec<Isoline>, Vec<Band>) {
             lines: join(segs),
         })
         .collect();
-    for band in &mut bands {
-        band.polygons = outline(&band.polygons);
-    }
+    let bands = bounds
+        .into_iter()
+        .zip(pieces)
+        .map(|((lo, hi), pieces)| Band {
+            lo,
+            hi,
+            polygons: outline(&pieces),
+        })
+        .collect();
     (isolines, bands)
 }
 
@@ -214,22 +220,47 @@ fn outline(pieces: &[Vec<Pt>]) -> Vec<Vec<Pt>> {
         let mut at = start;
         loop {
             used[at] = true;
-            let (_, q) = edges[at].expect("残っている辺");
-            if key(q) == key(p) {
-                break;
-            }
-            ring.push(q);
-            match from
-                .get(&key(q))
-                .and_then(|out| out.iter().copied().find(|&i| !used[i]))
-            {
-                Some(i) => at = i,
-                None => break,
+            let (from_p, q) = edges[at].expect("残っている辺");
+            // 帯が 1 点で自分と接する所（ピンチ）では、来た向きから時計回りに最初の辺へ進む。範囲の
+            // 角（帯の左側）を 1 つずつたどるので、点で接する範囲は別の輪になる
+            let next = from.get(&key(q)).and_then(|out| {
+                out.iter()
+                    .copied()
+                    .filter(|&i| i == start || !used[i])
+                    .min_by(|&i, &j| {
+                        let turn =
+                            |i: usize| clockwise(from_p, q, edges[i].expect("残っている辺").1);
+                        turn(i).total_cmp(&turn(j))
+                    })
+            });
+            match next {
+                Some(i) if i == start => break,
+                Some(i) => {
+                    ring.push(q);
+                    at = i;
+                }
+                None => {
+                    debug_assert!(false, "帯の外周が閉じない: {ring:?}");
+                    break;
+                }
             }
         }
         rings.extend(simplify(ring));
     }
     rings
+}
+
+/// `p` から `q` に来て `r` へ進むとき、来た向きの逆（`q` → `p`）から時計回りに回る角（0 より大きく 2π 以下。
+/// 来た道を戻るのが 2π）。
+fn clockwise(p: Pt, q: Pt, r: Pt) -> f64 {
+    let back = (p[1] - q[1]).atan2(p[0] - q[0]);
+    let out = (r[1] - q[1]).atan2(r[0] - q[0]);
+    let turn = (back - out).rem_euclid(std::f64::consts::TAU);
+    if turn == 0.0 {
+        std::f64::consts::TAU
+    } else {
+        turn
+    }
 }
 
 /// 閉じた折れ線から、要らない点を外す: 前の点と同じ点、行って戻る折り返しの先、前後の点と縦か横に
@@ -511,6 +542,29 @@ mod tests {
             (cross - (4.0 - 4.0 * quadrant)).abs() < 0.04,
             "十字 {cross}"
         );
+    }
+
+    #[test]
+    fn ranges_that_touch_at_one_point_are_separate_outlines() {
+        // 5×5 の点に ±1 を市松に置き、水準 0。セルの中心（平均 0）がちょうど水準で、どちらの帯も点のまわりの
+        // 菱形が中心で角を接する。範囲は点ごとに 1 つ: 負の点 12、正の点 13
+        let axis: Vec<f64> = (0..5).map(f64::from).collect();
+        let grid = Grid::from_fn(axis.clone(), axis, |x, y| {
+            if (x + y) as i64 % 2 == 0 { 1.0 } else { -1.0 }
+        })
+        .unwrap();
+        let (_, bands) = contour(&grid, &[0.0]);
+        let counts: Vec<usize> = bands.iter().map(|b| b.polygons.len()).collect();
+        assert_eq!(counts, [12, 13]);
+        for p in bands.iter().flat_map(|b| &b.polygons) {
+            assert!(signed_area(p) > 0.0, "穴は無い: {p:?}");
+        }
+        let total: f64 = bands
+            .iter()
+            .flat_map(|b| &b.polygons)
+            .map(|p| signed_area(p))
+            .sum();
+        assert!((total - 16.0).abs() < 1e-9, "面積の和 {total}");
     }
 
     #[test]
