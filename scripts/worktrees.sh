@@ -15,6 +15,8 @@
 set -u
 cd "$(dirname "$0")/.."
 main=$(git rev-parse --path-format=absolute --git-common-dir | sed 's#/\.git$##')
+# 消すフォルダの中から呼ばれても続けられるように、主のフォルダに移る
+cd "$main"
 
 state() {
   w=$1
