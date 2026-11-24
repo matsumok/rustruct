@@ -39,11 +39,19 @@ jobs:
           components: clippy, rustfmt
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      # dx が落とすツール（wasm-bindgen、wasm-opt、Tailwind）。鍵は dx の版
-      - uses: actions/cache@v4
+      # dx が落とすツール（wasm-bindgen、wasm-opt、esbuild、Tailwind）。wasm-bindgen の CLI だけは Cargo.lock の
+      # wasm-bindgen に合わせて落とすので、鍵は dx の版と Cargo.lock の wasm-bindgen の版。鍵が当たると保存し直さないため、
+      # dx の版だけだと lock の wasm-bindgen が上がった後は毎回落とし直す
+      - name: wasm-bindgen の版（Cargo.lock）
+        id: wasm-bindgen
+        run: |
+          v=$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "\(.*\)"$/\1/p')
+          test -n "$v" || { echo "Cargo.lock に wasm-bindgen が無い"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
         with:
           path: ~/.local/share/.dx/tools
-          key: dx-tools-0.7.10
+          key: dx-tools-0.7.10-wasm-bindgen-${{ steps.wasm-bindgen.outputs.version }}
 
       # dx は GitHub Releases のビルド済みバイナリ（AGENTS.md と同じ 0.7.10）。cargo install は数分かかる
       - name: dx 0.7.10
