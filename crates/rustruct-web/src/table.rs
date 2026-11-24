@@ -425,6 +425,7 @@ impl From<Formula> for Cell {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::markup::text_of;
 
     fn render(columns: Vec<TableColumn>, rows: Vec<Vec<Cell>>, fixed: bool) -> String {
         let mut dom = VirtualDom::new_with_props(
@@ -445,20 +446,6 @@ mod tests {
             .skip(1)
             .map(|tag| tag.split([' ', '>']).next().unwrap_or_default())
             .collect()
-    }
-
-    fn text_of(html: &str) -> String {
-        let mut out = String::new();
-        let mut in_tag = false;
-        for c in html.chars() {
-            match c {
-                '<' => in_tag = true,
-                '>' => in_tag = false,
-                c if !in_tag => out.push(c),
-                _ => {}
-            }
-        }
-        out
     }
 
     fn some(v: &str) -> Cell {
