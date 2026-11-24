@@ -1,14 +1,17 @@
 #!/usr/bin/env sh
-# 作業用のフォルダ（git worktree）を大きさと状態つきで並べ、名前を挙げたものを消す。
+# 作業用のフォルダ（git worktree）を大きさと状態つきで並べ、名前を挙げたものを消す。取り込み済みのブランチも消す。
 #   sh scripts/worktrees.sh            並べる（主のフォルダは除く）
-#   sh scripts/worktrees.sh rm <名前>…  消す。名前は .claude/worktrees/ の下のフォルダ名か、フォルダのパス
+#   sh scripts/worktrees.sh rm <名前>…  消す。名前は .claude/worktrees/ の下のフォルダ名か、フォルダのパス。ブランチも消す
+#   sh scripts/worktrees.sh prune      git fetch --prune のあと、origin/main に入っていて、どのフォルダでも使っていない
+#                                      ローカルのブランチを消す（main は残す）。サブエージェントの worktree-agent-* もこれで消える
 # 並べる列: 大きさ（target を含む）、ブランチ、状態
 #   取り込み済み = HEAD が origin/main に含まれる。切ったばかりで何もコミットしていないフォルダもこれになるので、
 #                  それだけで消してよいとは限らない（別のセッションが使っているかもしれない）
 #   変更あり / ロック中 = 消さない。ロックは Claude Code が使っている印
 # rm は「取り込み済み・変更なし・ロックなし」の 3 つが揃ったものだけ消し、揃わなければ理由を言って断る。
-# ブランチは消さない（取り込み済みなら git branch -d で消せる）。origin/main は最後に fetch した時点のもの。
-# rm はサンドボックスの外で動かす（.git/worktrees がサンドボックスの中では書けない）。
+# rm の origin/main は最後に fetch した時点のもの。
+# rm と prune はサンドボックスの外で動かす（.git/worktrees と refs がサンドボックスの中では書けない）。
+# ブランチを消すと .git/config が書けないという警告が出るが、ブランチは消える（追跡の設定が残るだけ）。
 set -u
 cd "$(dirname "$0")/.."
 main=$(git rev-parse --path-format=absolute --git-common-dir | sed 's#/\.git$##')
@@ -35,9 +38,26 @@ if [ "${1:-}" = rm ]; then
     if ! worktrees | grep -qxF "$w"; then echo "$name: 作業用のフォルダではない" >&2; fail=1; continue; fi
     s=$(state "$w")
     if [ "$s" != "取り込み済み" ]; then echo "$name: 消さない（$s）" >&2; fail=1; continue; fi
-    git worktree remove "$w" && echo "$name: 消した"
+    branch=$(git -C "$w" branch --show-current)
+    git worktree remove "$w" || { fail=1; continue; }
+    echo "$name: 消した"
+    if [ -n "$branch" ] && [ "$branch" != main ]; then
+      git branch -D "$branch" 2>&1 | grep -v -e config -e '^hint:'
+    fi
   done
   exit "$fail"
+fi
+
+if [ "${1:-}" = prune ]; then
+  git fetch -q --prune origin
+  used=$(git worktree list --porcelain | awk '/^branch /{sub("refs/heads/", "", $2); print $2}')
+  git for-each-ref refs/heads --format='%(refname:short)' | while read -r b; do
+    [ "$b" = main ] && continue
+    printf '%s\n' "$used" | grep -qxF "$b" && continue
+    git merge-base --is-ancestor "$b" origin/main || continue
+    git branch -D "$b" 2>&1 | grep -v -e config -e '^hint:'
+  done
+  exit 0
 fi
 
 worktrees | while read -r w; do
