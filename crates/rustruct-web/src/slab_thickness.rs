@@ -1,15 +1,15 @@
 //! Tool「必要スラブ厚さ」（`/tools/slab-thickness`）。言葉は `docs/tools/slab-thickness/GLOSSARY.md`。
-//! 数値はすべて `rustruct-calc` の `shared_values`・`evaluate`・`iso_curves` から引き、ここでは入力の文字の
-//! 読み取りと、表示の桁と図の範囲だけを決める。計算はブラウザの中で同期に回し、入力を変えるたびに結果と
-//! 等厚曲線の図を描き直す。
+//! 数値はすべて `rustruct-calc` の `check`・`evaluate`・`shared_values` と、`check` が返す検査を通った
+//! 条件から引き、ここでは入力の文字の読み取りと、表示の桁と図の範囲だけを決める。計算はブラウザの中で
+//! 同期に回し、入力を変えるたびに結果と等厚曲線の図を描き直す。
 //!
 //! 今は検討点を 1 つだけ入れる。検討点のシートは後の Issue。
 
 use dioxus::prelude::*;
 use numerus::fixed;
 use rustruct_calc::slab_thickness::{
-    Conditions, CriteriaSet, Criterion, Evaluation, InvalidInput, SharedValues, Spans, evaluate,
-    shared_values,
+    Conditions, CriteriaSet, Criterion, Evaluation, InvalidInput, SharedValues, Spans, check,
+    evaluate, shared_values,
 };
 
 mod figure;
@@ -186,7 +186,7 @@ pub struct PointRow {
 pub struct SlabOutcome {
     /// 結果の表。読めない欄と、警告も
     pub readout: SlabReadout,
-    /// 等厚曲線の素。条件の欄がすべて読め、クライテリアが 1 つ以上あるときだけ
+    /// 等厚曲線の素。条件が検査を通り、条件の欄がすべて読めるときだけ
     pub curves: Option<SlabCurves>,
 }
 
@@ -222,7 +222,12 @@ impl SlabOutcome {
             [SlabField::SpanX, SlabField::SpanY].map(|field| Length::m(reading.number(field)));
         let spans = Spans { x, y };
 
-        let evaluated = evaluate(&conditions, spans);
+        // 条件の検査は 1 回。通れば検討点はその値で評価し、通らなければ条件とスパンの不正な欄をいっぺんに集める
+        let checked = check(&conditions);
+        let evaluated = match &checked {
+            Ok(checked) => checked.evaluate(spans),
+            Err(_) => evaluate(&conditions, spans),
+        };
         let mut no_criteria = false;
         if let Err(invalid) = &evaluated {
             for &reason in invalid {
@@ -254,11 +259,17 @@ impl SlabOutcome {
 
         let name = inputs.value(SlabField::Name).trim().to_string();
 
-        Self {
-            curves: conditions_valid.then(|| SlabCurves {
+        // 読めない欄は初期値で埋めて検査を通るので、検査を通っても欄が読めなければ図は描かない
+        let curves = checked
+            .ok()
+            .filter(|_| conditions_valid)
+            .map(|conditions| SlabCurves {
                 conditions,
                 point: spans_valid.then_some((name, spans)),
-            }),
+            });
+
+        Self {
+            curves,
             readout: SlabReadout {
                 point: PointRow::new(evaluated.ok().filter(|_| errors.is_empty())),
                 errors,
