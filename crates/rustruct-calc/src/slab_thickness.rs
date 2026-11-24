@@ -1,9 +1,11 @@
 //! 必要スラブ厚さ。RC 造二方向スラブ（四辺固定）の必要厚さを、RC 規準のたわみ略算式と表18-1（周辺固定）の
 //! 最小厚さで求める。言葉は `docs/tools/slab-thickness/GLOSSARY.md`、等厚曲線の判断は ADR slab-thickness-0001。
 //!
-//! 公開の入口は 3 つ。条件だけで決まる共有値（[`shared_values`]）、1 つの検討点の評価（[`evaluate`]）、
-//! 等厚曲線群（[`iso_curves`]）。3 つとも同じ検査と同じ土台（[`Basis`]）を通るので、画面に出す E・γ₁・wp は
-//! 算定に使った値と食い違わない。E・γ₁ は [`Concrete`] が Fc から導く。
+//! 公開の入口は 3 つ。条件を 1 回検査して検査を通った条件を返す [`check`]、条件とスパンをいっぺんに
+//! 検査して 1 つの検討点を評価する [`evaluate`]、荷重とコンクリートだけで決まる共有値 [`shared_values`]。
+//! 検査を通った条件（[`CheckedConditions`]）は共有値を持ち、算定の土台（`Basis`）をそこから作る。
+//! 検討点の評価と等厚曲線群はその関数なので失敗しない（評価が返す誤りはスパンの欄だけ）。画面に出す
+//! E・γ₁・wp は算定に使った値と食い違わない。E・γ₁ は [`Concrete`] が Fc から導く。
 //!
 //! 内部の計算は長さ mm、力 N（荷重は N/mm²、単位体積重量は N/mm³）の数で行い、入口と出口で量の型に直す。
 
@@ -14,8 +16,8 @@ use rustruct_types::quantity::{AreaLoad, Length, Stress, UnitWeight};
 pub use rustruct_types::slab_thickness::{Conditions, CriteriaSet, Criterion, Spans};
 
 /// スラブ厚さの下限。等厚曲線の図は、これ未満の厚さの帯を塗らない（ADR slab-thickness-0002）。
-/// 計算核は下限で引き上げない。検討点の評価（[`evaluate`]）も等厚曲線群（[`iso_curves`]）も、これ未満の
-/// 厚さをそのまま扱う
+/// 計算核は下限で引き上げない。検討点の評価（[`evaluate`]）も等厚曲線群（[`CheckedConditions::iso_curves`]）も、
+/// これ未満の厚さをそのまま扱う
 pub const MIN_SLAB_THICKNESS: Length = Length::mm(80.0);
 
 /// 入力が不正な理由。条件の欄ごとに分け、スパンは最後。荷重は 0 以上、それ以外は正の有限値。Fc は
@@ -105,41 +107,24 @@ pub struct Evaluation {
     pub governing: Criterion,
 }
 
-/// 1 つの検討点の評価。有効なクライテリアをすべて満たす最小の厚さと、その厚さでのたわみ。
-/// 増大後たわみが許容たわみとちょうど等しくなるのは、たわみに効く条件が決定条件のときだけ
-/// （表18-1 が決めると、たわみは許容に届かない）
+/// 1 つの検討点の評価。条件とスパンの不正な欄をすべて欄の順で返す入口で、中は [`check`] と
+/// [`CheckedConditions::evaluate`] を通る。条件を一度検査して何度も評価するなら、そちらを使う
 pub fn evaluate(conditions: &Conditions, spans: Spans) -> Result<Evaluation, Vec<InvalidInput>> {
-    let (x, y) = (spans.x.as_mm(), spans.y.as_mm());
-    let span_errors = violations([
-        (is_positive(x), InvalidInput::SpanX),
-        (is_positive(y), InvalidInput::SpanY),
-    ]);
-    let (basis, active) = match checked_basis(conditions) {
-        Ok(checked) if span_errors.is_empty() => checked,
-        Ok(_) => return Err(span_errors),
+    match check(conditions) {
+        Ok(checked) => checked.evaluate(spans),
         Err(mut invalid) => {
-            invalid.extend(span_errors);
-            return Err(invalid);
+            invalid.extend(span_errors(spans));
+            Err(invalid)
         }
-    };
+    }
+}
 
-    let lx = x.min(y);
-    let lambda = x.max(y) / lx;
-    let (t_req, governing) = governing_thickness(&active, &basis, lx, lambda);
-
-    let w = basis.rc_unit_weight * t_req + basis.wp;
-    let delta_e = shape(lambda) * w * lx.powi(4) / (32.0 * basis.young_modulus * t_req.powi(3));
-
-    Ok(Evaluation {
-        short_span: Length::mm(lx),
-        aspect_ratio: lambda,
-        required_thickness: Length::mm(t_req),
-        total_load: AreaLoad::n_per_mm2(w),
-        elastic_deflection: Length::mm(delta_e),
-        amplified_deflection: Length::mm(basis.amplification * delta_e),
-        allowable_deflection: allowable_deflection(&active, lx).map(Length::mm),
-        governing,
-    })
+/// スパンの不正な欄。どちらも正の有限値
+fn span_errors(spans: Spans) -> Vec<InvalidInput> {
+    violations([
+        (is_positive(spans.x.as_mm()), InvalidInput::SpanX),
+        (is_positive(spans.y.as_mm()), InvalidInput::SpanY),
+    ])
 }
 
 /// 一本の等厚曲線。スラブ厚 `thickness` でクライテリア集合をちょうど満たす (Lx, Ly) の軌跡。
@@ -150,46 +135,18 @@ pub struct IsoCurve {
     pub ys: Vec<Option<Length>>,
 }
 
-/// 等厚曲線群。x の並び `xs` の上で、厚さごとの等厚曲線。曲線は y = x に対して対称。
-///
-/// グリッドの各点で必要厚さを解かず、厚さを固定して曲線を直接引く（ADR slab-thickness-0001）。上枝（y ≥ x）は
-/// 変形角・たわみ絶対量・表18-1 とも閉形式。下枝（y < x）は、たわみ絶対量は閉形式、変形角は Newton 法、
-/// 表18-1 は二分法で引く
-pub fn iso_curves(
-    conditions: &Conditions,
-    xs: &[Length],
-    thicknesses: &[Length],
-) -> Result<Vec<IsoCurve>, Vec<InvalidInput>> {
-    let (basis, active) = checked_basis(conditions)?;
-    Ok(thicknesses
-        .iter()
-        .map(|&t| IsoCurve {
-            thickness: t,
-            ys: xs
-                .iter()
-                .map(|&x| combined_curve_y(&active, &basis, t.as_mm(), x.as_mm()).map(Length::mm))
-                .collect(),
-        })
-        .collect())
+/// 検査を通った条件。[`check`] だけが作る。元の条件と共有値、有効なクライテリアを持ち、算定の土台は共有値と
+/// 変形増大係数から使う所で作る（同じ値を二か所に持たない）。
+/// 評価も等厚曲線群もこの値の関数なので、検査は一度で済み、画面に出す E・γ₁・wp は算定に使った値と食い違わない
+#[derive(Debug, Clone, PartialEq)]
+pub struct CheckedConditions {
+    conditions: Conditions,
+    shared: SharedValues,
+    active: Vec<ActiveCriterion>,
 }
 
-/// 条件から決まり、スパンに依らない算定の土台。[`SharedValues`] と同じ値を、算定式の単位の数で持つ
-#[derive(Debug, Clone, Copy)]
-struct Basis {
-    /// ヤング係数 E [N/mm²]
-    young_modulus: f64,
-    /// 鉄筋コンクリートの単位体積重量 γ₁ [N/mm³]
-    rc_unit_weight: f64,
-    /// スラブ自重を除く荷重 wp [N/mm²]
-    wp: f64,
-    /// 変形増大係数 K
-    amplification: f64,
-}
-
-/// 条件を検査し、土台と有効なクライテリアをそろえる。評価も等厚曲線群もここを通る。不正な欄はすべて欄の順で返す
-fn checked_basis(
-    conditions: &Conditions,
-) -> Result<(Basis, Vec<ActiveCriterion>), Vec<InvalidInput>> {
+/// 条件を 1 回検査して、検査を通った条件を返す。不正な欄はすべて欄の順で返す（スパンは見ない）
+pub fn check(conditions: &Conditions) -> Result<CheckedConditions, Vec<InvalidInput>> {
     let shared = shared_values(
         conditions.concrete,
         conditions.finish_load,
@@ -209,13 +166,97 @@ fn checked_basis(
             return Err(invalid);
         }
     };
-    let basis = Basis {
-        young_modulus: shared.young_modulus.as_n_per_mm2(),
-        rc_unit_weight: shared.rc_unit_weight.as_n_per_mm3(),
-        wp: shared.wp.as_n_per_mm2(),
-        amplification: conditions.amplification,
-    };
-    Ok((basis, active))
+    Ok(CheckedConditions {
+        conditions: *conditions,
+        shared,
+        active,
+    })
+}
+
+impl CheckedConditions {
+    /// 検査した元の条件
+    pub fn conditions(&self) -> &Conditions {
+        &self.conditions
+    }
+
+    /// 共有値。[`shared_values`] が同じ条件から返す値と同じ
+    pub fn shared_values(&self) -> SharedValues {
+        self.shared
+    }
+
+    /// 算定の土台。共有値を算定式の単位の数にし、変形増大係数を添える
+    fn basis(&self) -> Basis {
+        Basis {
+            young_modulus: self.shared.young_modulus.as_n_per_mm2(),
+            rc_unit_weight: self.shared.rc_unit_weight.as_n_per_mm3(),
+            wp: self.shared.wp.as_n_per_mm2(),
+            amplification: self.conditions.amplification,
+        }
+    }
+
+    /// 1 つの検討点の評価。有効なクライテリアをすべて満たす最小の厚さと、その厚さでのたわみ。
+    /// 増大後たわみが許容たわみとちょうど等しくなるのは、たわみに効く条件が決定条件のときだけ
+    /// （表18-1 が決めると、たわみは許容に届かない）。条件は検査済みなので、返す誤りはスパンの欄だけ
+    pub fn evaluate(&self, spans: Spans) -> Result<Evaluation, Vec<InvalidInput>> {
+        let invalid = span_errors(spans);
+        if !invalid.is_empty() {
+            return Err(invalid);
+        }
+        let (basis, active) = (&self.basis(), &self.active);
+        let (x, y) = (spans.x.as_mm(), spans.y.as_mm());
+        let lx = x.min(y);
+        let lambda = x.max(y) / lx;
+        let (t_req, governing) = governing_thickness(active, basis, lx, lambda);
+
+        let w = basis.rc_unit_weight * t_req + basis.wp;
+        let delta_e = shape(lambda) * w * lx.powi(4) / (32.0 * basis.young_modulus * t_req.powi(3));
+
+        Ok(Evaluation {
+            short_span: Length::mm(lx),
+            aspect_ratio: lambda,
+            required_thickness: Length::mm(t_req),
+            total_load: AreaLoad::n_per_mm2(w),
+            elastic_deflection: Length::mm(delta_e),
+            amplified_deflection: Length::mm(basis.amplification * delta_e),
+            allowable_deflection: allowable_deflection(active, lx).map(Length::mm),
+            governing,
+        })
+    }
+
+    /// 等厚曲線群。x の並び `xs` の上で、厚さごとの等厚曲線。曲線は y = x に対して対称。条件は検査済みなので
+    /// 失敗しない。
+    ///
+    /// グリッドの各点で必要厚さを解かず、厚さを固定して曲線を直接引く（ADR slab-thickness-0001）。上枝（y ≥ x）は
+    /// 変形角・たわみ絶対量・表18-1 とも閉形式。下枝（y < x）は、たわみ絶対量は閉形式、変形角は Newton 法、
+    /// 表18-1 は二分法で引く
+    pub fn iso_curves(&self, xs: &[Length], thicknesses: &[Length]) -> Vec<IsoCurve> {
+        let basis = self.basis();
+        thicknesses
+            .iter()
+            .map(|&t| IsoCurve {
+                thickness: t,
+                ys: xs
+                    .iter()
+                    .map(|&x| {
+                        combined_curve_y(&self.active, &basis, t.as_mm(), x.as_mm()).map(Length::mm)
+                    })
+                    .collect(),
+            })
+            .collect()
+    }
+}
+
+/// 条件から決まり、スパンに依らない算定の土台。[`SharedValues`] と同じ値を、算定式の単位の数で持つ
+#[derive(Debug, Clone, Copy)]
+struct Basis {
+    /// ヤング係数 E [N/mm²]
+    young_modulus: f64,
+    /// 鉄筋コンクリートの単位体積重量 γ₁ [N/mm³]
+    rc_unit_weight: f64,
+    /// スラブ自重を除く荷重 wp [N/mm²]
+    wp: f64,
+    /// 変形増大係数 K
+    amplification: f64,
 }
 
 /// 有効なクライテリアを集合の並び（[`Criterion`] の順）で並べる。並びは決定条件が同値のときの優先順でもある。

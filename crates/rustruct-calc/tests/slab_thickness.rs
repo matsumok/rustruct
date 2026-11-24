@@ -1,4 +1,4 @@
-//! 必要スラブ厚さの計算核。入口の `shared_values`・`evaluate`・`iso_curves` からだけ確かめる。
+//! 必要スラブ厚さの計算核。入口の `shared_values`・`evaluate`・`check` と、`check` が返す検査を通った条件からだけ確かめる。
 //! 言葉は `docs/tools/slab-thickness/GLOSSARY.md`。手計算の値は電卓で独立に確かめたもの。
 //! 条件の既定は Fc 24、仕上げ荷重 1000 N/m²、積載荷重 1800 N/m²、変形増大係数 8、変形角 1/400。
 
@@ -822,8 +822,114 @@ mod shared_values {
     }
 }
 
+mod check {
+    use rustruct_calc::slab_thickness::{Conditions, CriteriaSet, InvalidInput, check};
+    use rustruct_types::quantity::{AreaLoad, Length};
+
+    use super::{base, with};
+
+    /// 条件の検査は、不正な欄をすべて欄の順で返す（`evaluate` と同じ並びで、スパンは見ない）。
+    /// 値の不正なクライテリアは「1 つも無い」とは言わない（入れてはある）
+    #[test]
+    fn every_invalid_condition_is_returned_in_the_order_of_the_fields() {
+        let conditions = Conditions {
+            finish_load: AreaLoad::n_per_m2(-1.0),
+            live_load: AreaLoad::n_per_m2(f64::NAN),
+            amplification: -16.0,
+            criteria: CriteriaSet {
+                deflection_ratio: Some(f64::INFINITY),
+                deflection_absolute: Some(Length::mm(0.0)),
+                min_thickness: false,
+            },
+            ..base()
+        };
+        assert_eq!(
+            check(&conditions),
+            Err(vec![
+                InvalidInput::FinishLoad,
+                InvalidInput::LiveLoad,
+                InvalidInput::Amplification,
+                InvalidInput::DeflectionRatio,
+                InvalidInput::DeflectionAbsolute,
+            ])
+        );
+        let none = Conditions {
+            amplification: 0.0,
+            ..with(CriteriaSet::default())
+        };
+        assert_eq!(
+            check(&none),
+            Err(vec![InvalidInput::Amplification, InvalidInput::NoCriteria])
+        );
+    }
+
+    /// クライテリアが 1 つも有効でなければ、検査を通らない（判定の無い図を描かせない）
+    #[test]
+    fn empty_criteria_set_is_rejected() {
+        assert_eq!(
+            check(&with(CriteriaSet::default())),
+            Err(vec![InvalidInput::NoCriteria])
+        );
+    }
+
+    /// 検査を通った条件は、元の条件を返す（図の条件の要約が読む）
+    #[test]
+    fn keeps_the_conditions_it_checked() {
+        assert_eq!(check(&base()).unwrap().conditions(), &base());
+    }
+
+    /// 検査を通った条件の共有値は、条件だけで決まる共有値と同じ（図の要約の wp と結果の表の wp が食い違わない）
+    #[test]
+    fn has_the_shared_values_of_its_conditions() {
+        let v = check(&base()).unwrap().shared_values();
+        assert_eq!(v, super::shared(&base()).unwrap());
+        assert!(
+            (v.wp.as_n_per_m2() - 2800.0).abs() < 1e-9,
+            "wp = {:?}",
+            v.wp
+        );
+    }
+
+    /// 検査を通った条件の評価は、条件ごと受ける `evaluate` と同じ値を返す。上枝・下枝・正方形と、
+    /// 決定条件の違う集合を通る
+    #[test]
+    fn evaluates_the_same_as_evaluate() {
+        let sets = [
+            super::deflection_ratio(400.0),
+            super::deflection_absolute(20.0),
+            super::min_thickness_only(),
+            super::all_three(),
+        ];
+        for criteria in sets {
+            let conditions = with(criteria);
+            let checked = check(&conditions).unwrap();
+            for (x, y) in [(4.0, 5.0), (5.0, 4.0), (6.0, 6.0), (2.5, 12.0)] {
+                assert_eq!(
+                    checked.evaluate(super::spans(x, y)),
+                    super::evaluate(&conditions, super::spans(x, y)),
+                    "{criteria:?} ({x}, {y})"
+                );
+            }
+        }
+    }
+
+    /// 検査を通った条件の評価が返す誤りは、スパンの欄だけ（欄の順）
+    #[test]
+    fn evaluation_rejects_only_the_spans() {
+        let checked = check(&base()).unwrap();
+        assert_eq!(
+            checked.evaluate(super::spans(0.0, 5.0)),
+            Err(vec![InvalidInput::SpanX])
+        );
+        assert_eq!(
+            checked.evaluate(super::spans(-4.0, f64::NAN)),
+            Err(vec![InvalidInput::SpanX, InvalidInput::SpanY])
+        );
+    }
+}
+
 mod iso_curves {
-    use rustruct_calc::slab_thickness::{Conditions, CriteriaSet, InvalidInput, iso_curves};
+    use rustruct_calc::slab_thickness::{Conditions, CriteriaSet, check};
     use rustruct_types::quantity::Length;
 
     use super::{
@@ -859,8 +965,9 @@ mod iso_curves {
     /// 等厚曲線群。x は m、厚さは mm。y は m で返す
     fn curves(conditions: &Conditions, xs: &[f64], ts: &[f64]) -> Vec<(f64, Vec<Option<f64>>)> {
         let ts: Vec<_> = ts.iter().map(|&t| Length::mm(t)).collect();
-        iso_curves(conditions, &m(xs), &ts)
+        check(conditions)
             .unwrap()
+            .iso_curves(&m(xs), &ts)
             .into_iter()
             .map(|c| {
                 (
@@ -869,19 +976,6 @@ mod iso_curves {
                 )
             })
             .collect()
-    }
-
-    /// 等厚曲線群もクライテリアが 1 つも有効でなければ算定できない
-    #[test]
-    fn empty_criteria_set_is_rejected() {
-        assert_eq!(
-            iso_curves(
-                &with(CriteriaSet::default()),
-                &m(&grid()),
-                &[Length::mm(200.0)]
-            ),
-            Err(vec![InvalidInput::NoCriteria])
-        );
     }
 
     /// 図で使う広い厚さの並び。薄い側の下限から 400 mm 超まで

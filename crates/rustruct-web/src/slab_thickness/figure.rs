@@ -1,20 +1,19 @@
 //! 等厚曲線の図（コンター図）。横軸に Lx、縦軸に Ly をとり、必要スラブ厚が等しい曲線を引いて間を塗り分け、
 //! 検討点を印で示す。言葉は `docs/tools/slab-thickness/GLOSSARY.md`、曲線の引き方は ADR slab-thickness-0001。
 //!
-//! 曲線は `rustruct-calc` の `iso_curves` が x の並びの上で直接引き、`charta` の `level_graphs` が線と帯に
-//! する。範囲・厚さの刻み・条件の要約は移植元の slab の決めを引き継ぎ、色・線・数値の置き方はサイトの分布図に
-//! そろえる（`docs/design/README.md`「分布図と等厚曲線の図」）。80 mm（計算核の `MIN_SLAB_THICKNESS`）未満の
-//! 曲線も線と数値は描き、その間の帯は塗らない（ADR slab-thickness-0002）。図は 1 単位（`width-column`）の幅に
-//! 収める。ここは `charta` の `Scene` までで、SVG にするのはページ（`chart::svg`）。
+//! 曲線は `rustruct-calc` の検査を通った条件（`CheckedConditions`）の `iso_curves` が x の並びの上で直接
+//! 引き、`charta` の `level_graphs` が線と帯にする。範囲・厚さの刻み・条件の要約は移植元の slab の決めを
+//! 引き継ぎ、色・線・数値の置き方はサイトの分布図にそろえる（`docs/design/README.md`「分布図と等厚曲線の図」）。
+//! 80 mm（計算核の `MIN_SLAB_THICKNESS`）未満の曲線も線と数値は描き、その間の帯は塗らない
+//! （ADR slab-thickness-0002）。図は 1 単位（`width-column`）の幅に収める。ここは `charta` の `Scene` までで、
+//! SVG にするのはページ（`chart::svg`）。
 
 use charta::plot::TEXT_SIZE;
 use charta::{
     Anchor, Font, HALO_WIDTH, Item, LevelGraph, Paint, Plot, Pt, Scene, Stroke, axes, level_graphs,
 };
 use numerus::at_place;
-use rustruct_calc::slab_thickness::{
-    Conditions, MIN_SLAB_THICKNESS, Spans, evaluate, iso_curves, shared_values,
-};
+use rustruct_calc::slab_thickness::{CheckedConditions, MIN_SLAB_THICKNESS, Spans};
 use rustruct_types::quantity::Length;
 
 use crate::COLUMN_WIDTH;
@@ -43,10 +42,10 @@ const INSET: f64 = 6.0;
 const MARK_RADIUS: f64 = 3.5;
 const MARK_WIDTH: f64 = 1.0;
 
-/// 等厚曲線を引く素。条件と、検討点の名称とスパン。入力から一度だけ作る
+/// 等厚曲線を引く素。検査を通った条件と、検討点の名称とスパン。入力から一度だけ作る
 #[derive(Debug, Clone, PartialEq)]
 pub struct SlabCurves {
-    pub(super) conditions: Conditions,
+    pub(super) checked: CheckedConditions,
     /// スパンが読めないときは無し。範囲は検討点の無いもので、印を置かない
     pub(super) point: Option<(String, Spans)>,
 }
@@ -75,7 +74,7 @@ impl SlabFigure {
         };
         Self {
             label,
-            scene: scene(&curves.conditions, point),
+            scene: scene(&curves.checked, point),
         }
     }
 }
@@ -112,7 +111,7 @@ impl View {
     }
 }
 
-fn scene(conditions: &Conditions, point: Option<(&str, Spans)>) -> Scene {
+fn scene(checked: &CheckedConditions, point: Option<(&str, Spans)>) -> Scene {
     let m = Length::as_m;
     let points: Vec<(f64, f64)> = point.iter().map(|(_, s)| (m(s.x), m(s.y))).collect();
     let view = View::around(&points);
@@ -137,8 +136,10 @@ fn scene(conditions: &Conditions, point: Option<(&str, Spans)>) -> Scene {
             x: Length::m(x),
             y: Length::m(y),
         };
-        evaluate(conditions, spans)
-            .expect("条件は読めている")
+        // 条件は検査済みで、隅はどちらの軸も MIN_SPAN 以上なので、スパンの誤りも出ない
+        checked
+            .evaluate(spans)
+            .expect("範囲の隅のスパンは MIN_SPAN 以上")
             .required_thickness
             .as_mm()
     };
@@ -146,15 +147,13 @@ fn scene(conditions: &Conditions, point: Option<(&str, Spans)>) -> Scene {
     let t_min = thickness_at(from, view.y.0.max(MIN_SPAN));
     let t_max = thickness_at(view.x.1, view.y.1);
     let (thicknesses, step) = thicknesses(t_min, t_max);
-    let curves = iso_curves(
-        conditions,
+    let curves = checked.iso_curves(
         &xs.iter().map(|&x| Length::m(x)).collect::<Vec<_>>(),
         &thicknesses
             .iter()
             .map(|&t| Length::mm(t))
             .collect::<Vec<_>>(),
-    )
-    .expect("条件は読めている");
+    );
     let graphs: Vec<LevelGraph> = curves
         .into_iter()
         .map(|curve| LevelGraph {
@@ -179,7 +178,7 @@ fn scene(conditions: &Conditions, point: Option<(&str, Spans)>) -> Scene {
             ));
         }
     }
-    for (k, line) in summary(conditions).into_iter().enumerate() {
+    for (k, line) in summary(checked).into_iter().enumerate() {
         overlay.push(text(
             [
                 left + INSET,
@@ -298,14 +297,9 @@ fn between(lo: f64, hi: f64, step: f64) -> Vec<f64> {
 }
 
 /// 条件の要約の 2 行。Fc と wp、変形増大係数 α と有効なクライテリアだけ。単位は入力の欄と同じで、書かない
-fn summary(conditions: &Conditions) -> [String; 2] {
-    let wp = shared_values(
-        conditions.concrete,
-        conditions.finish_load,
-        conditions.live_load,
-    )
-    .expect("条件は読めている")
-    .wp;
+fn summary(checked: &CheckedConditions) -> [String; 2] {
+    let wp = checked.shared_values().wp;
+    let conditions = checked.conditions();
     let mut criteria = vec![format!("α={}", plain(conditions.amplification))];
     if let Some(ratio) = conditions.criteria.deflection_ratio {
         criteria.push(format!("δ/lx≤1/{}", plain(1.0 / ratio)));
