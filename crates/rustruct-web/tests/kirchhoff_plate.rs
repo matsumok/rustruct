@@ -392,7 +392,7 @@ fn a_moment_figure_of_the_fixed_plate_reads_both_signs() {
 }
 
 #[test]
-fn the_deflection_figure_reads_no_negative_values_and_bands_in_the_sequential_palette() {
+fn the_deflection_reads_no_negative_values_and_each_quantity_bands_in_the_palette_of_its_signs() {
     // 下向きの荷重でたわみは負にならず、片符号の量は順の色、両符号の量は発散の色で塗る
     let w = figure_of(&PlateInputs::default(), Quantity::W).unwrap();
     let numbers = figure_numbers(&w.scene);

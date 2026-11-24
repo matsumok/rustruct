@@ -26,7 +26,8 @@ pub(crate) fn svg(scene: &Scene) -> String {
     to_svg(scene, &theme(), Colors::Variables).expect("役割名は tokens.json にある")
 }
 
-/// 継ぎ目: tokens.json の表 → `Theme` と、シーン → SVG の文字の形。表の値そのものは `theme.rs` の `chart_theme_rs` のテストが見る。
+/// 継ぎ目: tokens.json の表 → `Theme` と、シーン → SVG の文字の形。表の値そのものは `theme.rs` の
+/// `chart_theme_rs` のテストが見る。
 #[cfg(test)]
 mod tests {
     use super::*;
