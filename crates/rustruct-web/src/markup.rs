@@ -185,6 +185,13 @@ fn tokens(html: &str) -> Vec<Token<'_>> {
     while let Some(at) = html[i..].find('<') {
         let start = i + at;
         i = start + 1;
+        // コメントの中身（Dioxus の `<!--/-->` など）をタグとして読まない
+        if html[start..].starts_with("<!--") {
+            i = html[start + 4..]
+                .find("-->")
+                .map_or(bytes.len(), |at| start + 4 + at + 3);
+            continue;
+        }
         if bytes.get(i) == Some(&b'/') && bytes.get(i + 1).is_some_and(u8::is_ascii_alphabetic) {
             let name_end = run_until(html, i + 1, |b| b.is_ascii_whitespace() || b == b'>');
             let end = (run_until(html, name_end, |b| b == b'>') + 1).min(bytes.len());
@@ -349,5 +356,12 @@ mod tests {
     fn the_title_is_what_the_title_element_holds() {
         assert_eq!(title(PAGE), Some("Data · rustruct.matsumok.com"));
         assert_eq!(title("<head></head>"), None);
+    }
+
+    #[test]
+    fn a_comment_is_not_read_as_tags() {
+        let html = "<p>a<!--<a href=/x>--></p><!--/--><a href=/y>b</a>";
+        assert_eq!(count_tags(html, "a", &[]), 1);
+        assert_eq!(element(html, "a"), "<a href=/y>b</a>");
     }
 }
