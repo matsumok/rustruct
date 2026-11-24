@@ -20,6 +20,7 @@ use figure::corner_margin_text;
 pub use figure::{PlateField, PlateFigure, Quantity};
 
 use crate::Route;
+use crate::chart;
 use crate::inputs::{Definition, Field, InputGroup, Inputs, Kind, Layout, Reading, Reason};
 use crate::page::Page;
 use crate::table::{Block, Caption, Column, Columns, NO_VALUE, Notes, Table, TableColumn};
@@ -546,7 +547,7 @@ fn FigureBlock(quantity: Signal<Quantity>, figure: Option<PlateFigure>) -> Eleme
                     figure {
                         role: "img",
                         "aria-label": figure.label,
-                        dangerous_inner_html: figure.svg,
+                        dangerous_inner_html: chart::svg(&figure.scene),
                     }
                     Notes {
                         li { "斜線の付いた辺は固定" }

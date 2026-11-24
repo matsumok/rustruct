@@ -1,15 +1,15 @@
 //! 等厚曲線の図（コンター図）。横軸に Lx、縦軸に Ly をとり、必要スラブ厚が等しい曲線を引いて間を塗り分け、
-//! 検討点を印で示す。言葉は `docs/tools/slab-thickness/GLOSSARY.md`、曲線の引き方はADR slab-thickness-0001。
+//! 検討点を印で示す。言葉は `docs/tools/slab-thickness/GLOSSARY.md`、曲線の引き方は ADR slab-thickness-0001。
 //!
 //! 曲線は `rustruct-calc` の `iso_curves` が x の並びの上で直接引き、`charta` の `level_graphs` が線と帯に
 //! する。範囲・厚さの刻み・条件の要約は移植元の slab の決めを引き継ぎ、色・線・数値の置き方はサイトの分布図に
-//! そろえる。80 mm（計算核の `MIN_SLAB_THICKNESS`）未満の曲線も線と数値は描き、その間の帯は塗らない（ADR slab-thickness-0002、`docs/ui-decisions.md`「等厚曲線の図」）。図は 1 単位
-//! （`width-column`）の幅に収め、色はライトとダークの 2 枚を作る。
+//! そろえる（`docs/design/README.md`「分布図と等厚曲線の図」）。80 mm（計算核の `MIN_SLAB_THICKNESS`）未満の
+//! 曲線も線と数値は描き、その間の帯は塗らない（ADR slab-thickness-0002）。図は 1 単位（`width-column`）の幅に
+//! 収める。ここは `charta` の `Scene` までで、SVG にするのはページ（`chart::svg`）。
 
 use charta::plot::TEXT_SIZE;
 use charta::{
-    Anchor, Colors, Font, HALO_WIDTH, Item, LevelGraph, Paint, Plot, Pt, Scene, Stroke, axes,
-    level_graphs, to_svg,
+    Anchor, Font, HALO_WIDTH, Item, LevelGraph, Paint, Plot, Pt, Scene, Stroke, axes, level_graphs,
 };
 use numerus::at_place;
 use rustruct_calc::slab_thickness::{
@@ -18,7 +18,6 @@ use rustruct_calc::slab_thickness::{
 use rustruct_types::quantity::Length;
 
 use crate::COLUMN_WIDTH;
-use crate::chart::{Mode, theme};
 
 /// 検討点が無いときの範囲（両軸、m）
 const DEFAULT_VIEW: (f64, f64) = (3.0, 9.0);
@@ -57,8 +56,8 @@ pub struct SlabCurves {
 pub struct SlabFigure {
     /// 読み上げの文言
     pub label: String,
-    pub light_svg: String,
-    pub dark_svg: String,
+    /// 図。色は役割名で、SVG にするのはページ
+    pub scene: Scene,
 }
 
 impl SlabFigure {
@@ -67,10 +66,6 @@ impl SlabFigure {
             .point
             .as_ref()
             .map(|(name, spans)| (name.as_str(), *spans));
-        let scene = scene(&curves.conditions, point);
-        let svg = |mode| {
-            to_svg(&scene, &theme(mode), Colors::Values).expect("役割名は tokens.json にある")
-        };
         let label = match point {
             Some((name, _)) if !name.is_empty() => {
                 format!("必要スラブ厚の等厚曲線。横軸は Lx、縦軸は Ly。丸の印は検討点 {name}")
@@ -80,8 +75,7 @@ impl SlabFigure {
         };
         Self {
             label,
-            light_svg: svg(Mode::Light),
-            dark_svg: svg(Mode::Dark),
+            scene: scene(&curves.conditions, point),
         }
     }
 }
