@@ -133,13 +133,13 @@ fi
 
 # 未知の住所は 404 で not-found の本文（not_found_handling = "404-page"）。本文は配信用ディレクトリの 404.html と <title> で見る。
 # workers.dev のプレビューでは wrangler preview が not_found_handling を落とし、本文の無い 404 が返る
-# （cloudflare/workers-sdk#16047、2026-10-14 時点で open）。そこだけ NG にせず注意に留める。本番は厳しいまま
+# （cloudflare/developer-platform#118、もとは workers-sdk#16047。2026-11-25 時点で open）。そこだけ NG にせず注意に留める。本番は厳しいまま
 status=$(fetch "/no-such-address-$$/" "$dir/notfound.html")
 [ "$status" = 404 ] || ng "未知の住所が 404 でない: $status"
 want=$(title "$deploy/404.html" 2>/dev/null)
 if [ -z "$want" ] || [ "$(title "$dir/notfound.html")" != "$want" ]; then
   case "$url" in
-    *.workers.dev) echo "注意: プレビューでは not-found の本文が届かない（workers-sdk#16047 が直るまで）" ;;
+    *.workers.dev) echo "注意: プレビューでは not-found の本文が届かない（cloudflare/developer-platform#118 が直るまで）" ;;
     *) ng "未知の住所に not-found の本文が無い（期待する <title>: ${want:-配信用ディレクトリに 404.html が無い}）" ;;
   esac
 fi
