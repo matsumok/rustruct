@@ -587,7 +587,11 @@ impl Strip {
 /// 一致すること。帯の 11 点のたわみ・曲げモーメント・せん断力と、帯の端の辺の反力
 fn assert_strip(s: &Solution, strip: Strip, span: f64, v: f64, what: &str) {
     let p = s.plate();
-    let (q, d, nu) = (p.load.as_n_per_mm2(), rigidity(p), p.poisson_ratio.value());
+    let (q, d, nu) = (
+        p.load.as_n_per_mm2(),
+        rigidity(p),
+        p.material.poisson_ratio().value(),
+    );
     let (a, b) = strip.ends(p.supports);
     let beam_at = |u: f64| beam(a, b, span, q, u).expect("帯の両端で支える組");
     let samples: Vec<(f64, (f64, f64, f64))> = (0..=10)

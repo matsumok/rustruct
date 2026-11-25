@@ -1,7 +1,10 @@
 //! Kirchhoff 板の支持条件の組。辺は座標で呼び、4 文字の記号は x = 0 の辺から反時計回り
-//! （`docs/tools/kirchhoff-plate/GLOSSARY.md` の「支持条件の組」）。
+//! （`docs/tools/kirchhoff-plate/GLOSSARY.md` の「支持条件の組」）。板の材料から導く E と ν
+//! （同じ GLOSSARY の「板の材料」）。
 
-use rustruct_types::kirchhoff_plate::{Corner, Edge, Support, Supports};
+use rustruct_types::concrete::{Concrete, ConcreteKind};
+use rustruct_types::kirchhoff_plate::{Corner, Edge, PlateMaterial, Support, Supports};
+use rustruct_types::quantity::{PoissonRatio, Stress};
 
 #[test]
 fn supports_are_read_back_by_edge() {
@@ -59,4 +62,34 @@ fn a_combination_has_a_free_edge_when_any_one_edge_is_free() {
         y_ly: Support::Free,
     };
     assert!(one_free.has_free_edge());
+}
+
+#[test]
+fn concrete_gives_its_young_modulus_and_the_poisson_ratio_held_with_it() {
+    let concrete = Concrete::new(Stress::n_per_mm2(24.0), ConcreteKind::Normal).unwrap();
+    let material = PlateMaterial::Concrete {
+        concrete,
+        poisson_ratio: PoissonRatio::new(0.2).unwrap(),
+    };
+    assert_eq!(material.young_modulus(), concrete.young_modulus());
+    assert_eq!(material.poisson_ratio().value(), 0.2);
+}
+
+#[test]
+fn steel_gives_the_steel_values() {
+    assert_eq!(
+        PlateMaterial::Steel.young_modulus().as_n_per_mm2(),
+        205000.0
+    );
+    assert_eq!(PlateMaterial::Steel.poisson_ratio().value(), 0.3);
+}
+
+#[test]
+fn direct_input_gives_the_values_given() {
+    let material = PlateMaterial::Direct {
+        young_modulus: Stress::n_per_mm2(22700.0),
+        poisson_ratio: PoissonRatio::new(0.15).unwrap(),
+    };
+    assert_eq!(material.young_modulus().as_n_per_mm2(), 22700.0);
+    assert_eq!(material.poisson_ratio().value(), 0.15);
 }

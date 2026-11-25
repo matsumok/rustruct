@@ -4,7 +4,7 @@
 //! `tests/kirchhoff_plate_all_types.rs` と同じ考え）。`solve` が換算の値を正しく組むことの通しの確かめ、
 //! 隅反力と辺の曲げモーメントの構造上の 0 は、`solve` 越しのテストが見る
 
-use rustruct_types::kirchhoff_plate::{Corner, Edge, Supports};
+use rustruct_types::kirchhoff_plate::{Corner, Edge, PlateMaterial, Supports};
 use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
 
 use super::solver::{Derivatives, EdgePoint, Solver};
@@ -121,8 +121,10 @@ fn solve_with_polynomial(lx: f64, ly: f64, supports: Supports) -> Solution {
         lx: Length::mm(lx),
         ly: Length::mm(ly),
         thickness: Length::mm(100.0),
-        young_modulus: Stress::n_per_mm2(20_000.0),
-        poisson_ratio: PoissonRatio::new(0.2).unwrap(),
+        material: PlateMaterial::Direct {
+            young_modulus: Stress::n_per_mm2(20_000.0),
+            poisson_ratio: PoissonRatio::new(0.2).unwrap(),
+        },
         load: AreaLoad::kn_per_m2(10.0),
         supports,
     };

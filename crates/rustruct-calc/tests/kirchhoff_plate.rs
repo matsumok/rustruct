@@ -6,7 +6,7 @@
 mod common;
 use common::{assert_within, at, integrated_reaction, plate};
 use rustruct_calc::kirchhoff_plate::{EdgeSample, Plate, PlateError, SupportType, solve};
-use rustruct_types::kirchhoff_plate::{Edge, Support, Supports};
+use rustruct_types::kirchhoff_plate::{Edge, PlateMaterial, Support, Supports};
 use rustruct_types::quantity::{AreaLoad, Length, Stress};
 
 const FFFF: Supports = Supports::all(Support::Fixed);
@@ -70,7 +70,10 @@ fn invalid_inputs_are_refused() {
         Some(PlateError::InvalidInput(vec![InvalidInput::Thickness]))
     );
     assert_eq!(
-        bad(|p| p.young_modulus = Stress::n_per_mm2(0.0)),
+        bad(|p| p.material = PlateMaterial::Direct {
+            young_modulus: Stress::n_per_mm2(0.0),
+            poisson_ratio: p.material.poisson_ratio(),
+        }),
         Some(PlateError::InvalidInput(vec![InvalidInput::YoungModulus]))
     );
     assert_eq!(

@@ -1,10 +1,13 @@
 //! Kirchhoff 板 Model と、支持条件の組、辺・隅の呼び方。言葉は `docs/tools/kirchhoff-plate/GLOSSARY.md`。
 //! 支持条件の組は利用者が辺ごとに選ぶ値で Model に保存する。型（21 種）と写し方は導出できるので
 //! ここには無く、`rustruct-calc` が求める（ADR kirchhoff-plate-0003）。
+//! 板の材料も Model に保存し、E と ν はそこから導く（ADR kirchhoff-plate-0001）。
 
 use std::fmt;
 
+use crate::concrete::Concrete;
 use crate::quantity::{AreaLoad, Length, PoissonRatio, Stress};
+use crate::steel;
 
 /// Kirchhoff 板 Model。1 枚の板の入力で、保存するのはこの値だけ（ADR kirchhoff-plate-0001）。
 /// 保存形式（serde）は、保存を実装するときに、ADR site-0004（量の型）が予告した保存形式の見直しと合わせて付ける
@@ -16,14 +19,51 @@ pub struct Plate {
     pub ly: Length,
     /// 板厚 t
     pub thickness: Length,
-    /// ヤング係数 E
-    pub young_modulus: Stress,
-    /// ポアソン比 ν
-    pub poisson_ratio: PoissonRatio,
+    /// 板の材料。E と ν はここから導く
+    pub material: PlateMaterial,
     /// 等分布荷重 p（下向き正）
     pub load: AreaLoad,
     /// 4 辺の支持条件の組
     pub supports: Supports,
+}
+
+/// 板の材料。開き直したときに選んだ材料のまま戻すために Model に持つ。計算核は材料に依らず、
+/// [`Self::young_modulus`] と [`Self::poisson_ratio`] だけを読む（ADR kirchhoff-plate-0001）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PlateMaterial {
+    /// コンクリート。E は Fc と種類から導き、ν は持つ
+    Concrete {
+        concrete: Concrete,
+        poisson_ratio: PoissonRatio,
+    },
+    /// 鋼材。E と ν は鋼種に依らないので、鋼種は持たない
+    Steel,
+    /// E と ν を直接入力する。E が正の有限値かは計算核の入口が見る
+    Direct {
+        young_modulus: Stress,
+        poisson_ratio: PoissonRatio,
+    },
+}
+
+impl PlateMaterial {
+    /// ヤング係数 E
+    pub fn young_modulus(self) -> Stress {
+        match self {
+            Self::Concrete { concrete, .. } => concrete.young_modulus(),
+            Self::Steel => steel::young_modulus(),
+            Self::Direct { young_modulus, .. } => young_modulus,
+        }
+    }
+
+    /// ポアソン比 ν
+    pub fn poisson_ratio(self) -> PoissonRatio {
+        match self {
+            Self::Concrete { poisson_ratio, .. } | Self::Direct { poisson_ratio, .. } => {
+                poisson_ratio
+            }
+            Self::Steel => steel::poisson_ratio(),
+        }
+    }
 }
 
 /// 1 つの辺の支持条件。記号は F・S・R。

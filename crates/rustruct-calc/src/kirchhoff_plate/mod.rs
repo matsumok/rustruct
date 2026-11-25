@@ -177,7 +177,7 @@ pub fn solve(plate: &Plate) -> Result<Solution, PlateError> {
 /// `divisions` が 4 以上の偶数でないとき。分割数は呼び手（テスト）が決める定数で、利用者の入力ではない
 pub fn solve_with_divisions(plate: &Plate, divisions: usize) -> Result<Solution, PlateError> {
     let (support_type, frame) = normalize(plate)?;
-    let nu = plate.poisson_ratio.value();
+    let nu = plate.material.poisson_ratio().value();
     let solver = finite_element::solve(frame.b(), nu, support_type.representative(), divisions)
         .ok_or(PlateError::Singular)?;
     Ok(Solution {
@@ -192,7 +192,7 @@ pub fn solve_with_divisions(plate: &Plate, divisions: usize) -> Result<Solution,
 /// だけに級数解があり、ほかの型は `Ok(None)`。`terms` は級数の項数で、参照解の値は [`TERMS`]
 pub fn solve_with_series(plate: &Plate, terms: usize) -> Result<Option<Solution>, PlateError> {
     let (support_type, frame) = normalize(plate)?;
-    let nu = plate.poisson_ratio.value();
+    let nu = plate.material.poisson_ratio().value();
     Ok(
         series::solve(support_type, frame.b(), nu, terms)?.map(|solver| Solution {
             plate: *plate,
@@ -225,7 +225,7 @@ fn validate(plate: &Plate) -> Result<(), PlateError> {
         (positive(plate.ly.as_mm()), InvalidInput::Ly),
         (positive(plate.thickness.as_mm()), InvalidInput::Thickness),
         (
-            positive(plate.young_modulus.as_n_per_mm2()),
+            positive(plate.material.young_modulus().as_n_per_mm2()),
             InvalidInput::YoungModulus,
         ),
         (plate.load.as_n_per_mm2().is_finite(), InvalidInput::Load),
@@ -369,14 +369,16 @@ impl Solution {
     ///
     /// ```no_run
     /// # use rustruct_calc::kirchhoff_plate::{Plate, solve};
-    /// # use rustruct_types::kirchhoff_plate::{Edge, Support, Supports};
+    /// # use rustruct_types::kirchhoff_plate::{Edge, PlateMaterial, Support, Supports};
     /// # use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
     /// # let plate = Plate {
     /// #     lx: Length::mm(4000.0),
     /// #     ly: Length::mm(5000.0),
     /// #     thickness: Length::mm(200.0),
-    /// #     young_modulus: Stress::n_per_mm2(20_000.0),
-    /// #     poisson_ratio: PoissonRatio::new(0.2).unwrap(),
+    /// #     material: PlateMaterial::Direct {
+    /// #         young_modulus: Stress::n_per_mm2(20_000.0),
+    /// #         poisson_ratio: PoissonRatio::new(0.2).unwrap(),
+    /// #     },
     /// #     load: AreaLoad::kn_per_m2(10.0),
     /// #     supports: Supports { y_ly: Support::Free, ..Supports::all(Support::Fixed) },
     /// # };
@@ -385,14 +387,16 @@ impl Solution {
     ///
     /// ```compile_fail
     /// # use rustruct_calc::kirchhoff_plate::{Plate, solve};
-    /// # use rustruct_types::kirchhoff_plate::{Edge, Support, Supports};
+    /// # use rustruct_types::kirchhoff_plate::{Edge, PlateMaterial, Support, Supports};
     /// # use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
     /// # let plate = Plate {
     /// #     lx: Length::mm(4000.0),
     /// #     ly: Length::mm(5000.0),
     /// #     thickness: Length::mm(200.0),
-    /// #     young_modulus: Stress::n_per_mm2(20_000.0),
-    /// #     poisson_ratio: PoissonRatio::new(0.2).unwrap(),
+    /// #     material: PlateMaterial::Direct {
+    /// #         young_modulus: Stress::n_per_mm2(20_000.0),
+    /// #         poisson_ratio: PoissonRatio::new(0.2).unwrap(),
+    /// #     },
     /// #     load: AreaLoad::kn_per_m2(10.0),
     /// #     supports: Supports { y_ly: Support::Free, ..Supports::all(Support::Fixed) },
     /// # };
@@ -490,13 +494,13 @@ impl Solution {
     fn rigidity(&self) -> f64 {
         let t = self.plate.thickness.as_mm();
         let nu = self.nu();
-        self.plate.young_modulus.as_n_per_mm2() * t * t * t / (12.0 * (1.0 - nu * nu))
+        self.plate.material.young_modulus().as_n_per_mm2() * t * t * t / (12.0 * (1.0 - nu * nu))
     }
     fn p(&self) -> f64 {
         self.plate.load.as_n_per_mm2()
     }
     fn nu(&self) -> f64 {
-        self.plate.poisson_ratio.value()
+        self.plate.material.poisson_ratio().value()
     }
     /// 無次元の導関数から内部の単位の応答へ。たわみ w = (p a⁴ / D) ŵ、M = −p a² (ŵ_xx + ν ŵ_yy)、
     /// Q = −p a (ŵ_xxx + ŵ_xyy)。a は代表の向きの板の x の半辺長
