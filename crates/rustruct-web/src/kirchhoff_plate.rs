@@ -11,7 +11,7 @@ use dioxus::prelude::*;
 use dioxus_primitives::toggle_group::{ToggleGroup, ToggleItem};
 use numerus::significant;
 use rustruct_calc::kirchhoff_plate::{Extreme, InvalidInput, PlateError, Solution, solve};
-use rustruct_types::kirchhoff_plate::{Corner, Edge, Plate, Support, Supports};
+use rustruct_types::kirchhoff_plate::{Corner, Edge, Plate, PlateMaterial, Support, Supports};
 use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
 
 mod figure;
@@ -125,7 +125,8 @@ fn support_name(support: Support) -> &'static str {
 /// 入力の Sheet の中身。読めるかは `PlateOutcome` が決める
 pub type PlateInputs = Inputs<InputField>;
 
-/// 入力を Model へ。読めない欄と、`PoissonRatio` が受けない ν は理由を集めて初期値で埋める（`Reading`）
+/// 入力を Model へ。E と ν の欄は直接入力の材料にする。読めない欄と、`PoissonRatio` が受けない ν は理由を
+/// 集めて初期値で埋める（`Reading`）
 fn plate(reading: &mut Reading<'_, InputField>) -> Plate {
     let poisson_ratio = reading.typed(
         InputField::PoissonRatio,
@@ -136,8 +137,10 @@ fn plate(reading: &mut Reading<'_, InputField>) -> Plate {
         lx: Length::m(reading.number(InputField::Lx)),
         ly: Length::m(reading.number(InputField::Ly)),
         thickness: Length::mm(reading.number(InputField::Thickness)),
-        young_modulus: Stress::n_per_mm2(reading.number(InputField::YoungModulus)),
-        poisson_ratio,
+        material: PlateMaterial::Direct {
+            young_modulus: Stress::n_per_mm2(reading.number(InputField::YoungModulus)),
+            poisson_ratio,
+        },
         load: AreaLoad::kn_per_m2(reading.number(InputField::Load)),
         supports: supports(reading),
     }
