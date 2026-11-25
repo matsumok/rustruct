@@ -18,7 +18,7 @@ pub use figure::{SlabCurves, SlabFigure};
 use rustruct_types::quantity::{AreaLoad, Length};
 
 use crate::Route;
-use crate::chart;
+use crate::chart::{self, PointTerm, PointValue, PointedFigure, Pointer, use_pointer};
 use crate::data::{concrete, young_modulus};
 use crate::inputs::{Definition, Field, InputGroup, InputRecord, Inputs, Kind, Layout, use_inputs};
 use crate::page::Page;
@@ -287,15 +287,25 @@ impl PointRow {
         };
         let mm = |l: Length| fixed(l.as_mm(), 2);
         Self {
-            required_thickness: Some(fixed(ev.required_thickness.as_mm(), 1)),
+            required_thickness: Some(thickness_text(ev.required_thickness)),
             governing: Some(criterion_name(ev.governing).into()),
-            short_span: Some(fixed(ev.short_span.as_m(), 2)),
+            short_span: Some(span_text(ev.short_span)),
             aspect_ratio: Some(fixed(ev.aspect_ratio, 2)),
             elastic_deflection: Some(mm(ev.elastic_deflection)),
             amplified_deflection: Some(mm(ev.amplified_deflection)),
             allowable_deflection: ev.allowable_deflection.map(mm),
         }
     }
+}
+
+/// 必要スラブ厚の書き方（mm、小数 1 桁）。結果の表と点の値の行が使う
+fn thickness_text(thickness: Length) -> String {
+    fixed(thickness.as_mm(), 1)
+}
+
+/// スパンの書き方（m、小数 2 桁）。結果の表の lx と点の値の行の Lx・Ly が使う
+fn span_text(span: Length) -> String {
+    fixed(span.as_m(), 2)
 }
 
 /// 決定条件の呼び名
@@ -309,12 +319,26 @@ fn criterion_name(criterion: Criterion) -> &'static str {
 
 /// `/tools/slab-thickness`。条件の Sheet と共有値、検討点の Sheet と結果の表を置いた列と、等厚曲線の図の列
 /// （ADR site-0006）。「入力」「結果」の部の見出しは置かず、表の見出しで区切る。入力を読むのは入力が
-/// 変わったときの 1 回だけで、結果の表と図が同じ計算の結果を使う。
+/// 変わったときの 1 回だけで、結果の表と図が同じ計算の結果を使う。図の上で指した点は入力を変えても保ち、
+/// 点の値を出し直す。検討点が動いて範囲の外に出たら消す（ADR site-0018）。ページは指した点を読まず、読むのは
+/// 十字線の層と点の値の行だけ
 #[component]
 pub(crate) fn SlabThicknessPage() -> Element {
     let inputs = use_inputs::<SlabField>();
     let outcome = use_memo(move || SlabOutcome::from_inputs(&inputs.read()));
     let figure = use_memo(move || outcome.read().curves.as_ref().map(SlabFigure::new));
+    let pointer = use_pointer(move |p| {
+        figure
+            .read()
+            .as_ref()
+            .map_or(p, |figure| p.within(&figure.scene))
+    });
+    let point_value = use_memo(move || {
+        let figure = figure.read();
+        let pointed = pointer().within(&figure.as_ref()?.scene).point()?;
+        let outcome = outcome.read();
+        Some(outcome.curves.as_ref()?.point_value(pointed.at))
+    });
     let readout = outcome.read().readout.clone();
     let SharedRow {
         young_modulus,
@@ -406,27 +430,33 @@ pub(crate) fn SlabThicknessPage() -> Element {
                     }
                 }
                 Column {
-                    FigureBlock { figure: figure() }
+                    FigureBlock { figure: figure(), pointer, point_value }
                 }
             }
         }
     }
 }
 
-/// 等厚曲線の図の一まとまり。図の名前、図、読み方の注記。条件が読めない間やクライテリアが無いときは
-/// 図の代わりに注記だけを置く（理由は条件の Sheet の下が言う）
+/// 等厚曲線の図の一まとまり。図の名前、図、点の値の行、読み方の注記。条件が読めない間やクライテリアが
+/// 無いときは図と点の値の行の代わりに注記だけを置く（理由は条件の Sheet の下が言う）
 #[component]
-fn FigureBlock(figure: Option<SlabFigure>) -> Element {
+fn FigureBlock(
+    figure: Option<SlabFigure>,
+    pointer: Signal<Pointer>,
+    point_value: ReadSignal<Option<Vec<PointTerm>>>,
+) -> Element {
     rsx! {
         Block {
             Caption { "必要スラブ厚の等厚曲線（mm）" }
             match figure {
                 Some(figure) => rsx! {
-                    figure {
-                        role: "img",
-                        "aria-label": figure.label,
-                        dangerous_inner_html: chart::svg(&figure.scene),
+                    PointedFigure {
+                        label: figure.label,
+                        svg: chart::svg(&figure.scene),
+                        scene: figure.scene,
+                        pointer,
                     }
+                    PointValue { terms: point_value }
                     Notes {
                         li { "曲線は 10 mm ごと、色は 20 mm ごと" }
                         li { "80 mm 未満は塗らない" }

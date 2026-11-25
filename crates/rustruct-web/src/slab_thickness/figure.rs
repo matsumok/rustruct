@@ -16,7 +16,9 @@ use numerus::at_place;
 use rustruct_calc::slab_thickness::{CheckedConditions, MIN_SLAB_THICKNESS, Spans};
 use rustruct_types::quantity::Length;
 
+use super::{span_text, thickness_text};
 use crate::COLUMN_WIDTH;
+use crate::chart::PointTerm;
 
 /// 検討点が無いときの範囲（両軸、m）
 const DEFAULT_VIEW: (f64, f64) = (3.0, 9.0);
@@ -48,6 +50,37 @@ pub struct SlabCurves {
     pub(super) checked: CheckedConditions,
     /// スパンが読めないときは無し。範囲は検討点の無いもので、印を置かない
     pub(super) point: Option<(String, Spans)>,
+}
+
+impl SlabCurves {
+    /// 点の値: 図の上の点 `at`（Lx・Ly、m）の Lx・Ly と、検査を通った条件をそのスパンで計算した必要スラブ厚
+    /// （曲線から補間しない。ADR site-0018）。桁は結果の表と同じ。計算核が値を出せない点（0 以下のスパン）は
+    /// 必要スラブ厚が無し（「—」）
+    pub fn point_value(&self, at: Pt) -> Vec<PointTerm> {
+        let [x, y] = at.map(Length::m);
+        let required_thickness = self
+            .checked
+            .evaluate(Spans { x, y })
+            .ok()
+            .map(|ev| thickness_text(ev.required_thickness));
+        vec![
+            PointTerm {
+                symbol: "Lx",
+                value: Some(span_text(x)),
+                unit: "m",
+            },
+            PointTerm {
+                symbol: "Ly",
+                value: Some(span_text(y)),
+                unit: "m",
+            },
+            PointTerm {
+                symbol: "t_req",
+                value: required_thickness,
+                unit: "mm",
+            },
+        ]
+    }
 }
 
 /// 等厚曲線の図。図の名前はページが置く
