@@ -63,6 +63,7 @@
     --text-body--font-weight: 400;
     --text-prose: 15px;
     --text-prose--line-height: 28px;
+    --text-prose--font-weight: 400;
     --text-label: 11px;
     --text-label--line-height: 16px;
     --text-label--font-weight: 400;
@@ -380,6 +381,9 @@
   .transform {
     transform: var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,);
   }
+  .list-decimal {
+    list-style-type: decimal;
+  }
   .list-disc {
     list-style-type: disc;
   }
@@ -388,6 +392,12 @@
   }
   .flex-col {
     flex-direction: column;
+  }
+  .flex-wrap {
+    flex-wrap: wrap;
+  }
+  .items-baseline {
+    align-items: baseline;
   }
   .items-center {
     align-items: center;
@@ -422,8 +432,14 @@
   .gap-8 {
     gap: var(--spacing-8);
   }
+  .gap-x-3 {
+    column-gap: var(--spacing-3);
+  }
   .gap-x-4 {
     column-gap: var(--spacing-4);
+  }
+  .gap-y-2 {
+    row-gap: var(--spacing-2);
   }
   .gap-y-6 {
     row-gap: var(--spacing-6);
@@ -579,6 +595,11 @@
     font-size: var(--text-path);
     line-height: var(--tw-leading, var(--text-path--line-height));
     font-weight: var(--tw-font-weight, var(--text-path--font-weight));
+  }
+  .text-prose {
+    font-size: var(--text-prose);
+    line-height: var(--tw-leading, var(--text-prose--line-height));
+    font-weight: var(--tw-font-weight, var(--text-prose--font-weight));
   }
   .text-title {
     font-size: var(--text-title);

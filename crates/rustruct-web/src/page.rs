@@ -52,14 +52,37 @@ pub(crate) fn SectionPage() -> Element {
 /// 下層ページ。`title` の見出し（ページ名）、本文の順。サイドバーは無い。
 /// 本文の箱は最大2単位（`max-w-page`）で、左右の余白の内側で中央に置く。
 /// 住所は本文に出さない。iPad・PC はヘッダーのパンくず、スマホはメニューの木で示す（#28）。
+/// 説明書のあるページ（Tool）は、見出しの右に説明書へ移るバッジを置く（`docs/design/README.md`「ツール画面の約束」、
+/// ADR site-0020）。見出しとバッジは文字の並び（baseline）に揃え、見出しが収まらない幅ではバッジが見出しの下に回る。
 #[component]
 pub(crate) fn Page(route: Route, children: Element) -> Element {
     rsx! {
         // 見出しと本文の間は space-7（ページの見出しも一つの区切りなので、セクションの間と同じ。12 では狭く見えた。
         // 2026-10-15、20・28・40 を撮り比べて本人が決めた）
         main { class: "mx-auto flex max-w-page flex-col gap-7 py-7 lg:max-w-page-lg",
-            h1 { class: "text-title", {route.text().heading} }
+            // 見出しとバッジの間は space-3（ひとまとまりの中の空き）、回り込んだときの上下は space-2（行の上下）
+            div { class: "flex flex-wrap items-baseline gap-x-3 gap-y-2",
+                h1 { class: "text-title", {route.text().heading} }
+                if let Some(manual) = route.manual() {
+                    ManualBadge { to: manual }
+                }
+            }
             div { class: "text-body", {children} }
+        }
+    }
+}
+
+/// 説明書へ移るバッジ。文言は「説明書」で、`label` の `ink`。囲みはボタンと同じ `line-strong` の枠と
+/// `radius-8`（角の丸い枠は押せるものの印。ADR site-0020）。左右の空きは Sheet の欄の文字の左と同じ `space-2`。
+/// 読み上げは説明書のページの見出し
+#[component]
+fn ManualBadge(to: Route) -> Element {
+    rsx! {
+        Link {
+            to: to.clone(),
+            class: "rounded-8 border border-line-strong px-2 text-label text-ink",
+            "aria-label": to.text().heading,
+            "説明書"
         }
     }
 }

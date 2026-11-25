@@ -13,6 +13,10 @@
 構造計算の入力・計算・判定を行う画面のひとつ。Model を持ち、保存できる。
 _Avoid_: 計算ツール、アプリ、ページ
 
+**説明書**:
+Tool の計算の中身（仮定、式、結果に出る量の定義、符号）を、使う人に向けて文と式で説明するページ。Tool ごとに 1 つで、住所は Tool の一段下の `/tools/<Tool>/manual`。Tool のページの見出しの右のバッジから移る。
+_Avoid_: マニュアル、ヘルプ、解説、使い方
+
 **分野**:
 Tools の一覧で Tool を束ねる見出し。材料ごとの RC・Steel・Timber と、解析の Dynamics・Mechanics の5つ。Mechanics は材料に依らない梁・板の弾性解の Tool。必要スラブ厚さは RC、地震応答は Dynamics、Kirchhoff 板の曲げは Mechanics。コードでは Domain。
 _Avoid_: カテゴリ、構造種別、S、木造、力学（見出しでは英語で呼ぶ）
