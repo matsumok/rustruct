@@ -2,9 +2,14 @@
 //!
 //! 表は `build.rs` が `$OUT_DIR/chart_theme.rs` に写す（`theme.rs` の `chart_theme_rs`）。charta は値の源を
 //! 読まず、ここで作った `Theme` を受け取る。図の module は `Scene` までを作り、SVG にするのはページが呼ぶ
-//! [`svg`] だけ。
+//! [`svg`] だけ。図の上で点を指す部品（十字線の層と点の値の行）は [`pointed`]。
 
 use charta::{Colors, Scene, Theme, to_svg};
+
+mod pointed;
+
+pub use pointed::{PointTerm, Pointed, Pointer};
+pub(crate) use pointed::{PointValue, PointedFigure};
 
 mod table {
     include!(concat!(env!("OUT_DIR"), "/chart_theme.rs"));

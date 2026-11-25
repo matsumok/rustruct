@@ -7,10 +7,13 @@ use common::markup::count_tags;
 use common::{
     Said, assert_in_order, element, flagged_heads, input_groups, paragraphs, said, text_of,
 };
-use rustruct_types::kirchhoff_plate::{Edge, Support};
+use numerus::significant;
+use rustruct_calc::kirchhoff_plate::{PointResponse, Solution, solve};
+use rustruct_types::kirchhoff_plate::{Edge, Plate, PlateMaterial, Support, Supports};
+use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
 use rustruct_web::{
-    InputField, Material, PlateFigure, PlateInputs, PlateOutcome, PlateReadout, Quantity, material,
-    render_path, render_path_with, switch_material,
+    InputField, Material, PlateFigure, PlateInputs, PlateOutcome, PlateReadout, PointTerm, Pointed,
+    Pointer, Quantity, material, render_path, render_path_with, switch_material,
 };
 
 #[test]
@@ -542,6 +545,180 @@ fn the_figure_holds_the_plate_as_its_plot_inside_the_margin_and_returns_points_o
     }
 }
 
+/// 初期値の板（4 × 5 m、四辺固定）を計算核で直接解いたもの
+fn initial_solution() -> Solution {
+    let fixed = Support::Fixed;
+    solve(&Plate {
+        lx: Length::m(4.0),
+        ly: Length::m(5.0),
+        thickness: Length::mm(150.0),
+        material: PlateMaterial::Direct {
+            young_modulus: Stress::n_per_mm2(22700.0),
+            poisson_ratio: PoissonRatio::new(0.0).unwrap(),
+        },
+        load: AreaLoad::kn_per_m2(10.0),
+        supports: Supports {
+            x0: fixed,
+            y0: fixed,
+            x_lx: fixed,
+            y_ly: fixed,
+        },
+    })
+    .unwrap()
+}
+
+/// 図の量の、計算核の点の応答での値（図の名前の単位）
+fn value_of(quantity: Quantity, r: &PointResponse) -> f64 {
+    match quantity {
+        Quantity::W => r.w.as_mm(),
+        Quantity::Mx => r.mx.as_knm_per_m(),
+        Quantity::My => r.my.as_knm_per_m(),
+        Quantity::Qx => r.qx.as_kn_per_m(),
+        Quantity::Qy => r.qy.as_kn_per_m(),
+    }
+}
+
+/// 点の値の項を「x = 1.00 m」の形の文字に（値が無ければ「—」）
+fn terms_text(terms: &[PointTerm]) -> Vec<String> {
+    terms
+        .iter()
+        .map(|t| {
+            let value = t.value.clone().unwrap_or_else(|| "—".into());
+            format!("{} = {value} {}", t.symbol, t.unit)
+        })
+        .collect()
+}
+
+/// 図の画面の点 `screen` に止めた、指した点
+fn pinned_at(scene: &Scene, screen: [f64; 2]) -> Pointer {
+    let (plot, at) = scene.locate(screen).expect("板の中");
+    Pointer::Pinned(Pointed { plot, at })
+}
+
+#[test]
+fn the_point_value_is_the_value_of_the_solution_at_that_point_for_each_quantity() {
+    let field = PlateOutcome::from_inputs(&PlateInputs::default())
+        .field
+        .unwrap();
+    let solution = initial_solution();
+    for at in [[1.0, 1.5], [0.37, 4.12], [2.0, 2.5], [4.0, 0.0]] {
+        let r = solution.at(Length::m(at[0]), Length::m(at[1])).unwrap();
+        for quantity in Quantity::ALL {
+            let unit = match quantity {
+                Quantity::W => "mm",
+                Quantity::Mx | Quantity::My => "kN·m/m",
+                Quantity::Qx | Quantity::Qy => "kN/m",
+            };
+            assert_eq!(
+                terms_text(&field.point_value(quantity, at)),
+                [
+                    format!("x = {} m", significant(at[0], 3)),
+                    format!("y = {} m", significant(at[1], 3)),
+                    format!(
+                        "{} = {} {unit}",
+                        quantity.symbol(),
+                        significant(value_of(quantity, &r), 3)
+                    ),
+                ],
+                "{at:?} {quantity:?}"
+            );
+        }
+    }
+    // 中央の点の値は、結果の表の板の中央の値と同じ文字
+    let center = PlateOutcome::from_inputs(&PlateInputs::default())
+        .readout
+        .center;
+    for (quantity, table) in [
+        (Quantity::W, center.w),
+        (Quantity::Mx, center.mx),
+        (Quantity::My, center.my),
+    ] {
+        assert_eq!(field.point_value(quantity, [2.0, 2.5])[2].value, table);
+    }
+}
+
+#[test]
+fn a_pinned_point_is_kept_across_the_quantities_and_the_lengths_and_cleared_off_the_plate() {
+    let solution = initial_solution();
+    let w = figure_of(&PlateInputs::default(), Quantity::W)
+        .unwrap()
+        .scene;
+    let [lo, hi] = w.plots[0].bounds();
+    // 描く範囲の左から 3/4、下から 1/5 の所（x = 3 m、y = 1 m）
+    let pinned = pinned_at(
+        &w,
+        [
+            lo[0] + 0.75 * (hi[0] - lo[0]),
+            hi[1] - 0.2 * (hi[1] - lo[1]),
+        ],
+    );
+    let at = pinned.point().unwrap().at;
+    assert!(
+        (at[0] - 3.0).abs() < 1e-9 && (at[1] - 1.0).abs() < 1e-9,
+        "{at:?}"
+    );
+
+    // 量を切り替えても同じ点で、その量の値
+    let field = PlateOutcome::from_inputs(&PlateInputs::default())
+        .field
+        .unwrap();
+    let mx = figure_of(&PlateInputs::default(), Quantity::Mx)
+        .unwrap()
+        .scene;
+    assert_eq!(pinned.within(&mx), pinned);
+    let r = solution.at(Length::m(at[0]), Length::m(at[1])).unwrap();
+    assert_eq!(
+        field.point_value(Quantity::Mx, at)[2].value,
+        Some(significant(r.mx.as_knm_per_m(), 3))
+    );
+
+    // 辺長を変えると、同じ点で新しい解の値を出し直す
+    let longer = inputs(|i| i.set(InputField::Lx, "6.0"));
+    let scene = figure_of(&longer, Quantity::W).unwrap().scene;
+    assert_eq!(pinned.within(&scene), pinned);
+    let moved = PlateOutcome::from_inputs(&longer)
+        .field
+        .unwrap()
+        .point_value(Quantity::W, at);
+    assert_ne!(moved, field.point_value(Quantity::W, at));
+    assert_eq!(terms_text(&moved[..2]), ["x = 3.00 m", "y = 1.00 m"]);
+
+    // 点が板の外に出る辺長では消える
+    let shorter = figure_of(&inputs(|i| i.set(InputField::Lx, "2.5")), Quantity::W)
+        .unwrap()
+        .scene;
+    assert_eq!(pinned.within(&shorter), Pointer::Nothing);
+}
+
+#[test]
+fn the_page_says_how_to_point_between_the_figure_and_its_notes() {
+    // 図を描く前（SSG）は読み方の文。十字線の層は無く、図は読み上げの名前の付いた img
+    let free = element(
+        &render_path_with("/tools/kirchhoff-plate", three_fixed_one_free()),
+        "main",
+    )
+    .to_string();
+    assert_in_order(
+        &text_of(&free),
+        &[
+            "Qy",
+            HINT,
+            "色の幅は、隅から辺長の 5 % 以内の点を除いて決める",
+        ],
+    );
+    assert_eq!(count_tags(&free, "figure", &[("role", "img")]), 1, "{free}");
+    assert_eq!(free.matches("<svg xmlns").count(), 1, "{free}");
+    // 解けないときは図も読み方の文も無い
+    let mut unstable = PlateInputs::default();
+    set_all(&mut unstable, Support::Free);
+    let main = element(
+        &render_path_with("/tools/kirchhoff-plate", unstable),
+        "main",
+    )
+    .to_string();
+    assert!(!main.contains(HINT), "{main}");
+}
+
 #[test]
 fn the_figure_of_the_initial_inputs_is_at_most_96_497_bytes_of_svg() {
     // 帯を範囲ごとの外周で描く（#128）。上限は、帯をセルと三角形の小片で敷き詰めていたときの 385,989 B の 1/4
@@ -668,10 +845,14 @@ fn a_negative_poisson_ratio_is_named_with_the_range_of_poisson_ratio() {
 
 // 入力の組の HTML（`scripts/screenshot.sh` は欄に打てないので、打った後の状態はここで見る）
 
+/// 分布図の点の値の行の、何も指していないときの読み方の文。組の下の段落で、図があればいつもある
+const HINT: &str = "図を指すとその点の値を出す";
+
 #[test]
 fn the_initial_group_says_nothing() {
+    // 組の下の段落は、分布図の点の値の行の読み方の文だけ
     let group = group(|_| {});
-    assert_eq!(paragraphs(&group), Vec::<String>::new(), "{group}");
+    assert_eq!(paragraphs(&group), [HINT], "{group}");
     assert_eq!(flagged_heads(&group), 0, "{group}");
 }
 
@@ -846,7 +1027,7 @@ fn concrete_shows_fc_and_nu_to_write_and_e_to_read_as_an_integer() {
         0,
         "{fc_row}"
     );
-    assert_eq!(paragraphs(&group), Vec::<String>::new(), "{group}");
+    assert_eq!(paragraphs(&group), [HINT], "{group}");
 }
 
 #[test]
@@ -863,7 +1044,7 @@ fn steel_shows_e_and_nu_to_read() {
         "{group}"
     );
     assert!(!group.contains("Fc"), "{group}");
-    assert_eq!(paragraphs(&group), Vec::<String>::new(), "{group}");
+    assert_eq!(paragraphs(&group), [HINT], "{group}");
 }
 
 #[test]
@@ -875,7 +1056,7 @@ fn an_fc_below_18_is_a_warning_of_the_input_group_and_the_plate_is_still_solved(
     let group = group(change);
     assert_eq!(
         paragraphs(&group),
-        ["! Fc が下限 18 N/mm² に満たない"],
+        ["! Fc が下限 18 N/mm² に満たない", HINT],
         "{group}"
     );
     assert_eq!(flagged_heads(&group), 0, "{group}");

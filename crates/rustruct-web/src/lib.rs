@@ -59,6 +59,7 @@ mod shell;
 /// ページの中身: トップ、ページの一覧、下層ページの枠、まだ中身の無いページ。
 mod page;
 
+pub use chart::{PointTerm, Pointed, Pointer};
 pub use data::{ConcreteField, ConcreteInputs, ConcreteReadout, ConcreteValues};
 pub use inputs::InputRecord;
 pub use kirchhoff_plate::{

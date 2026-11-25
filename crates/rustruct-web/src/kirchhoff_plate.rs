@@ -19,7 +19,7 @@ use figure::corner_margin_text;
 pub use figure::{PlateField, PlateFigure, Quantity};
 
 use crate::Route;
-use crate::chart;
+use crate::chart::{self, PointTerm, PointValue, PointedFigure, Pointer};
 use crate::data;
 use crate::inputs::{
     Definition, Field, InputGroup, InputRecord, Inputs, Kind, Layout, Reading, use_inputs,
@@ -560,7 +560,7 @@ impl PlateOutcome {
             readout: solution
                 .as_ref()
                 .map_or_else(PlateReadout::not_computed, PlateReadout::computed),
-            field: solution.as_ref().map(PlateField::new),
+            field: solution.map(PlateField::new),
         }
     }
 }
@@ -578,11 +578,13 @@ fn figures(value: f64) -> Option<String> {
 
 /// `/tools/kirchhoff-plate`。入力の Sheet のすぐ下に結果の表を続けた列と、分布図の列（ADR site-0006）。
 /// 「入力」「結果」の部の見出しは置かず、表の見出しで区切る。解くのは入力が変わったときだけで、
-/// 分布図の量を切り替えても解き直さない。
+/// 分布図の量を切り替えても解き直さない。図の上で指した点は入力や量を変えても保ち、点の値を出し直す
+/// （ADR site-0018）。ページは指した点を読まず、読むのは十字線の層と点の値の行だけ
 #[component]
 pub(crate) fn KirchhoffPlatePage() -> Element {
     let mut inputs = use_inputs::<InputField>();
     let quantity = use_signal(|| Quantity::W);
+    let pointer = use_signal(Pointer::default);
     let outcome = use_memo(move || PlateOutcome::from_inputs(&inputs.read()));
     let figure = use_memo(move || {
         outcome
@@ -590,6 +592,12 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
             .field
             .as_ref()
             .map(|field| PlateFigure::new(field, quantity()))
+    });
+    let point_value = use_memo(move || {
+        let figure = figure.read();
+        let pointed = pointer().within(&figure.as_ref()?.scene).point()?;
+        let outcome = outcome.read();
+        Some(outcome.field.as_ref()?.point_value(quantity(), pointed.at))
     });
     let readout = outcome.read().readout.clone();
     let CenterRow { w, mx, my } = readout.center.clone();
@@ -699,29 +707,36 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                     }
                 }
                 Column {
-                    FigureBlock { quantity, figure: figure() }
+                    FigureBlock { quantity, figure: figure(), pointer, point_value }
                 }
             }
         }
     }
 }
 
-/// 分布図の一まとまり。図の名前、量の切替、図、図の注記（`PlateFigure::notes`。無ければ箇条を置かない）。
-/// 支持条件は入力の表が言うので、縁の読み方は書かない。解けないときは図と注記の代わりに「—」だけを置く
-/// （解けない理由は入力の下の注記が言う）
+/// 分布図の一まとまり。図の名前、量の切替、図、点の値の行、図の注記（`PlateFigure::notes`。無ければ箇条を
+/// 置かない）。支持条件は入力の表が言うので、縁の読み方は書かない。解けないときは図と注記の代わりに「—」だけを
+/// 置く（解けない理由は入力の下の注記が言う）
 #[component]
-fn FigureBlock(quantity: Signal<Quantity>, figure: Option<PlateFigure>) -> Element {
+fn FigureBlock(
+    quantity: Signal<Quantity>,
+    figure: Option<PlateFigure>,
+    pointer: Signal<Pointer>,
+    point_value: ReadSignal<Option<Vec<PointTerm>>>,
+) -> Element {
     rsx! {
         Block {
             Caption { {quantity().caption()} }
             QuantitySwitch { quantity }
             match figure {
                 Some(figure) => rsx! {
-                    figure {
-                        role: "img",
-                        "aria-label": figure.label,
-                        dangerous_inner_html: chart::svg(&figure.scene),
+                    PointedFigure {
+                        label: figure.label,
+                        svg: chart::svg(&figure.scene),
+                        scene: figure.scene,
+                        pointer,
                     }
+                    PointValue { terms: point_value }
                     if !figure.notes.is_empty() {
                         Notes {
                             for note in figure.notes {
