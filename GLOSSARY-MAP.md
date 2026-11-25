@@ -6,7 +6,7 @@
 - [材料](./docs/materials/GLOSSARY.md): コンクリートと鉄筋と鋼材。複数の Tool が共有する
 - [スラブ](./docs/slab/GLOSSARY.md): 長方形の RC スラブの形（内法スパン・スラブ厚）。RC スラブの Tool が共有する
 - [必要スラブ厚さ](./docs/tools/slab-thickness/GLOSSARY.md): RC 二方向スラブ（四辺固定）の必要スラブ厚と等厚曲線
-- [Kirchhoff 板](./docs/tools/kirchhoff-plate/GLOSSARY.md): 長方形の等厚な板（辺ごとに支持条件を選ぶ）の、等分布荷重によるたわみと応力の分布。材料に依らない
+- [Kirchhoff 板](./docs/tools/kirchhoff-plate/GLOSSARY.md): 長方形の等厚な板（辺ごとに支持条件を選ぶ）の、等分布荷重によるたわみと応力の分布。解き方は材料に依らない
 - [スラブ設計](./docs/tools/slab-design/GLOSSARY.md): RC 規準と Kirchhoff 板の解析で、スラブを配筋まで設計する（将来。まだ言葉は無い）
 - [地震応答](./docs/tools/seismic-response/GLOSSARY.md): 多質点モデルの地震応答
 - [図（charta）](./crates/charta/GLOSSARY.md): グラフ描画のクレートの、Tool に依らない図の言葉（描く範囲、指した点）
