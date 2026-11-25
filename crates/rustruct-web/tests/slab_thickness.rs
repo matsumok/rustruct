@@ -397,6 +397,50 @@ fn the_initial_view_is_a_square_centered_on_the_point() {
 }
 
 #[test]
+fn the_figure_holds_the_framed_view_as_its_plot_and_its_ticks_and_names_hit_nothing() {
+    // 検討点 (4.0, 5.0) が 1 つ: 範囲は 3〜5 m × 4〜6 m
+    let scene = figure(|_| {}).unwrap().scene;
+    assert_eq!(scene.plots.len(), 1, "{:?}", scene.plots);
+    let (x, y, side) = frame(&scene);
+    assert_eq!(scene.plots[0].bounds(), [[x, y], [x + side, y + side]]);
+    // 枠の 4 隅と中心（枠の線の上も当たる）
+    for (screen, data) in [
+        ([x, y + side], [3.0, 4.0]),
+        ([x + side, y + side], [5.0, 4.0]),
+        ([x, y], [3.0, 6.0]),
+        ([x + side, y], [5.0, 6.0]),
+        ([x + side / 2.0, y + side / 2.0], [4.0, 5.0]),
+    ] {
+        let (k, p) = scene.locate(screen).expect("枠の中");
+        assert_eq!(k, 0);
+        assert!(
+            (p[0] - data[0]).abs() < 1e-12 && (p[1] - data[1]).abs() < 1e-12,
+            "{screen:?} → {p:?}"
+        );
+    }
+    // 枠の外の目盛りの数値と軸の名前は当たらない
+    let outside: Vec<(&str, Pt)> = scene
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Text {
+                x: tx, y: ty, text, ..
+            } if *tx < x || *ty > y + side => Some((text.as_str(), [*tx, *ty])),
+            _ => None,
+        })
+        .collect();
+    for name in ["3.0", "6.0", "Lx（m）", "Ly（m）"] {
+        assert!(
+            outside.iter().any(|(t, _)| *t == name),
+            "{name}: {outside:?}"
+        );
+    }
+    for (text, at) in outside {
+        assert_eq!(scene.locate(at), None, "{text}");
+    }
+}
+
+#[test]
 fn the_point_is_marked_with_its_name() {
     let scene = figure(|i| i.set(SlabField::Name, "S2")).unwrap().scene;
     assert_eq!(marks(&scene).len(), 1, "{scene:?}");
