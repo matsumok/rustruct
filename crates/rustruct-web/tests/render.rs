@@ -451,6 +451,29 @@ fn the_tool_page_has_a_badge_to_its_manual_right_after_the_heading() {
         h1_text(&render_path("/tools/kirchhoff-plate")),
         "Kirchhoff 板の曲げ"
     );
+    // 見出しとバッジは一つの文字の流れで、見出しが折り返してもバッジは最後の行の文字の後に続く
+    // （見出しは inline、バッジは inline-block。flex の項目にすると見出しの箱の後ろ、次の行の頭に回る）
+    let html = render_path("/tools/kirchhoff-plate");
+    let main = element(&html, "main");
+    let classes = |name: &str| -> Vec<String> {
+        let tag = tags(main)
+            .into_iter()
+            .find(|t| t.name == name)
+            .unwrap_or_else(|| panic!("{name} が無い"));
+        tag.get("class")
+            .unwrap_or_default()
+            .split_whitespace()
+            .map(str::to_string)
+            .collect()
+    };
+    assert!(
+        classes("h1").contains(&"inline".to_string()),
+        "見出しが inline でない"
+    );
+    assert!(
+        classes("a").contains(&"inline-block".to_string()),
+        "バッジが inline-block でない"
+    );
     // 説明書のないページには置かない
     for path in ["/tools/slab-thickness", "/tools/kirchhoff-plate/manual"] {
         assert_eq!(

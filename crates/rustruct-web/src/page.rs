@@ -53,16 +53,19 @@ pub(crate) fn SectionPage() -> Element {
 /// 本文の箱は最大2単位（`max-w-page`）で、左右の余白の内側で中央に置く。
 /// 住所は本文に出さない。iPad・PC はヘッダーのパンくず、スマホはメニューの木で示す（#28）。
 /// 説明書のあるページ（Tool）は、見出しの右に説明書へ移るバッジを置く（`docs/design/README.md`「ツール画面の約束」、
-/// ADR site-0020）。見出しとバッジは文字の並び（baseline）に揃え、見出しが収まらない幅ではバッジが見出しの下に回る。
+/// ADR site-0020）。見出しとバッジは一つの文字の流れに置き、バッジは見出しの文字の後に続いて文字の並び（baseline）に揃う。
+/// 見出しが折り返してもその最後の行の後に続き、そこに収まらなければ次の行の頭に回る。
 #[component]
 pub(crate) fn Page(route: Route, children: Element) -> Element {
     rsx! {
         // 見出しと本文の間は space-7（ページの見出しも一つの区切りなので、セクションの間と同じ。12 では狭く見えた。
         // 2026-10-15、20・28・40 を撮り比べて本人が決めた）
         main { class: "mx-auto flex max-w-page flex-col gap-7 py-7 lg:max-w-page-lg",
-            // 見出しとバッジの間は space-3（ひとまとまりの中の空き）、回り込んだときの上下は space-2（行の上下）
-            div { class: "flex flex-wrap items-baseline gap-x-3 gap-y-2",
-                h1 { class: "text-title", {route.text().heading} }
+            // 見出しは inline で、バッジ（inline-block）が見出しの最後の行に続く。行送りは title。
+            // 見出しとバッジの間は space-3（ひとまとまりの中の空き）。文字の流れでは gap が使えないので見出しの右の空きで取る。
+            // 見出しの右に付くので、バッジが次の行に回ったときは前の行の末尾に残り、バッジは行の頭から始まる
+            div { class: "text-title",
+                h1 { class: if route.manual().is_some() { "inline mr-3" } else { "inline" }, {route.text().heading} }
                 if let Some(manual) = route.manual() {
                     ManualBadge { to: manual }
                 }
@@ -80,7 +83,7 @@ fn ManualBadge(to: Route) -> Element {
     rsx! {
         Link {
             to: to.clone(),
-            class: "rounded-8 border border-line-strong px-2 text-label text-ink",
+            class: "inline-block rounded-8 border border-line-strong px-2 text-label text-ink",
             "aria-label": to.text().heading,
             "説明書"
         }
