@@ -488,9 +488,26 @@ fn the_manual_is_headed_and_reached_through_its_tool_in_the_breadcrumb() {
 fn the_manual_formulas_are_typeset_in_the_html_without_more_scripts() {
     let html = render_path("/tools/kirchhoff-plate/manual");
     let article = element(element(&html, "main"), "article");
-    assert_eq!(text_of(element(article, "h2")), "1 仮定と式");
+    let sections: Vec<String> = elements(&strip_annotations(article), "h2")
+        .into_iter()
+        .map(text_of)
+        .collect();
+    assert_eq!(
+        sections,
+        [
+            "1 仮定と式",
+            "2 符号と座標",
+            "3 支持条件",
+            "4 解き方と精度",
+            "5 隅の扱いと最大値",
+            "6 ν の扱い",
+        ]
+    );
     let headings: Vec<String> = elements(article, "h3").into_iter().map(text_of).collect();
-    assert_eq!(headings, ["仮定", "曲げ剛性とたわみの式", "結果に出る量"]);
+    assert_eq!(
+        headings[..3],
+        ["仮定", "曲げ剛性とたわみの式", "結果に出る量"]
+    );
     let display = count_tags(article, "math", &[("display", "block")]);
     assert!(display > 0, "別行の式が無い");
     assert!(count_tags(article, "math", &[]) > display, "文中の式が無い");
