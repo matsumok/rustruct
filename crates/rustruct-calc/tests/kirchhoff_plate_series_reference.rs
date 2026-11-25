@@ -330,11 +330,14 @@ fn the_deflection_maximum_matches_the_series_solutions() {
 #[test]
 fn the_bending_maxima_match_the_series_solutions() {
     // 曲げモーメントの向きごとの最大値（Mx・My の下側引張と上側引張）が、参照解の最大と M の許容（0.5 %、
-    // 板全体の |M| の最大に対して。ADR kirchhoff-plate-0002）で一致する。四辺単純支持の上側引張はどちらも値 0・位置無し
+    // 板全体の |M| の最大に対して。ADR kirchhoff-plate-0002）で一致し、位置が辺長の 1e-3 で一致する。縦横比 1.5 の
+    // 四辺固定の My の下側引張は、中央をはさむ 2 点のうち原点に近い側（y ≈ 1239 mm）。四辺単純支持の上側引張は、
+    // どちらの解も 0 に丸めない小さな値で（有限要素は辺の上で 0 にならない。ADR kirchhoff-plate-0010）、位置は比べない
     let lx = 2000.0;
     for (symbol, supports) in [("SSSS", SSSS), ("FFFF", FFFF)] {
         for ratio in [1.0, 1.5] {
-            let p = plate(lx, ratio * lx, 0.2, 10.0, supports);
+            let ly = ratio * lx;
+            let p = plate(lx, ly, 0.2, 10.0, supports);
             let (r, f) = (reference(&p).maxima(), solve(&p).unwrap().maxima());
             let pairs = [
                 ("Mx の下側引張", r.mx_bottom, f.mx_bottom),
@@ -354,11 +357,22 @@ fn the_bending_maxima_match_the_series_solutions() {
                     5e-3 * scale,
                     &what,
                 );
-                assert_eq!(f.position.is_some(), r.position.is_some(), "{what}");
-                assert_eq!(
-                    f.position.is_none(),
-                    symbol == "SSSS" && name.ends_with("上側引張"),
-                    "{what}"
+                if symbol == "SSSS" && name.ends_with("上側引張") {
+                    continue;
+                }
+                let (pr, pf) = (
+                    r.position
+                        .unwrap_or_else(|| panic!("{what}: 参照解に位置が無い")),
+                    f.position.unwrap_or_else(|| panic!("{what}: 位置が無い")),
+                );
+                assert_within(pf.x.as_mm(), pr.x.as_mm(), 1e-3 * lx, &what);
+                assert_within(pf.y.as_mm(), pr.y.as_mm(), 1e-3 * ly, &what);
+            }
+            if symbol == "FFFF" && ratio == 1.5 {
+                let y = f.my_bottom.position.expect("位置").y.as_mm();
+                assert!(
+                    (1200.0..1300.0).contains(&y),
+                    "{symbol} 比 {ratio} の My: y = {y}"
                 );
             }
         }

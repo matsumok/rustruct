@@ -48,7 +48,7 @@ const MAXIMA_GRID: usize = 40;
 /// 板全体の最大値を探す格子の、長い辺の等分の数の上限
 const MAXIMA_GRID_LIMIT: usize = 400;
 
-/// 同じ大きさとみなす幅と、0 とみなす幅。最大の値に対する比（ADR kirchhoff-plate-0009、ADR kirchhoff-plate-0010）
+/// 同じ大きさとみなす幅。最大の値に対する比（ADR kirchhoff-plate-0009、ADR kirchhoff-plate-0010）
 const SAME: f64 = 1e-9;
 
 /// 隅の近くとして除く幅。辺長に対する比。自由辺のある組で、分布図の色の幅と、辺のせん断力・辺の反力の
@@ -172,8 +172,8 @@ pub struct Position {
     pub y: Length,
 }
 
-/// 板全体の最大値の 1 つ（GLOSSARY「最大値」）。値と、その位置。位置が無いのは板のどこにもその量が無いときで、
-/// 値は 0（四辺単純支持の上側引張の Mx など。荷重が 0 の板ではどの量も）
+/// 板全体の最大値の 1 つ（GLOSSARY「最大値」）。値と、その位置。位置が無いのは板のどこにもその量が無いとき
+/// （曲げモーメントはその符号の値が無いとき。荷重が 0 の板など）で、値は 0
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Maximum<T> {
     pub value: T,
@@ -502,11 +502,11 @@ impl Solution {
 
     /// 板全体の最大値（ADR kirchhoff-plate-0010）。たわみは [`Self::deflection_maximum`]。曲げモーメントとせん断力は、
     /// 板を等分した格子（短い辺を 40 等分）の点から最大の点を選び、その点に接する目の中を [`Self::at`] の値で詰める
-    /// （詰め方は最大たわみと同じ）。辺の上の点では、境界条件で 0 の曲げモーメント（単純支持の辺では Mx・My の
-    /// どちらも、自由辺では辺に直交する方向のもの）をちょうど 0 とする。
+    /// （詰め方は最大たわみと同じ）。値は有限要素の値そのもので、辺の上の値も 0 に直さない（単純支持の辺の
+    /// 曲げモーメントは、ちょうど 0 にならない小さな値が出る）。
     ///
-    /// - 曲げモーメントは向きごと（下側引張と上側引張）に取る。格子で見たその向きの最大が、その曲げの |M| の
-    ///   最大の 1e-9 倍以下なら、値 0・位置無し
+    /// - 曲げモーメントは向きごと（下側引張と上側引張）に取る。取った最大は 0 に丸めずに返し、板のどこにもその
+    ///   符号の値が無い（ちょうど 0 か逆の符号だけの）ときだけ、値 0・位置無し
     /// - せん断力は |Q| の最大の点の、符号つきの値。自由辺のある組では隅から辺長の [`CORNER_MARGIN`] 以内の点
     ///   （[`Self::near_corner`]）を除く（ADR kirchhoff-plate-0008）。曲げモーメントは隅まで含める
     /// - 同じ大きさの最大が板を辺に平行な中心線で折り返した点にもあるときは、原点に近い側（y、次に x の小さいほう）
@@ -527,7 +527,7 @@ impl Solution {
         let grid: Vec<PointResponse> = ys
             .iter()
             .flat_map(|&y| xs.iter().map(move |&x| (x, y)))
-            .map(|(x, y)| self.bounded_at(x, y))
+            .map(|(x, y)| self.response(x, y))
             .collect();
         let free = self.plate.supports.has_free_edge();
         let search = Search {
@@ -538,10 +538,9 @@ impl Solution {
         };
 
         let moment = |pick: fn(&PointResponse) -> f64| {
-            let scale = grid.iter().map(|r| pick(r).abs()).fold(0.0, f64::max);
             let found = |sign: f64| {
                 search
-                    .peak(|r| sign * pick(r), SAME * scale)
+                    .peak(|r| sign * pick(r))
                     .map(|(position, r)| (MomentPerLength::nmm_per_mm(pick(&r)), position))
             };
             (found(1.0), found(-1.0))
@@ -554,9 +553,8 @@ impl Solution {
                     pick(r).abs()
                 }
             };
-            let scale = grid.iter().map(magnitude).fold(0.0, f64::max);
             search
-                .peak(magnitude, SAME * scale)
+                .peak(magnitude)
                 .map(|(position, r)| (ForcePerLength::n_per_mm(pick(&r)), position))
         };
         let (mx_bottom, mx_top) = moment(|r| r.mx.as_nmm_per_mm());
@@ -578,32 +576,9 @@ impl Solution {
         }
     }
 
-    /// 点 (x, y) [mm] の応答。辺の上では、境界条件で 0 の曲げモーメントをちょうど 0 にする（単純支持の辺では
-    /// 辺に沿ってたわみが 0 で、辺に直交する方向の曲げモーメントも 0 なので、Mx・My のどちらも。自由辺では辺に
-    /// 直交する方向のもの）。有限要素はこの条件を弱い形でしか満たさず、辺の上の値は 0 にならない（[`Self::edge`]
-    /// と同じ）。辺の上かは座標がちょうど 0 か辺長か
-    fn bounded_at(&self, x: f64, y: f64) -> PointResponse {
-        let (lx, ly) = (self.plate.lx.as_mm(), self.plate.ly.as_mm());
-        let mut r = self.at(Length::mm(x), Length::mm(y)).expect("板の上の点");
-        let zero = MomentPerLength::nmm_per_mm(0.0);
-        for (edge, on) in [
-            (Edge::X0, x == 0.0),
-            (Edge::XLx, x == lx),
-            (Edge::Y0, y == 0.0),
-            (Edge::YLy, y == ly),
-        ] {
-            if !on {
-                continue;
-            }
-            let normal_x = matches!(edge, Edge::X0 | Edge::XLx);
-            match self.plate.supports.at(edge) {
-                Support::SimplySupported => (r.mx, r.my) = (zero, zero),
-                Support::Free if normal_x => r.mx = zero,
-                Support::Free => r.my = zero,
-                Support::Fixed => {}
-            }
-        }
-        r
+    /// 点 (x, y) [mm] の応答。板の上の点だけを呼ぶ
+    fn response(&self, x: f64, y: f64) -> PointResponse {
+        self.at(Length::mm(x), Length::mm(y)).expect("板の上の点")
     }
 
     /// 点 (x, y) [mm] で `magnitude` が最大のとき、板を辺に平行な中心線で折り返した点（3 つ）にも同じ大きさ
@@ -688,7 +663,7 @@ impl Solution {
     }
 }
 
-/// 板全体の最大値を探す格子と、その点の応答（[`Solution::bounded_at`]。y の小さい行から、行の中は x の小さい順）
+/// 板全体の最大値を探す格子と、その点の応答（y の小さい行から、行の中は x の小さい順）
 struct Search<'a> {
     solution: &'a Solution,
     xs: &'a [f64],
@@ -698,32 +673,28 @@ struct Search<'a> {
 
 impl Search<'_> {
     /// `objective`（大きいほど最大。除く点は負の無限大）が最大の点の位置と応答。格子の点から最大の点を選び
-    /// （同じ値なら先の点）、接する目の中で詰め、折り返した点の同じ大きさの最大から原点に近い側を選ぶ。格子で
-    /// 見た最大が `floor` 以下なら None
-    fn peak(
-        &self,
-        objective: impl Fn(&PointResponse) -> f64,
-        floor: f64,
-    ) -> Option<(Position, PointResponse)> {
+    /// （同じ値なら先の点）、接する目の中で詰め、折り返した点の同じ大きさの最大から原点に近い側を選ぶ。詰めた
+    /// 最大が 0 以下（板のどこにも正の `objective` が無い）なら None。0 に近い小さな値も丸めない
+    fn peak(&self, objective: impl Fn(&PointResponse) -> f64) -> Option<(Position, PointResponse)> {
         let nx = self.xs.len();
-        let (best, value) = self.grid.iter().map(&objective).enumerate().fold(
+        let (best, _) = self.grid.iter().map(&objective).enumerate().fold(
             (0, f64::NEG_INFINITY),
             |(bk, bv), (k, v)| {
                 if v > bv { (k, v) } else { (bk, bv) }
             },
         );
-        if value <= floor {
+        let at = |x: f64, y: f64| objective(&self.solution.response(x, y));
+        let (x, y) = refine(at, self.xs, self.ys, (best % nx, best / nx));
+        if at(x, y) <= 0.0 {
             return None;
         }
-        let at = |x: f64, y: f64| objective(&self.solution.bounded_at(x, y));
-        let (x, y) = refine(at, self.xs, self.ys, (best % nx, best / nx));
         let (x, y) = self.solution.nearer_origin(at, x, y);
         Some((
             Position {
                 x: Length::mm(x),
                 y: Length::mm(y),
             },
-            self.solution.bounded_at(x, y),
+            self.solution.response(x, y),
         ))
     }
 }

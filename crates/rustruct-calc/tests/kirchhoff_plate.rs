@@ -567,9 +567,11 @@ fn the_top_tension_and_shear_maxima_of_a_fixed_plate_are_the_edge_maxima() {
 }
 
 #[test]
-fn a_simply_supported_plate_has_no_top_tension() {
-    // 四辺単純支持。上側引張の曲げはどこにも無く、値 0・位置無し。下側引張は中央の値以上（長い辺の向きの
-    // 曲げモーメントは、縦横比と ν によって中央の外が最大になる。級数解でも同じ）
+fn a_simply_supported_plate_shows_its_tiny_top_tension_as_it_is() {
+    // 四辺単純支持。有限要素の曲げモーメントは辺の上でちょうど 0 にならず、上側引張の最大はその小さな負の値と
+    // 位置になる（0 に丸めない。ADR kirchhoff-plate-0010）。大きさは M の許容（下側引張の最大の 0.5 %、
+    // ADR kirchhoff-plate-0002）より小さい。下側引張は中央の値以上（長い辺の向きの曲げモーメントは、縦横比と ν
+    // によって中央の外が最大になる。級数解でも同じ）
     for nu in [0.0, 0.2] {
         for (lx, ly) in [(2000.0, 2000.0), (2000.0, 3000.0), (5000.0, 2000.0)] {
             let s = solve(&plate(
@@ -583,9 +585,13 @@ fn a_simply_supported_plate_has_no_top_tension() {
             let m = s.maxima();
             let centre = at(&s, lx / 2.0, ly / 2.0);
             let what = format!("ν = {nu} {lx} × {ly}");
-            for (name, top) in [("Mx", m.mx_top), ("My", m.my_top)] {
-                assert_eq!(top.value.as_nmm_per_mm(), 0.0, "{what} の {name}");
-                assert_eq!(top.position, None, "{what} の {name}");
+            for (name, top, bottom) in
+                [("Mx", m.mx_top, m.mx_bottom), ("My", m.my_top, m.my_bottom)]
+            {
+                let what = format!("{what} の {name}");
+                position(&top, &what);
+                let (top, bottom) = (top.value.as_nmm_per_mm(), bottom.value.as_nmm_per_mm());
+                assert!(top < 0.0 && -top < 5e-3 * bottom, "{what}: {top}");
             }
             for (name, bottom, centre) in [
                 ("Mx", m.mx_bottom, centre.mx.as_nmm_per_mm()),
