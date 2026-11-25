@@ -425,7 +425,6 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                     InputGroup {
                         inputs,
                         layout: Layout::RowHeads(ROWS.map(|row| row.to_vec()).to_vec()),
-                        notes: vec!["ν は 0 を基本とする".into()],
                         record: outcome.read().record.clone(),
                         Block {
                             Caption { "板の中央" }
@@ -467,7 +466,6 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                             li { "辺上の絶対値の最大値" }
                             li { "M は曲げモーメント、Q はせん断力、V は辺の反力" }
                             li { "左右の辺の M・Q は Mx・Qx、上下の辺は My・Qy" }
-                            li { "単純支持辺と自由辺では M は 0" }
                             li { "辺の反力は支える向きを正とする" }
                             for note in readout.edge_notes.iter().cloned() {
                                 li { {note} }
@@ -521,8 +519,9 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
     }
 }
 
-/// 分布図の一まとまり。図の名前、量の切替、図、支持条件の読み方の注記。解けないときは図と読み方の
-/// 代わりに「—」だけを置く（解けない理由は入力の下の注記が言う）
+/// 分布図の一まとまり。図の名前、量の切替、図、図の注記（`PlateFigure::notes`。無ければ箇条を置かない）。
+/// 支持条件は入力の表が言うので、縁の読み方は書かない。解けないときは図と注記の代わりに「—」だけを置く
+/// （解けない理由は入力の下の注記が言う）
 #[component]
 fn FigureBlock(quantity: Signal<Quantity>, figure: Option<PlateFigure>) -> Element {
     rsx! {
@@ -536,12 +535,11 @@ fn FigureBlock(quantity: Signal<Quantity>, figure: Option<PlateFigure>) -> Eleme
                         "aria-label": figure.label,
                         dangerous_inner_html: chart::svg(&figure.scene),
                     }
-                    Notes {
-                        li { "斜線の付いた辺は固定" }
-                        li { "線だけの辺は単純支持" }
-                        li { "線の無い辺は自由" }
-                        for note in figure.notes {
-                            li { {note} }
+                    if !figure.notes.is_empty() {
+                        Notes {
+                            for note in figure.notes {
+                                li { {note} }
+                            }
                         }
                     }
                 },

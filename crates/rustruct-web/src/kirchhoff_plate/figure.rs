@@ -149,7 +149,7 @@ pub struct PlateFigure {
     pub label: String,
     /// 図。色は役割名で、SVG にするのはページ
     pub scene: Scene,
-    /// 支持条件の読み方に続ける注記。自由辺のある組では色の幅の決め方（ADR kirchhoff-plate-0008）
+    /// 図の下の注記。自由辺のある組では色の幅の決め方（ADR kirchhoff-plate-0008）。ほかの組では無い
     pub notes: Vec<String>,
 }
 
