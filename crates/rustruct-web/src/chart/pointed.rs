@@ -142,7 +142,7 @@ pub(crate) fn PointedFigure(
     let (now_move, now_leave, now_press) = (current.clone(), current.clone(), current);
     rsx! {
         figure {
-            class: "relative w-fit *:pointer-events-none",
+            class: "relative w-fit",
             role: "img",
             "aria-label": label,
             onresize: move |event: Event<ResizeData>| {
@@ -162,7 +162,7 @@ pub(crate) fn PointedFigure(
                 let offset = event.element_coordinates();
                 pointer.set(now_press().press(on_press([offset.x, offset.y])));
             },
-            div { dangerous_inner_html: svg }
+            div { class: "pointer-events-none", dangerous_inner_html: svg }
             Crosshair { frame, pointer }
         }
     }
@@ -177,7 +177,7 @@ fn Crosshair(frame: Scene, pointer: Signal<Pointer>) -> Element {
         .map(|pointed| svg(&crosshair(&frame, pointed)));
     rsx! {
         if let Some(layer) = layer {
-            div { class: "absolute inset-0", dangerous_inner_html: layer }
+            div { class: "pointer-events-none absolute inset-0", dangerous_inner_html: layer }
         }
     }
 }
