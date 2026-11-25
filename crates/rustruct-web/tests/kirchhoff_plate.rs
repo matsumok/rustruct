@@ -4,10 +4,13 @@
 mod common;
 use charta::{Item, Paint, Palette, Scene};
 use common::markup::count_tags;
-use common::{assert_in_order, element, reasons, text_of};
+use common::{
+    Said, assert_in_order, element, flagged_heads, input_groups, paragraphs, said, text_of,
+};
 use rustruct_types::kirchhoff_plate::{Edge, Support};
 use rustruct_web::{
     InputField, PlateFigure, PlateInputs, PlateOutcome, PlateReadout, Quantity, render_path,
+    render_path_with,
 };
 
 #[test]
@@ -146,10 +149,28 @@ fn the_signs_are_stated_in_the_notes() {
     }
 }
 
-fn readout(change: impl FnOnce(&mut PlateInputs)) -> PlateReadout {
+fn inputs(change: impl FnOnce(&mut PlateInputs)) -> PlateInputs {
     let mut inputs = PlateInputs::default();
     change(&mut inputs);
-    PlateOutcome::from_inputs(&inputs).readout
+    inputs
+}
+
+fn outcome(change: impl FnOnce(&mut PlateInputs)) -> PlateOutcome {
+    PlateOutcome::from_inputs(&inputs(change))
+}
+
+fn readout(change: impl FnOnce(&mut PlateInputs)) -> PlateReadout {
+    outcome(change).readout
+}
+
+/// 入力を打った後のページの、入力の組の HTML（組は 1 つ）
+fn group(change: impl FnOnce(&mut PlateInputs)) -> String {
+    let html = render_path_with("/tools/kirchhoff-plate", inputs(change));
+    let groups = input_groups(element(&html, "main"));
+    let [group] = groups[..] else {
+        panic!("入力の組が 1 つでない: {html}");
+    };
+    group.to_string()
 }
 
 /// 4 辺とも同じ支持条件にする
@@ -176,18 +197,23 @@ fn assert_not_computed(r: &PlateReadout) {
 
 #[test]
 fn an_unstable_combination_shows_dashes_and_says_the_plate_is_not_held() {
-    let r = readout(|i| set_all(i, Support::Free));
-    assert_eq!(r.notice, Some("この支持条件の組では板を支えられない"));
-    assert!(r.errors.is_empty());
-    assert_not_computed(&r);
+    let o = outcome(|i| set_all(i, Support::Free));
+    assert_eq!(
+        said(&o.record),
+        Said {
+            warnings: vec!["この支持条件の組では板を支えられない"],
+            ..Said::default()
+        }
+    );
+    assert_not_computed(&o.readout);
 }
 
 #[test]
 fn a_combination_with_a_free_edge_is_solved() {
     // 不安定な組以外はすべて解ける（ADR kirchhoff-plate-0002）。釣り合いと自由辺の反力は計算核のテスト
-    let r = readout(|i| i.set(InputField::Support(Edge::XLx), Support::Free.symbol()));
-    assert_eq!(r.notice, None);
-    assert!(r.errors.is_empty());
+    let o = outcome(|i| i.set(InputField::Support(Edge::XLx), Support::Free.symbol()));
+    assert_eq!(said(&o.record), Said::default());
+    let r = o.readout;
     assert!(r.balance.reactions.is_some());
     // 自由辺の反力は辺の全体で 0 なので、位置は無し
     let free = &r.edges[1].max_reaction;
@@ -201,8 +227,9 @@ fn a_combination_with_a_free_edge_is_solved() {
 fn a_simply_supported_plate_shows_a_reaction_at_every_corner() {
     // 隅反力の向きと釣り合いは計算核のテスト（ADR kirchhoff-plate-0007）。ここでは隅ごとの行の名前と、
     // 値が出ていること
-    let r = readout(|i| set_all(i, Support::SimplySupported));
-    assert_eq!(r.notice, None);
+    let o = outcome(|i| set_all(i, Support::SimplySupported));
+    assert_eq!(said(&o.record), Said::default());
+    let r = o.readout;
     let names: Vec<&str> = r.corners.iter().map(|(name, _)| name.as_str()).collect();
     assert_eq!(
         names,
@@ -222,25 +249,28 @@ fn a_simply_supported_plate_shows_a_reaction_at_every_corner() {
 
 #[test]
 fn unreadable_fields_are_named_with_their_reasons_and_nothing_is_computed() {
-    let r = readout(|i| {
+    let o = outcome(|i| {
         i.set(InputField::Lx, "0");
         i.set(InputField::Thickness, "-150");
         i.set(InputField::YoungModulus, "abc");
         i.set(InputField::PoissonRatio, "0.5");
         i.set(InputField::Load, "");
     });
+    // 読めない欄があるあいだは、解けない理由（警告）を言わない
     assert_eq!(
-        reasons(&r.errors),
-        [
-            (InputField::Lx, "0 より大きい値を入れる"),
-            (InputField::Thickness, "0 より大きい値を入れる"),
-            (InputField::YoungModulus, "数値で入れる"),
-            (InputField::PoissonRatio, "0 以上 0.5 未満で入れる"),
-            (InputField::Load, "値を入れる"),
-        ]
+        said(&o.record),
+        Said {
+            reasons: vec![
+                (InputField::Lx, "0 より大きい値を入れる"),
+                (InputField::Thickness, "0 より大きい値を入れる"),
+                (InputField::YoungModulus, "数値で入れる"),
+                (InputField::PoissonRatio, "0 以上 0.5 未満で入れる"),
+                (InputField::Load, "値を入れる"),
+            ],
+            ..Said::default()
+        }
     );
-    assert_eq!(r.notice, None);
-    assert_not_computed(&r);
+    assert_not_computed(&o.readout);
 }
 
 #[test]
@@ -548,10 +578,46 @@ fn the_shear_figure_of_a_plate_with_a_free_edge_is_read_inside_the_plate() {
 
 #[test]
 fn a_negative_poisson_ratio_is_named_with_the_range_of_poisson_ratio() {
-    let r = readout(|i| i.set(InputField::PoissonRatio, "-0.1"));
+    let o = outcome(|i| i.set(InputField::PoissonRatio, "-0.1"));
     assert_eq!(
-        reasons(&r.errors),
-        [(InputField::PoissonRatio, "0 以上 0.5 未満で入れる")]
+        said(&o.record),
+        Said {
+            reasons: vec![(InputField::PoissonRatio, "0 以上 0.5 未満で入れる")],
+            ..Said::default()
+        }
     );
-    assert_not_computed(&r);
+    assert_not_computed(&o.readout);
+}
+
+// 入力の組の HTML（`scripts/screenshot.sh` は欄に打てないので、打った後の状態はここで見る）
+
+#[test]
+fn the_initial_group_says_nothing() {
+    let group = group(|_| {});
+    assert_eq!(paragraphs(&group), Vec::<String>::new(), "{group}");
+    assert_eq!(flagged_heads(&group), 0, "{group}");
+}
+
+#[test]
+fn unreadable_fields_and_a_poisson_ratio_out_of_range_are_said_under_the_sheet() {
+    let group = group(|i| {
+        i.set(InputField::Lx, "x");
+        i.set(InputField::PoissonRatio, "0.5");
+    });
+    // 分布図は解けないので「—」
+    assert_eq!(
+        paragraphs(&group),
+        ["Lx（m）: 数値で入れる", "ν: 0 以上 0.5 未満で入れる", "—"]
+    );
+    assert_eq!(flagged_heads(&group), 2, "{group}");
+}
+
+#[test]
+fn an_unstable_combination_is_a_warning_without_flags() {
+    let group = group(|i| set_all(i, Support::Free));
+    assert_eq!(
+        paragraphs(&group),
+        ["! この支持条件の組では板を支えられない", "—"]
+    );
+    assert_eq!(flagged_heads(&group), 0, "{group}");
 }

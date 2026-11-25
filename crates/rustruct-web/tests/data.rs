@@ -3,8 +3,12 @@
 
 mod common;
 use common::markup::count_tags;
-use common::{assert_in_order, text_of};
-use rustruct_web::{ConcreteReadout, render_path};
+use common::{
+    Said, assert_in_order, element, flagged_heads, input_groups, paragraphs, said, text_of,
+};
+use rustruct_web::{
+    ConcreteField, ConcreteInputs, ConcreteReadout, ConcreteValues, render_path, render_path_with,
+};
 
 #[test]
 fn data_lists_concrete_then_rebar_with_path_name_and_blurb() {
@@ -140,25 +144,31 @@ fn concrete_page_puts_fc_in_a_sheet_with_a_row_head() {
     );
 }
 
-/// 計算できたときの表示。(γ, E, ワーニング)
-fn computed(input: &str) -> (String, String, Option<String>) {
-    match ConcreteReadout::from_fc_input(input) {
-        ConcreteReadout::Computed {
-            unit_weight,
-            young_modulus,
-            warning,
-            ..
-        } => (unit_weight, young_modulus, warning),
-        unusable => panic!("入力「{input}」が計算できない: {unusable:?}"),
-    }
+/// 計算できたときの表示。(γ, E, 警告)
+fn computed(input: &str) -> (String, String, Vec<String>) {
+    let readout = ConcreteReadout::from_fc_input(input);
+    let warnings = said(&readout.record)
+        .warnings
+        .into_iter()
+        .map(String::from)
+        .collect();
+    let Some(ConcreteValues {
+        unit_weight,
+        young_modulus,
+        ..
+    }) = readout.values
+    else {
+        panic!("入力「{input}」が計算できない: {readout:?}");
+    };
+    (unit_weight, young_modulus, warnings)
 }
 
 #[test]
 fn readout_shows_allowable_stresses_to_three_figures() {
     // Fc 24: 圧縮 8, 16 / せん断 0.73, 1.095 / 上端筋 1.54, 2.31 / その他 2.31, 3.465
-    let ConcreteReadout::Computed {
+    let Some(ConcreteValues {
         allowable_stresses, ..
-    } = ConcreteReadout::from_fc_input("24")
+    }) = ConcreteReadout::from_fc_input("24").values
     else {
         panic!("Fc 24 が計算できない");
     };
@@ -184,40 +194,79 @@ fn readout_rounds_unit_weights_to_one_decimal_and_e_to_three_figures() {
         ("60", "24.0", "3.35E+04"),
         ("100", "25.0", "4.31E+04"),
     ] {
-        assert_eq!(computed(fc), (gamma.into(), e.into(), None), "Fc {fc}");
+        assert_eq!(
+            computed(fc),
+            (gamma.into(), e.into(), Vec::new()),
+            "Fc {fc}"
+        );
     }
 }
 
 #[test]
 fn readout_warns_outside_18_to_100_but_still_computes() {
-    let (gamma, _, warning) = computed("12");
+    let (gamma, _, warnings) = computed("12");
     assert_eq!(gamma, "23.0");
-    assert_eq!(warning.as_deref(), Some("Fc が下限 18 N/mm² に満たない"));
-    let (gamma, _, warning) = computed("120");
+    assert_eq!(warnings, ["Fc が下限 18 N/mm² に満たない"]);
+    let (gamma, _, warnings) = computed("120");
     assert_eq!(gamma, "25.0");
     assert_eq!(
-        warning.as_deref(),
-        Some("Fc が単位体積重量の表の上限 100 N/mm² を超える。γ は最後の区分の値を使う")
+        warnings,
+        ["Fc が単位体積重量の表の上限 100 N/mm² を超える。γ は最後の区分の値を使う"]
     );
 }
 
-/// 理由は入力の組の文言（欄の名前を含めない。Sheet の下に「Fc（N/mm²）: 理由」と出る）
+/// 理由は入力の組の文言（欄の名前を含めない。Sheet の下に「Fc（N/mm²）: 理由」と出る）。理由があるときは
+/// 値が無い（「—」）
 #[test]
-fn readout_is_unusable_with_an_error_when_fc_cannot_be_used() {
+fn readout_has_no_values_and_a_reason_when_fc_cannot_be_used() {
     for (input, error) in [
         ("", "値を入れる"),
         ("abc", "数値で入れる"),
         ("0", "0 より大きい値を入れる"),
         ("-5", "0 より大きい値を入れる"),
     ] {
+        let readout = ConcreteReadout::from_fc_input(input);
         assert_eq!(
-            ConcreteReadout::from_fc_input(input),
-            ConcreteReadout::Unusable {
-                error: error.into()
+            said(&readout.record),
+            Said {
+                reasons: vec![(ConcreteField::Fc, error)],
+                ..Said::default()
             },
             "入力「{input}」"
         );
+        assert_eq!(readout.values, None, "入力「{input}」");
     }
+}
+
+/// 打った後の入力の組（`scripts/screenshot.sh` は欄に打てない）。使えない Fc は理由と「—」
+#[test]
+fn concrete_page_says_the_reason_under_the_sheet_and_dashes_the_values() {
+    let mut inputs = ConcreteInputs::default();
+    inputs.set(ConcreteField::Fc, "0");
+    let html = render_path_with("/data/concrete", inputs);
+    let groups = input_groups(element(&html, "main"));
+    let [group] = groups[..] else {
+        panic!("入力の組が 1 つでない: {html}");
+    };
+    assert_eq!(
+        paragraphs(group).first().map(String::as_str),
+        Some("Fc（N/mm²）: 0 より大きい値を入れる"),
+        "{group}"
+    );
+    assert_eq!(flagged_heads(group), 1, "{group}");
+    assert!(!text_of(group).contains("2.27E+04"), "{group}");
+    assert!(text_of(group).contains('—'), "{group}");
+
+    let mut inputs = ConcreteInputs::default();
+    inputs.set(ConcreteField::Fc, "12");
+    let html = render_path_with("/data/concrete", inputs);
+    let group = input_groups(element(&html, "main"))[0];
+    assert_eq!(
+        paragraphs(group).first().map(String::as_str),
+        Some("! Fc が下限 18 N/mm² に満たない"),
+        "{group}"
+    );
+    assert_eq!(flagged_heads(group), 0, "{group}");
 }
 
 #[test]

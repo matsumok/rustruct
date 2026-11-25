@@ -18,7 +18,7 @@ pub mod markup;
 #[cfg(not(target_arch = "wasm32"))]
 mod prerender;
 #[cfg(not(target_arch = "wasm32"))]
-pub use prerender::render_path;
+pub use prerender::{render_path, render_path_with};
 
 /// SSG: 書き出す住所の列挙と、書く場所の設定。書き出したものを読む検査。
 mod ssg;
@@ -59,7 +59,8 @@ mod shell;
 /// ページの中身: トップ、ページの一覧、下層ページの枠、まだ中身の無いページ。
 mod page;
 
-pub use data::ConcreteReadout;
+pub use data::{ConcreteField, ConcreteInputs, ConcreteReadout, ConcreteValues};
+pub use inputs::InputRecord;
 pub use kirchhoff_plate::{
     InputField, PlateFigure, PlateInputs, PlateOutcome, PlateReadout, Quantity,
 };

@@ -3,8 +3,12 @@
 
 mod common;
 use charta::{Font, Item, Pt, Scene};
-use common::{assert_in_order, element, reasons, text_of};
-use rustruct_web::{SlabField, SlabFigure, SlabInputs, SlabOutcome, SlabReadout, render_path};
+use common::{
+    Said, assert_in_order, element, flagged_heads, input_groups, paragraphs, said, text_of,
+};
+use rustruct_web::{
+    SlabField, SlabFigure, SlabInputs, SlabOutcome, SlabReadout, render_path, render_path_with,
+};
 
 #[test]
 fn tools_lists_slab_thickness_under_the_rc_heading_before_mechanics() {
@@ -101,10 +105,28 @@ fn the_page_shows_the_shared_values_and_the_point_results_in_order() {
     assert!(!text.contains("結果"), "部の見出し「結果」がある: {text}");
 }
 
-fn readout(change: impl FnOnce(&mut SlabInputs)) -> SlabReadout {
+fn inputs(change: impl FnOnce(&mut SlabInputs)) -> SlabInputs {
     let mut inputs = SlabInputs::default();
     change(&mut inputs);
-    SlabOutcome::from_inputs(&inputs).readout
+    inputs
+}
+
+fn outcome(change: impl FnOnce(&mut SlabInputs)) -> SlabOutcome {
+    SlabOutcome::from_inputs(&inputs(change))
+}
+
+fn readout(change: impl FnOnce(&mut SlabInputs)) -> SlabReadout {
+    outcome(change).readout
+}
+
+/// 入力を打った後のページの、入力の組ごとの HTML（条件の組、検討点の組）
+fn groups(change: impl FnOnce(&mut SlabInputs)) -> [String; 2] {
+    let html = render_path_with("/tools/slab-thickness", inputs(change));
+    let groups = input_groups(element(&html, "main"));
+    let [conditions, point] = groups[..] else {
+        panic!("入力の組が 2 つでない: {html}");
+    };
+    [conditions.to_string(), point.to_string()]
 }
 
 fn point_values(r: &SlabReadout) -> [Option<&str>; 7] {
@@ -128,9 +150,9 @@ fn shared_values(r: &SlabReadout) -> [Option<&str>; 3] {
 
 #[test]
 fn the_initial_point_is_governed_by_the_deflection_ratio_at_its_limit() {
-    let r = readout(|_| {});
-    assert!(r.errors.is_empty() && !r.no_criteria && r.warning.is_none());
-    let p = &r.point;
+    let o = outcome(|_| {});
+    assert_eq!(said(&o.record), Said::default());
+    let p = &o.readout.point;
     assert_eq!(p.governing.as_deref(), Some("変形角"));
     // 変形角が決めるので、増大後たわみ = 許容たわみ = 4000/400
     assert_eq!(p.amplified_deflection.as_deref(), Some("10.00"));
@@ -150,11 +172,12 @@ fn swapping_lx_and_ly_gives_the_same_results() {
 
 #[test]
 fn turning_on_the_table_and_blanking_the_ratio_leaves_only_the_minimum_thickness() {
-    let r = readout(|i| {
+    let o = outcome(|i| {
         i.set(SlabField::DeflectionRatio, "");
         i.set(SlabField::MinThickness, "true");
     });
-    assert!(r.errors.is_empty() && !r.no_criteria);
+    assert_eq!(said(&o.record), Said::default());
+    let r = o.readout;
     // wp = 2800 N/m²、lx = 4000 mm、λ = 1.25: 0.02·(0.55/0.65)·(1+0.28+0.4)·4000 = 113.7
     assert_eq!(r.point.required_thickness.as_deref(), Some("113.7"));
     assert_eq!(r.point.governing.as_deref(), Some("表18-1"));
@@ -164,9 +187,22 @@ fn turning_on_the_table_and_blanking_the_ratio_leaves_only_the_minimum_thickness
 
 #[test]
 fn blank_criteria_with_the_table_off_is_an_error_and_nothing_is_evaluated() {
-    let r = readout(|i| i.set(SlabField::DeflectionRatio, ""));
-    assert!(r.no_criteria);
-    assert!(r.errors.is_empty());
+    let o = outcome(|i| i.set(SlabField::DeflectionRatio, ""));
+    assert_eq!(
+        said(&o.record),
+        Said {
+            across: vec![(
+                vec![
+                    SlabField::DeflectionRatio,
+                    SlabField::DeflectionAbsolute,
+                    SlabField::MinThickness,
+                ],
+                "クライテリアを 1 つ以上入れる",
+            )],
+            ..Said::default()
+        }
+    );
+    let r = o.readout;
     assert!(point_values(&r).iter().all(Option::is_none), "{r:#?}");
     // 共有値は条件だけで決まるので出る
     assert_eq!(
@@ -177,17 +213,21 @@ fn blank_criteria_with_the_table_off_is_an_error_and_nothing_is_evaluated() {
 
 #[test]
 fn an_unreadable_span_leaves_the_shared_values_and_dashes_the_point() {
-    let r = readout(|i| {
+    let o = outcome(|i| {
         i.set(SlabField::SpanX, "0");
         i.set(SlabField::SpanY, "abc");
     });
     assert_eq!(
-        reasons(&r.errors),
-        [
-            (SlabField::SpanX, "0 より大きい値を入れる"),
-            (SlabField::SpanY, "数値で入れる"),
-        ]
+        said(&o.record),
+        Said {
+            reasons: vec![
+                (SlabField::SpanX, "0 より大きい値を入れる"),
+                (SlabField::SpanY, "数値で入れる"),
+            ],
+            ..Said::default()
+        }
     );
+    let r = o.readout;
     assert!(point_values(&r).iter().all(Option::is_none), "{r:#?}");
     assert_eq!(
         shared_values(&r),
@@ -197,7 +237,7 @@ fn an_unreadable_span_leaves_the_shared_values_and_dashes_the_point() {
 
 #[test]
 fn unreadable_conditions_are_named_with_their_reasons() {
-    let r = readout(|i| {
+    let o = outcome(|i| {
         i.set(SlabField::Fc, "");
         i.set(SlabField::FinishLoad, "-1");
         i.set(SlabField::LiveLoad, "0");
@@ -205,29 +245,41 @@ fn unreadable_conditions_are_named_with_their_reasons() {
         i.set(SlabField::DeflectionRatio, "x");
         i.set(SlabField::DeflectionAbsolute, "-20");
     });
+    // 読めない欄があるときはクライテリアが「無い」と言わない（欄をまたぐ理由が無い）
     assert_eq!(
-        reasons(&r.errors),
-        [
-            (SlabField::Fc, "値を入れる"),
-            (SlabField::FinishLoad, "0 以上の値を入れる"),
-            (SlabField::Amplification, "0 より大きい値を入れる"),
-            (SlabField::DeflectionRatio, "数値で入れる"),
-            (SlabField::DeflectionAbsolute, "0 より大きい値を入れる"),
-        ]
+        said(&o.record),
+        Said {
+            reasons: vec![
+                (SlabField::Fc, "値を入れる"),
+                (SlabField::FinishLoad, "0 以上の値を入れる"),
+                (SlabField::Amplification, "0 より大きい値を入れる"),
+                (SlabField::DeflectionRatio, "数値で入れる"),
+                (SlabField::DeflectionAbsolute, "0 より大きい値を入れる"),
+            ],
+            ..Said::default()
+        }
     );
-    assert!(!r.no_criteria, "読めない欄があるときは「無い」と言わない");
+    let r = o.readout;
     assert!(shared_values(&r).iter().all(Option::is_none));
     assert!(point_values(&r).iter().all(Option::is_none));
 }
 
 #[test]
 fn fc_above_36_uses_the_heavier_rc_unit_weight_and_warns_outside_the_range() {
-    let r = readout(|i| i.set(SlabField::Fc, "42"));
-    assert_eq!(r.shared.rc_unit_weight.as_deref(), Some("24.5"));
-    assert_eq!(r.warning, None);
-    let r = readout(|i| i.set(SlabField::Fc, "120"));
-    assert!(r.warning.is_some(), "{r:#?}");
-    assert!(r.point.required_thickness.is_some());
+    let o = outcome(|i| i.set(SlabField::Fc, "42"));
+    assert_eq!(o.readout.shared.rc_unit_weight.as_deref(), Some("24.5"));
+    assert_eq!(said(&o.record), Said::default());
+    let o = outcome(|i| i.set(SlabField::Fc, "120"));
+    assert_eq!(
+        said(&o.record),
+        Said {
+            warnings: vec![
+                "Fc が単位体積重量の表の上限 100 N/mm² を超える。γ は最後の区分の値を使う"
+            ],
+            ..Said::default()
+        }
+    );
+    assert!(o.readout.point.required_thickness.is_some());
 }
 
 // 等厚曲線の図（Issue #75）
@@ -521,13 +573,62 @@ fn the_color_edge_curves_around_the_point_are_numbered_even_where_the_mark_sits_
 
 #[test]
 fn an_unreadable_criterion_is_not_called_missing() {
-    let r = readout(|i| {
+    // 読めないクライテリアは入れてはあるので、欄をまたぐ理由は無い
+    let o = outcome(|i| {
         i.set(SlabField::DeflectionRatio, "");
         i.set(SlabField::DeflectionAbsolute, "x");
     });
     assert_eq!(
-        reasons(&r.errors),
-        [(SlabField::DeflectionAbsolute, "数値で入れる")]
+        said(&o.record),
+        Said {
+            reasons: vec![(SlabField::DeflectionAbsolute, "数値で入れる")],
+            ..Said::default()
+        }
     );
-    assert!(!r.no_criteria, "読めないクライテリアは入れてはある");
+}
+
+// 入力の組の HTML（`scripts/screenshot.sh` は欄に打てないので、打った後の状態はここで見る）
+
+#[test]
+fn the_initial_groups_say_nothing() {
+    for group in groups(|_| {}) {
+        assert_eq!(paragraphs(&group), Vec::<String>::new(), "{group}");
+        assert_eq!(flagged_heads(&group), 0, "{group}");
+    }
+}
+
+#[test]
+fn no_criteria_is_said_once_under_the_conditions_and_flags_the_three_criteria() {
+    let [conditions, point] = groups(|i| i.set(SlabField::DeflectionRatio, ""));
+    assert_eq!(paragraphs(&conditions), ["クライテリアを 1 つ以上入れる"]);
+    assert_eq!(flagged_heads(&conditions), 3, "{conditions}");
+    assert_eq!(paragraphs(&point), Vec::<String>::new(), "{point}");
+    assert_eq!(flagged_heads(&point), 0, "{point}");
+}
+
+#[test]
+fn unreadable_fields_are_said_under_the_group_of_their_sheet() {
+    let [conditions, point] = groups(|i| {
+        i.set(SlabField::Fc, "0");
+        i.set(SlabField::Amplification, "x");
+        i.set(SlabField::SpanY, "");
+    });
+    assert_eq!(
+        paragraphs(&conditions),
+        [
+            "Fc（N/mm²）: 0 より大きい値を入れる",
+            "変形増大係数: 数値で入れる",
+        ]
+    );
+    assert_eq!(flagged_heads(&conditions), 2, "{conditions}");
+    assert_eq!(paragraphs(&point), ["Ly（m）: 値を入れる"]);
+    assert_eq!(flagged_heads(&point), 1, "{point}");
+}
+
+#[test]
+fn the_fc_warning_is_said_under_the_conditions_only() {
+    let [conditions, point] = groups(|i| i.set(SlabField::Fc, "12"));
+    assert_eq!(paragraphs(&conditions), ["! Fc が下限 18 N/mm² に満たない"]);
+    assert_eq!(flagged_heads(&conditions), 0, "{conditions}");
+    assert_eq!(paragraphs(&point), Vec::<String>::new(), "{point}");
 }

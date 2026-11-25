@@ -4,18 +4,83 @@
 // common はテストのクレートごとに入り、どのクレートも一部しか使わないので、使わない道具と渡す名前で警告が出る
 #![allow(dead_code, unused_imports)]
 
+pub use rustruct_web::InputRecord;
 pub use rustruct_web::markup;
 pub use rustruct_web::markup::{element, text_of};
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// 読めない欄と理由を、理由の文字で比べられる形に
-pub fn reasons<F: Copy>(errors: &[(F, String)]) -> Vec<(F, &str)> {
-    errors
+/// 入力の組の記録を、文字で比べられる形にしたもの（[`said`]）
+#[derive(Debug, PartialEq)]
+pub struct Said<'a, F> {
+    /// 欄ごとの理由。欄の並びの順
+    pub reasons: Vec<(F, &'a str)>,
+    /// 欄をまたぐ理由と関わる欄
+    pub across: Vec<(Vec<F>, &'a str)>,
+    /// 警告（関わる欄は見ない。どの組に出るかはページの HTML で見る）
+    pub warnings: Vec<&'a str>,
+}
+
+impl<F> Default for Said<'_, F> {
+    /// 何も言わない記録
+    fn default() -> Self {
+        Self {
+            reasons: Vec::new(),
+            across: Vec::new(),
+            warnings: Vec::new(),
+        }
+    }
+}
+
+/// 記録が言うこと。3 ページのテストがこれで記録を比べる
+pub fn said<F: Copy + PartialEq>(record: &InputRecord<F>) -> Said<'_, F> {
+    Said {
+        reasons: record
+            .reasons()
+            .iter()
+            .map(|(field, reason)| (*field, reason.as_str()))
+            .collect(),
+        across: record
+            .across()
+            .iter()
+            .map(|(fields, reason)| (fields.clone(), reason.as_str()))
+            .collect(),
+        warnings: record
+            .warnings()
+            .iter()
+            .map(|(_, warning)| warning.as_str())
+            .collect(),
+    }
+}
+
+/// ページの HTML を入力の組ごとに。組の Sheet（欄を持つ `table`）から次の組の Sheet の手前まで（最後の組は
+/// 終わりまで）で、組の注記・理由・警告と、組の下の結果の表を含む
+pub fn input_groups(html: &str) -> Vec<&str> {
+    let starts: Vec<usize> = markup::elements(html, "table")
+        .into_iter()
+        .filter(|table| table.contains("aria-label=\""))
+        .map(|table| table.as_ptr() as usize - html.as_ptr() as usize)
+        .collect();
+    starts
         .iter()
-        .map(|(field, reason)| (*field, reason.as_str()))
+        .enumerate()
+        .map(|(i, &start)| &html[start..starts.get(i + 1).copied().unwrap_or(html.len())])
         .collect()
+}
+
+/// 組の中の段落（`p`）の文字。理由（「欄の名前: 理由」と欄をまたぐ理由）、警告（「! …」）と、組の下の
+/// 結果の段落（分布図の「—」など）
+pub fn paragraphs(group: &str) -> Vec<String> {
+    markup::elements(group, "p")
+        .into_iter()
+        .map(text_of)
+        .collect()
+}
+
+/// 組の中の、`ng` の見出し（`th`）の数
+pub fn flagged_heads(group: &str) -> usize {
+    markup::count_tags(group, "th", &[("data-state", "error")])
 }
 
 /// `needles` が `haystack` にこの順で現れることを確かめる。無ければどれが無いかを言う。

@@ -19,8 +19,15 @@ use crate::App;
 
 /// `path`（`/tools` など）を開いたときのページ全体の HTML。
 pub fn render_path(path: &str) -> String {
+    render_path_with(path, ())
+}
+
+/// `path` を、根の context に `context` を置いて開いたときの HTML。計算のページは値の置き場
+/// （`SlabInputs` など）がそこにあれば、初期値の代わりにそれで始める（打った後の状態をテストで描く）
+pub fn render_path_with<T: Clone + 'static>(path: &str, context: T) -> String {
     let head = Rc::new(HeadCollector::default());
     let mut dom = VirtualDom::new(App);
+    dom.provide_root_context(context);
     dom.provide_root_context(Rc::new(MemoryHistory::with_initial_path(path)) as Rc<dyn History>);
     dom.provide_root_context(head.clone() as Rc<dyn Document>);
     dom.rebuild_in_place();
