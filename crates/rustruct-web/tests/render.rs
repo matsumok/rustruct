@@ -196,6 +196,7 @@ fn ssg_paths_are_the_static_routes_and_the_not_found_page() {
             "/tools/kirchhoff-plate",
             "/tools/kirchhoff-plate/manual",
             "/tools/slab-thickness",
+            "/tools/slab-thickness/manual",
             "/data",
             "/data/concrete",
             "/data/rebar",
@@ -242,6 +243,10 @@ fn title_is_page_name_then_site_name() {
         (
             "/tools/slab-thickness",
             "必要スラブ厚さ · rustruct.matsumok.com",
+        ),
+        (
+            "/tools/slab-thickness/manual",
+            "必要スラブ厚さの説明書 · rustruct.matsumok.com",
         ),
         ("/data", "Data · rustruct.matsumok.com"),
         ("/data/concrete", "コンクリート · rustruct.matsumok.com"),
@@ -411,6 +416,7 @@ fn page_body_does_not_repeat_the_address() {
         "/studies",
         "/tools/kirchhoff-plate",
         "/tools/kirchhoff-plate/manual",
+        "/tools/slab-thickness/manual",
         "/data/concrete",
         "/root",
     ] {
@@ -438,21 +444,29 @@ fn badge_after_heading(html: &str) -> Option<(String, String, String)> {
 
 #[test]
 fn the_tool_page_has_a_badge_to_its_manual_right_after_the_heading() {
-    assert_eq!(
-        badge_after_heading(&render_path("/tools/kirchhoff-plate")),
-        Some((
-            "/tools/kirchhoff-plate/manual".to_string(),
-            "説明書".to_string(),
-            "Kirchhoff 板の曲げの説明書".to_string(),
-        ))
-    );
-    // 見出しは見出しの文字だけ（バッジは見出しの外）
-    assert_eq!(
-        h1_text(&render_path("/tools/kirchhoff-plate")),
-        "Kirchhoff 板の曲げ"
-    );
+    for (tool, heading) in [
+        ("/tools/kirchhoff-plate", "Kirchhoff 板の曲げ"),
+        ("/tools/slab-thickness", "必要スラブ厚さ"),
+    ] {
+        assert_eq!(
+            badge_after_heading(&render_path(tool)),
+            Some((
+                format!("{tool}/manual"),
+                "説明書".to_string(),
+                format!("{heading}の説明書"),
+            )),
+            "{tool} の見出しの右に説明書のバッジが無い"
+        );
+        // 見出しは見出しの文字だけ（バッジは見出しの外）
+        assert_eq!(h1_text(&render_path(tool)), heading);
+    }
     // 説明書のないページには置かない
-    for path in ["/tools/slab-thickness", "/tools/kirchhoff-plate/manual"] {
+    for path in [
+        "/tools",
+        "/data/concrete",
+        "/tools/kirchhoff-plate/manual",
+        "/tools/slab-thickness/manual",
+    ] {
         assert_eq!(
             badge_after_heading(&render_path(path)),
             None,
@@ -463,27 +477,67 @@ fn the_tool_page_has_a_badge_to_its_manual_right_after_the_heading() {
 
 #[test]
 fn the_manual_is_headed_and_reached_through_its_tool_in_the_breadcrumb() {
-    let html = render_path("/tools/kirchhoff-plate/manual");
-    assert_eq!(h1_text(&html), "Kirchhoff 板の曲げの説明書");
-    assert_eq!(
-        breadcrumb(&html),
-        vec![
-            (Some("/tools".to_string()), "/tools".to_string()),
-            (
-                Some("/tools/kirchhoff-plate".to_string()),
-                "/kirchhoff-plate".to_string()
-            ),
-            (None, "/manual".to_string()),
-        ]
-    );
-    assert!(
-        !text_of(&render_path("/tools")).contains("/tools/kirchhoff-plate/manual"),
-        "/tools の一覧に説明書がある"
-    );
+    for (tool, heading) in [
+        ("kirchhoff-plate", "Kirchhoff 板の曲げの説明書"),
+        ("slab-thickness", "必要スラブ厚さの説明書"),
+    ] {
+        let manual = format!("/tools/{tool}/manual");
+        let html = render_path(&manual);
+        assert_eq!(h1_text(&html), heading);
+        assert_eq!(
+            breadcrumb(&html),
+            vec![
+                (Some("/tools".to_string()), "/tools".to_string()),
+                (Some(format!("/tools/{tool}")), format!("/{tool}")),
+                (None, "/manual".to_string()),
+            ]
+        );
+        assert!(
+            !text_of(&render_path("/tools")).contains(&manual),
+            "/tools の一覧に {manual} がある"
+        );
+    }
 }
 
-/// 説明書の式は描いた HTML の中で MathML に組まれていて、TeX の書き方は本文に残らない。
-/// ブラウザで組む道具は読まない（読込むスクリプトは Tool のページと同じ）
+/// 説明書の `##` の節の見出し（注釈を外した本文から）
+fn manual_sections(path: &str) -> Vec<String> {
+    let html = render_path(path);
+    let article = element(element(&html, "main"), "article");
+    elements(&strip_annotations(article), "h2")
+        .into_iter()
+        .map(text_of)
+        .collect()
+}
+
+/// 必要スラブ厚さの説明書は Issue の節の並びで、式は MathML に組まれている
+#[test]
+fn the_slab_thickness_manual_has_its_sections_and_typeset_formulas() {
+    let path = "/tools/slab-thickness/manual";
+    assert_eq!(
+        manual_sections(path),
+        [
+            "1 対象と仮定",
+            "2 判定の条件と式",
+            "3 必要スラブ厚の求め方",
+            "4 共有値",
+            "5 等厚曲線",
+        ]
+    );
+    let html = render_path(path);
+    let article = element(element(&html, "main"), "article");
+    assert!(
+        count_tags(article, "math", &[("display", "block")]) > 0,
+        "別行の式が無い"
+    );
+    let shown = text_of(&strip_annotations(article));
+    for raw in ["$", "\\frac", "\\lambda"] {
+        assert!(
+            !shown.contains(raw),
+            "本文に組んでいない {raw} が残っている: {shown}"
+        );
+    }
+}
+
 #[test]
 fn the_manual_formulas_are_typeset_in_the_html_without_more_scripts() {
     let html = render_path("/tools/kirchhoff-plate/manual");

@@ -47,6 +47,8 @@ mod routes {
             ToolsKirchhoffPlateManual {},
             #[route("/tools/slab-thickness", SlabThicknessPage)]
             ToolsSlabThickness {},
+            #[route("/tools/slab-thickness/manual", ProsePage)]
+            ToolsSlabThicknessManual {},
             #[route("/data", DataIndex)]
             Data {},
             #[route("/data/concrete", ConcretePage)]
@@ -106,6 +108,10 @@ impl Route {
                 "必要スラブ厚さ",
                 "四辺固定の RC スラブの、たわみと表18-1 から決まる必要厚さ。",
             ),
+            Route::ToolsSlabThicknessManual {} => (
+                "必要スラブ厚さの説明書",
+                "必要スラブ厚さの判定の条件と式、必要スラブ厚と等厚曲線の求め方。",
+            ),
             Route::Data {} => ("Data", "構造設計で参照する材料と規格の値。"),
             Route::DataConcrete {} => (
                 "コンクリート",
@@ -136,6 +142,7 @@ impl Route {
             // 説明書は一覧に載せず、Tool のページの見出しの下とメニューの木から行く
             Route::Home {}
             | Route::ToolsKirchhoffPlateManual {}
+            | Route::ToolsSlabThicknessManual {}
             | Route::Root {}
             | Route::NotFound { .. } => Listing::Nowhere,
         }
@@ -231,18 +238,26 @@ mod tests {
     /// 説明書は Tool のページの一段下で、メニューの木ではその枝に出て、`/tools` の一覧には出ない
     #[test]
     fn the_manual_is_a_child_of_its_tool_and_not_on_the_tools_list() {
-        let tool = Route::ToolsKirchhoffPlate {};
-        let manual = Route::ToolsKirchhoffPlateManual {};
-        assert_eq!(tool.children(), std::slice::from_ref(&manual));
-        assert_eq!(tool.manual(), Some(manual.clone()));
-        assert!(!Route::Tools {}.children().contains(&manual));
-        for domain in [Domain::Rc, Domain::Mechanics] {
-            assert!(
-                !Route::tools_in(domain).any(|r| r == manual),
-                "{domain:?} の一覧に説明書がある"
-            );
+        for (tool, manual) in [
+            (
+                Route::ToolsKirchhoffPlate {},
+                Route::ToolsKirchhoffPlateManual {},
+            ),
+            (
+                Route::ToolsSlabThickness {},
+                Route::ToolsSlabThicknessManual {},
+            ),
+        ] {
+            assert_eq!(tool.children(), std::slice::from_ref(&manual));
+            assert_eq!(tool.manual(), Some(manual.clone()));
+            assert!(!Route::Tools {}.children().contains(&manual));
+            for domain in [Domain::Rc, Domain::Mechanics] {
+                assert!(
+                    !Route::tools_in(domain).any(|r| r == manual),
+                    "{domain:?} の一覧に {manual} がある"
+                );
+            }
+            assert_eq!(manual.manual(), None);
         }
-        assert_eq!(manual.manual(), None);
-        assert_eq!(Route::ToolsSlabThickness {}.manual(), None);
     }
 }
