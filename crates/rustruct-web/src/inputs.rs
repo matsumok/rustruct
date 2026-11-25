@@ -8,15 +8,17 @@
 //! 読み取りの結果は [`InputRecord`]（入力の組の記録）の 1 つの値で、計算の結果が持ち、入力の組にそのまま渡る。
 //! 描くのは [`InputGroup`]: Sheet → 注記 → 読めない欄の理由 → 欄をまたぐ理由 → 警告の順に `space-1` で積み、
 //! その下に結果の表を `space-6` 空けて置く。ng の印（見出しと欄の枠）と `aria-label` もここが付ける。
+//! 読むだけの欄（[`Kind::ReadOnly`]）は書けず、出す値はページが読み取りの中で決めて記録に持たせる（[`Reading::show`]）。
 
 use std::marker::PhantomData;
 
 use dioxus::prelude::*;
 
 use crate::sheet::{
-    Sheet, SheetCell, SheetCheck, SheetHead, SheetHeadRow, SheetInput, SheetRow, SheetSelect,
+    Sheet, SheetBlank, SheetCell, SheetCheck, SheetHead, SheetHeadRow, SheetInput, SheetRow,
+    SheetSelect, SheetValue,
 };
-use crate::table::Notes;
+use crate::table::{NO_VALUE, Notes};
 
 /// 読めない欄の理由。文字の規則の文言か、計算核の入口が返す理由の文言
 pub type Reason = String;
@@ -57,6 +59,8 @@ pub enum Kind {
         options: Vec<(char, &'static str)>,
         initial: char,
     },
+    /// 読むだけの欄。書けず、値の置き場も使わない。出す値はページが読み取りの中で決める（[`Reading::show`]）
+    ReadOnly,
 }
 
 impl Kind {
@@ -71,12 +75,14 @@ impl Kind {
             Self::Number { initial, .. } | Self::Text { initial } => (*initial).into(),
             Self::Check { initial } => initial.to_string(),
             Self::Choice { initial, .. } => (*initial).into(),
+            Self::ReadOnly => String::new(),
         }
     }
 
-    /// チェックと選択が受ける文字。数値と文字は何でも受ける
+    /// チェックと選択が受ける文字。数値と文字は何でも受け、読むだけの欄は何も受けない
     fn accepts(&self, value: &str) -> bool {
         match self {
+            Self::ReadOnly => false,
             Self::Number { .. } | Self::Text { .. } => true,
             Self::Check { .. } => value.parse::<bool>().is_ok(),
             Self::Choice { options, .. } => options
@@ -167,6 +173,7 @@ impl<F: Field> Inputs<F> {
             reasons: Vec::new(),
             across: Vec::new(),
             warnings: Vec::new(),
+            shown: Vec::new(),
         }
     }
 }
@@ -205,6 +212,7 @@ pub struct Reading<'a, F: Field> {
     reasons: Vec<(F, Reason)>,
     across: Vec<(Vec<F>, Reason)>,
     warnings: Vec<(Vec<F>, String)>,
+    shown: Vec<(F, String)>,
 }
 
 impl<'a, F: Field> Reading<'a, F> {
@@ -277,6 +285,15 @@ impl<'a, F: Field> Reading<'a, F> {
         }
     }
 
+    /// 読むだけの欄に出す値を決める。決めない欄は「—」
+    pub fn show(&mut self, field: F, value: impl Into<String>) {
+        assert!(
+            matches!(field.definition().kind, Kind::ReadOnly),
+            "{field:?} は読むだけの欄でない"
+        );
+        self.shown.push((field, value.into()));
+    }
+
     /// 警告を足す（計算はできるか、解けないことを言う）。`fields` は警告の関わる欄で、出す組を決める
     pub fn warn(&mut self, fields: &[F], warning: impl Into<String>) {
         assert!(!fields.is_empty(), "警告に関わる欄が無い");
@@ -309,6 +326,7 @@ impl<'a, F: Field> Reading<'a, F> {
             reasons: self.reasons,
             across: self.across,
             warnings: self.warnings,
+            shown: self.shown,
         }
     }
 
@@ -327,7 +345,7 @@ impl<'a, F: Field> Reading<'a, F> {
 }
 
 /// 入力の組の記録（`GLOSSARY.md`「入力の組」）。欄ごとの理由（文字の規則、計算核の型が受けない値、計算核の
-/// 入口の理由）、欄をまたぐ理由と関わる欄、警告と関わる欄。計算の結果が 1 つ持ち、入力の組にそのまま渡す。
+/// 入口の理由）、欄をまたぐ理由と関わる欄、警告と関わる欄、読むだけの欄の値。計算の結果が 1 つ持ち、入力の組にそのまま渡す。
 /// 作れるのは [`Reading::finish`] だけ
 #[derive(Debug, Clone, PartialEq)]
 pub struct InputRecord<F> {
@@ -337,6 +355,8 @@ pub struct InputRecord<F> {
     across: Vec<(Vec<F>, Reason)>,
     /// 関わる欄は欄の並びの順
     warnings: Vec<(Vec<F>, String)>,
+    /// 読むだけの欄に出す値
+    shown: Vec<(F, String)>,
 }
 
 impl<F: Copy + PartialEq> InputRecord<F> {
@@ -353,6 +373,14 @@ impl<F: Copy + PartialEq> InputRecord<F> {
     /// 警告と、関わる欄（欄の並びの順）
     pub fn warnings(&self) -> &[(Vec<F>, String)] {
         &self.warnings
+    }
+
+    /// 読むだけの欄に出す値。決めていなければ無し
+    pub fn shown(&self, field: F) -> Option<&str> {
+        self.shown
+            .iter()
+            .find(|(f, _)| *f == field)
+            .map(|(_, value)| value.as_str())
     }
 
     /// 理由が 1 つでもあるか。あるあいだ計算の結果の値は無い
@@ -378,7 +406,8 @@ impl<F: Copy + PartialEq> InputRecord<F> {
 /// Sheet の並べ方（`docs/ui-decisions.md`「入力と表示の区別」）
 #[derive(Debug, Clone, PartialEq)]
 pub enum Layout<F: Field> {
-    /// 行見出し: 左に見出し、右に欄。行ごとに 1 欄か 2 組
+    /// 行見出し: 左に見出し、右に欄。行ごとに 1 欄か 2 組。2 組の行のある Sheet で 1 欄だけの行は、
+    /// 空いた組を `fill` の空きで埋める
     RowHeads(Vec<Vec<F>>),
     /// 列見出し: 上に見出しの行、下に値の行
     ColumnHeads(Vec<F>),
@@ -396,6 +425,8 @@ impl<F: Field> Layout<F> {
 
 /// 入力の組。Sheet、注記、読めない欄の理由（「欄の名前: 理由」を欄の順に、件数なし）、欄をまたぐ
 /// 理由、警告（「! …」）の順に `space-1` で積み、子（結果の表）をその下に `space-6` 空けて置く。
+/// 切り替え（`switch`。Kirchhoff 板の材料）があれば、組のいちばん上に置いて Sheet との間を `space-2` 空ける。
+/// 読むだけの欄の値は `record` が持つ（無ければ「—」）。
 /// `record` はページの記録をそのまま受け、この Sheet の欄のものだけを出す。欄をまたぐ理由は、関わる欄の
 /// うち最初の欄（`Field::ALL` の順）が載る組に 1 回だけ出し、関わる欄の見出しはそれぞれの組で `ng` にする。
 /// 警告も関わる欄の最初の欄が載る組に出す（色は付けない）
@@ -405,6 +436,7 @@ pub(crate) fn InputGroup<F: Field>(
     layout: Layout<F>,
     #[props(default)] notes: Vec<String>,
     record: InputRecord<F>,
+    switch: Option<Element>,
     children: Element,
 ) -> Element {
     let fields = layout.fields();
@@ -419,12 +451,17 @@ pub(crate) fn InputGroup<F: Field>(
             .map(|(_, text)| text.clone())
             .collect()
     };
+    // 1 行の組の数の最大。これより少ない行は空きで埋める
+    let pairs = match &layout {
+        Layout::RowHeads(rows) => rows.iter().map(Vec::len).max().unwrap_or(0),
+        Layout::ColumnHeads(_) => 0,
+    };
     let across = here(record.across());
     let warnings = here(record.warnings());
     let has_error = |field: F| record.refused(field);
     let head_error = |field: F| record.flagged(field);
-    rsx! {
-        div { class: "flex flex-col gap-6",
+    let shown = |field: F| record.shown(field).unwrap_or(NO_VALUE).to_string();
+    let stack = rsx! {
             div { class: "flex flex-col gap-1",
                 Sheet {
                     match &layout {
@@ -435,8 +472,11 @@ pub(crate) fn InputGroup<F: Field>(
                                         for field in row.iter().copied() {
                                             SheetHead { label: field.definition().name, error: head_error(field) }
                                             SheetCell {
-                                                Cell { inputs, field, error: has_error(field) }
+                                                Cell { inputs, field, error: has_error(field), shown: shown(field) }
                                             }
+                                        }
+                                        if row.len() < pairs {
+                                            SheetBlank { span: 2 * (pairs - row.len()) }
                                         }
                                     }
                                 }
@@ -454,7 +494,7 @@ pub(crate) fn InputGroup<F: Field>(
                                 SheetRow {
                                     for field in fields.iter().copied() {
                                         SheetCell {
-                                            Cell { inputs, field, error: has_error(field) }
+                                            Cell { inputs, field, error: has_error(field), shown: shown(field) }
                                         }
                                     }
                                 }
@@ -479,16 +519,31 @@ pub(crate) fn InputGroup<F: Field>(
                     p { class: "text-label", "! {warning}" }
                 }
             }
+    };
+    rsx! {
+        div { class: "flex flex-col gap-6",
+            match switch {
+                Some(switch) => rsx! {
+                    div { class: "flex flex-col gap-2",
+                        {switch}
+                        {stack}
+                    }
+                },
+                None => stack,
+            }
             {children}
         }
     }
 }
 
-/// 1 つの欄。種類で見た目を選び、`aria-label` に欄の名前を付ける
+/// 1 つの欄。種類で見た目を選び、`aria-label` に欄の名前を付ける。`shown` は読むだけの欄に出す値
 #[component]
-fn Cell<F: Field>(inputs: Signal<Inputs<F>>, field: F, error: bool) -> Element {
+fn Cell<F: Field>(inputs: Signal<Inputs<F>>, field: F, error: bool, shown: String) -> Element {
     let Definition { name, kind } = field.definition();
     match kind {
+        Kind::ReadOnly => rsx! {
+            SheetValue { label: name, value: shown }
+        },
         Kind::Number { .. } | Kind::Text { .. } => rsx! {
             SheetInput {
                 label: name,
