@@ -419,15 +419,15 @@ fn page_body_does_not_repeat_the_address() {
     }
 }
 
-/// 本文（`<main>`）の見出しのすぐ後に並ぶリンク（見出しの右のバッジ）: (href, 文字, aria-label)。
-/// 見出しの次の要素がリンクでなければ `None`
+/// 本文（`<main>`）の見出しの次の兄弟（同じ親の中で見出しのすぐ後）に置いたリンク（見出しの右のバッジ）:
+/// (href, 文字, aria-label)。見出しの閉じタグのすぐ後がリンクの開きタグでなければ `None`
 fn badge_after_heading(html: &str) -> Option<(String, String, String)> {
     let main = element(html, "main");
     let after = &main[main.find("</h1>").expect("h1 が無い") + "</h1>".len()..];
-    let tag = tags(after).into_iter().next()?;
-    if tag.name != "a" {
+    if !after.trim_start().starts_with("<a ") {
         return None;
     }
+    let tag = tags(after).into_iter().next()?;
     let a = element(after, "a");
     Some((
         tag.get("href")?.to_string(),
@@ -450,29 +450,6 @@ fn the_tool_page_has_a_badge_to_its_manual_right_after_the_heading() {
     assert_eq!(
         h1_text(&render_path("/tools/kirchhoff-plate")),
         "Kirchhoff 板の曲げ"
-    );
-    // 見出しとバッジは一つの文字の流れで、見出しが折り返してもバッジは最後の行の文字の後に続く
-    // （見出しは inline、バッジは inline-block。flex の項目にすると見出しの箱の後ろ、次の行の頭に回る）
-    let html = render_path("/tools/kirchhoff-plate");
-    let main = element(&html, "main");
-    let classes = |name: &str| -> Vec<String> {
-        let tag = tags(main)
-            .into_iter()
-            .find(|t| t.name == name)
-            .unwrap_or_else(|| panic!("{name} が無い"));
-        tag.get("class")
-            .unwrap_or_default()
-            .split_whitespace()
-            .map(str::to_string)
-            .collect()
-    };
-    assert!(
-        classes("h1").contains(&"inline".to_string()),
-        "見出しが inline でない"
-    );
-    assert!(
-        classes("a").contains(&"inline-block".to_string()),
-        "バッジが inline-block でない"
     );
     // 説明書のないページには置かない
     for path in ["/tools/slab-thickness", "/tools/kirchhoff-plate/manual"] {

@@ -116,8 +116,8 @@ classes=$(perl -0777 -ne 'while (/(?<![\w-])class\s*:\s*(if\b[^{]*\{\s*"[^"]*"\s
   $(find crates/rustruct-web/src -name '*.rs') | tr ' ' '\n' | grep -v '^$' | sort -u)
 
 for c in $classes; do
-  # セレクタでは : . / を \ で逃がす（.sm\:grid-cols-2 の形）
-  sel=$(printf '%s' "$c" | sed -E 's#([:./])#\\\1#g')
+  # セレクタでは : . / * を \ で逃がす（.sm\:grid-cols-2、.\*\:not-last\:mr-3 の形）
+  sel=$(printf '%s' "$c" | sed -E 's#([:./*])#\\\1#g')
   # group は印だけで自分の規則を持たず、group-*: の規則の中に :where(.group) で現れる
   case "$c" in group) want=":where(.$sel)" ;; *) want=".$sel {" ;; esac
   if ! grep -qF "$want" "$css"; then

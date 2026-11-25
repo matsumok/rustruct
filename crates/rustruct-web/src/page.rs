@@ -62,10 +62,11 @@ pub(crate) fn Page(route: Route, children: Element) -> Element {
         // 2026-10-15、20・28・40 を撮り比べて本人が決めた）
         main { class: "mx-auto flex max-w-page flex-col gap-7 py-7 lg:max-w-page-lg",
             // 見出しは inline で、バッジ（inline-block）が見出しの最後の行に続く。行送りは title。
-            // 見出しとバッジの間は space-3（ひとまとまりの中の空き）。文字の流れでは gap が使えないので見出しの右の空きで取る。
-            // 見出しの右に付くので、バッジが次の行に回ったときは前の行の末尾に残り、バッジは行の頭から始まる
-            div { class: "text-title",
-                h1 { class: if route.manual().is_some() { "inline mr-3" } else { "inline" }, {route.text().heading} }
+            // 見出しとバッジの間は space-3（ひとまとまりの中の空き）。文字の流れでは gap が効かないので、
+            // 親が最後でない子の右に空きを付ける（docs/design/README.md「ツール画面の約束」）。前の子の右に付くので、
+            // バッジが次の行に回ったときは空きは前の行の末尾に残り、バッジは行の頭から始まる
+            div { class: "text-title *:not-last:mr-3",
+                h1 { class: "inline", {route.text().heading} }
                 if let Some(manual) = route.manual() {
                     ManualBadge { to: manual }
                 }

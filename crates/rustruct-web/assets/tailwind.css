@@ -309,9 +309,6 @@
   .mx-auto {
     margin-inline: auto;
   }
-  .mr-3 {
-    margin-right: var(--spacing-3);
-  }
   .block {
     display: block;
   }
@@ -631,6 +628,13 @@
   .blur {
     --tw-blur: blur(8px);
     filter: var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,);
+  }
+  .\*\:not-last\:mr-3 {
+    :is(& > *) {
+      &:not(*:last-child) {
+        margin-right: var(--spacing-3);
+      }
+    }
   }
   .group-aria-checked\:border-ink {
     &:is(:where(.group)[aria-checked="true"] *) {
