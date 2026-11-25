@@ -62,7 +62,8 @@ mod page;
 pub use data::{ConcreteField, ConcreteInputs, ConcreteReadout, ConcreteValues};
 pub use inputs::InputRecord;
 pub use kirchhoff_plate::{
-    InputField, PlateFigure, PlateInputs, PlateOutcome, PlateReadout, Quantity,
+    InputField, Material, PlateFigure, PlateInputs, PlateOutcome, PlateReadout, Quantity, material,
+    switch_material,
 };
 pub use route::{PageText, Route, WORDMARK};
 pub use slab_thickness::{SlabField, SlabFigure, SlabInputs, SlabOutcome, SlabReadout};

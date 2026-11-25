@@ -9,8 +9,8 @@ use common::{
 };
 use rustruct_types::kirchhoff_plate::{Edge, Support};
 use rustruct_web::{
-    InputField, PlateFigure, PlateInputs, PlateOutcome, PlateReadout, Quantity, render_path,
-    render_path_with,
+    InputField, Material, PlateFigure, PlateInputs, PlateOutcome, PlateReadout, Quantity, material,
+    render_path, render_path_with, switch_material,
 };
 
 #[test]
@@ -130,7 +130,11 @@ fn the_page_shows_the_results_of_the_fixed_plate_in_order() {
         !text.contains('—'),
         "四辺固定で計算できない値がある: {text}"
     );
-    assert!(!text.contains("入力"), "部の見出し「入力」がある: {text}");
+    // 「直接入力」は材料の切り替えの名前
+    assert!(
+        !text.replace("直接入力", "").contains("入力"),
+        "部の見出し「入力」がある: {text}"
+    );
     assert!(!text.contains("結果"), "部の見出し「結果」がある: {text}");
 }
 
@@ -376,7 +380,8 @@ fn the_page_shows_the_deflection_figure_after_the_results_with_five_switches() {
         &["釣り合い", "たわみ w（mm）", "w", "Mx", "My", "Qx", "Qy"],
     );
     // 既定はたわみ。押されている切替は 1 つ
-    let pressed = |value| count_tags(&main, "button", &[("aria-pressed", value)]);
+    let quantities = switch_group(&main, "分布図の量");
+    let pressed = |value| count_tags(quantities, "button", &[("aria-pressed", value)]);
     assert_eq!((pressed("true"), pressed("false")), (1, 4), "{main}");
     // 切替は名前の付いた組
     assert_eq!(
@@ -692,4 +697,216 @@ fn an_unstable_combination_is_a_warning_without_flags() {
         ["! この支持条件の組では板を支えられない", "—"]
     );
     assert_eq!(flagged_heads(&group), 0, "{group}");
+}
+
+/// 名前の付いた切替の組（`role="group"` の `div`）
+fn switch_group<'a>(html: &'a str, label: &str) -> &'a str {
+    let at = html
+        .find(&format!("aria-label=\"{label}\""))
+        .unwrap_or_else(|| panic!("切替の組「{label}」が無い: {html}"));
+    let start = html[..at].rfind('<').expect("開きタグ");
+    let group = element(&html[start..], "div");
+    let tag = &common::markup::tags(group)[0];
+    assert_eq!(tag.get("role"), Some("group"), "{group}");
+    group
+}
+
+/// 切替の組の、押されているボタンの文字
+fn pressed_names(group: &str) -> Vec<String> {
+    common::markup::elements(group, "button")
+        .into_iter()
+        .filter(|button| {
+            common::markup::tags(button)
+                .first()
+                .is_some_and(|tag| tag.get("aria-pressed") == Some("true"))
+        })
+        .map(text_of)
+        .collect()
+}
+
+// 板の材料（#135）
+
+#[test]
+fn the_page_opens_on_direct_input_with_the_material_switch_above_the_sheet() {
+    let main = element(&render_path("/tools/kirchhoff-plate"), "main").to_string();
+    let materials = switch_group(&main, "板の材料");
+    assert_in_order(&text_of(materials), &["コンクリート", "鋼材", "直接入力"]);
+    assert_eq!(pressed_names(materials), ["直接入力"], "{materials}");
+    assert_eq!(
+        count_tags(materials, "button", &[("aria-pressed", "false")]),
+        2
+    );
+    // 切り替えは入力の組のいちばん上（Sheet の前）
+    assert_in_order(&text_of(&main), &["直接入力", "Lx（m）", "板の中央"]);
+    // 直接入力では E と ν は書ける欄で、読むだけの欄も Fc も無い
+    assert_eq!(main.matches("<output").count(), 0, "{main}");
+    assert!(!main.contains("Fc"), "{main}");
+}
+
+#[test]
+fn switching_to_direct_input_from_concrete_takes_the_rounded_e_and_the_nu_of_concrete() {
+    let mut inputs = PlateInputs::default();
+    switch_material(&mut inputs, Material::Concrete);
+    assert_eq!(material(&inputs), Material::Concrete);
+    assert_eq!(inputs.value(InputField::Fc), "24");
+    assert_eq!(inputs.value(InputField::ConcretePoissonRatio), "0.2");
+    switch_material(&mut inputs, Material::Direct);
+    assert_eq!(material(&inputs), Material::Direct);
+    assert_eq!(inputs.value(InputField::YoungModulus), "22669");
+    assert_eq!(inputs.value(InputField::PoissonRatio), "0.2");
+}
+
+#[test]
+fn switching_back_to_concrete_restores_the_fc_and_nu_entered_for_concrete() {
+    let mut inputs = PlateInputs::default();
+    switch_material(&mut inputs, Material::Concrete);
+    inputs.set(InputField::Fc, "30");
+    inputs.set(InputField::ConcretePoissonRatio, "0.15");
+    switch_material(&mut inputs, Material::Direct);
+    assert_eq!(inputs.value(InputField::PoissonRatio), "0.15");
+    // 直接入力で書き換えても、コンクリートの値は残る
+    inputs.set(InputField::PoissonRatio, "0.1");
+    switch_material(&mut inputs, Material::Concrete);
+    assert_eq!(inputs.value(InputField::Fc), "30");
+    assert_eq!(inputs.value(InputField::ConcretePoissonRatio), "0.15");
+}
+
+#[test]
+fn switching_to_direct_input_from_steel_takes_205000_and_0_3() {
+    let mut inputs = PlateInputs::default();
+    switch_material(&mut inputs, Material::Steel);
+    switch_material(&mut inputs, Material::Direct);
+    assert_eq!(inputs.value(InputField::YoungModulus), "205000");
+    assert_eq!(inputs.value(InputField::PoissonRatio), "0.3");
+}
+
+/// 直前の材料の値が使えないときは、その欄は前のまま
+#[test]
+fn an_unusable_value_of_concrete_leaves_its_direct_field_as_it_was() {
+    let mut inputs = PlateInputs::default();
+    switch_material(&mut inputs, Material::Concrete);
+    inputs.set(InputField::Fc, "x");
+    inputs.set(InputField::ConcretePoissonRatio, "0.5");
+    switch_material(&mut inputs, Material::Direct);
+    assert_eq!(inputs.value(InputField::YoungModulus), "22700");
+    assert_eq!(inputs.value(InputField::PoissonRatio), "0");
+}
+
+#[test]
+fn concrete_shows_fc_and_nu_to_write_and_e_to_read_as_an_integer() {
+    let group = group(|i| switch_material(i, Material::Concrete));
+    assert_eq!(
+        pressed_names(&render_switch(Material::Concrete)),
+        ["コンクリート"]
+    );
+    // 並びは t・E、ν・p の行を保ち、Fc を下の行に足す
+    assert_in_order(
+        &text_of(&group),
+        &[
+            "Lx（m）",
+            "Ly（m）",
+            "t（mm）",
+            "E（N/mm²）",
+            "22669",
+            "ν",
+            "p（kN/m²）",
+            "Fc（N/mm²）",
+            "x = 0（左）",
+        ],
+    );
+    for (label, value) in [("Fc（N/mm²）", "24"), ("ν", "0.2")] {
+        assert_eq!(
+            count_tags(&group, "input", &[("aria-label", label), ("value", value)]),
+            1,
+            "{group}"
+        );
+    }
+    assert_eq!(
+        count_tags(&group, "output", &[("aria-label", "E（N/mm²）")]),
+        1,
+        "{group}"
+    );
+    assert_eq!(
+        count_tags(&group, "input", &[("aria-label", "E（N/mm²）")]),
+        0
+    );
+    // Fc の行の空いた組は、2 列にまたがる何も無いセル（書く欄も読む欄も文字も無い）
+    let fc_row = common::markup::elements(&group, "tr")
+        .into_iter()
+        .find(|row| row.contains("Fc（N/mm²）"))
+        .unwrap_or_else(|| panic!("Fc の行が無い: {group}"));
+    let blanks: Vec<&str> = common::markup::elements(fc_row, "td")
+        .into_iter()
+        .filter(|cell| count_tags(cell, "td", &[("colspan", "2")]) == 1)
+        .collect();
+    assert_eq!(blanks.len(), 1, "{fc_row}");
+    assert_eq!(text_of(blanks[0]), "", "{fc_row}");
+    assert_eq!(
+        count_tags(blanks[0], "input", &[]) + count_tags(blanks[0], "output", &[]),
+        0,
+        "{fc_row}"
+    );
+    assert_eq!(paragraphs(&group), Vec::<String>::new(), "{group}");
+}
+
+#[test]
+fn steel_shows_e_and_nu_to_read() {
+    let group = group(|i| switch_material(i, Material::Steel));
+    assert_in_order(
+        &text_of(&group),
+        &["t（mm）", "E（N/mm²）", "205000", "ν", "0.3", "p（kN/m²）"],
+    );
+    assert_eq!(count_tags(&group, "output", &[]), 2, "{group}");
+    assert_eq!(
+        count_tags(&group, "input", &[("aria-label", "ν")]),
+        0,
+        "{group}"
+    );
+    assert!(!group.contains("Fc"), "{group}");
+    assert_eq!(paragraphs(&group), Vec::<String>::new(), "{group}");
+}
+
+#[test]
+fn an_fc_below_18_is_a_warning_of_the_input_group_and_the_plate_is_still_solved() {
+    let change = |i: &mut PlateInputs| {
+        switch_material(i, Material::Concrete);
+        i.set(InputField::Fc, "15");
+    };
+    let group = group(change);
+    assert_eq!(
+        paragraphs(&group),
+        ["! Fc が下限 18 N/mm² に満たない"],
+        "{group}"
+    );
+    assert_eq!(flagged_heads(&group), 0, "{group}");
+    assert!(outcome(change).readout.center.w.is_some());
+}
+
+#[test]
+fn an_unreadable_fc_is_named_and_e_is_not_shown() {
+    let group = group(|i| {
+        switch_material(i, Material::Concrete);
+        i.set(InputField::Fc, "");
+    });
+    assert_eq!(
+        paragraphs(&group),
+        ["Fc（N/mm²）: 値を入れる", "—"],
+        "{group}"
+    );
+    assert_eq!(flagged_heads(&group), 1, "{group}");
+    let output = common::markup::elements(&group, "output");
+    assert_eq!(output.iter().map(|o| text_of(o)).collect::<Vec<_>>(), ["—"]);
+}
+
+/// 材料を切り替えた後のページの、材料の切替の組
+fn render_switch(to: Material) -> String {
+    let html = render_path_with("/tools/kirchhoff-plate", inputs(|i| switch_material(i, to)));
+    switch_group(element(&html, "main"), "板の材料").to_string()
+}
+
+#[test]
+fn the_switch_says_the_chosen_material_with_aria_pressed() {
+    for to in Material::ALL {
+        assert_eq!(pressed_names(&render_switch(to)), [to.name()]);
+    }
 }

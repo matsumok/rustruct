@@ -4,11 +4,10 @@
 //!
 //! 辺は座標で呼ぶ（x = 0 の辺など）。画面の上下左右は図の向き（x は右、y は上）でここが決め、入力の
 //! Sheet の行見出しに添えて対応を示す。
-
-use std::collections::HashSet;
+//!
+//! 板の材料は入力の組のいちばん上の切り替えで選び、Sheet の E と ν の欄は材料で変わる（[`Material`]）。
 
 use dioxus::prelude::*;
-use dioxus_primitives::toggle_group::{ToggleGroup, ToggleItem};
 use numerus::significant;
 use rustruct_calc::kirchhoff_plate::{Extreme, InvalidInput, PlateError, Solution, solve};
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Plate, PlateMaterial, Support, Supports};
@@ -21,10 +20,12 @@ pub use figure::{PlateField, PlateFigure, Quantity};
 
 use crate::Route;
 use crate::chart;
+use crate::data;
 use crate::inputs::{
     Definition, Field, InputGroup, InputRecord, Inputs, Kind, Layout, Reading, use_inputs,
 };
 use crate::page::Page;
+use crate::sheet::Switch;
 use crate::table::{Block, Caption, Column, Columns, NO_VALUE, Notes, Table, TableColumn};
 
 /// 辺の最大値を取る評価点の分け方。辺を等分する数
@@ -41,23 +42,53 @@ fn corner_notes() -> Vec<String> {
     ]
 }
 
-/// 欄。並びは Sheet の行の順
+/// 欄。E と ν は材料ごとに別の欄で、Sheet に載るのは選んだ材料のものだけ（[`rows`]）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputField {
     Lx,
     Ly,
     Thickness,
+    /// 直接入力の E
     YoungModulus,
+    /// 材料から導く E（コンクリートと鋼材）。読むだけ
+    DerivedYoungModulus,
+    /// 直接入力の ν
     PoissonRatio,
+    /// コンクリートの ν
+    ConcretePoissonRatio,
+    /// 材料から導く ν（鋼材）。読むだけ
+    DerivedPoissonRatio,
     Load,
+    /// コンクリートの Fc
+    Fc,
     /// 辺の支持条件
     Support(Edge),
+    /// 板の材料。入力の組の上の切り替えで選び、Sheet には載らない。変えるのは [`switch_material`]
+    Material,
 }
 
 impl Field for InputField {
-    const ALL: &'static [Self] = ROWS.as_flattened();
+    /// Sheet の行の順。材料は最後（警告の関わる欄の最初が Sheet に載るように）
+    const ALL: &'static [Self] = &[
+        Self::Lx,
+        Self::Ly,
+        Self::Thickness,
+        Self::YoungModulus,
+        Self::DerivedYoungModulus,
+        Self::PoissonRatio,
+        Self::ConcretePoissonRatio,
+        Self::DerivedPoissonRatio,
+        Self::Load,
+        Self::Fc,
+        Self::Support(Edge::X0),
+        Self::Support(Edge::XLx),
+        Self::Support(Edge::Y0),
+        Self::Support(Edge::YLy),
+        Self::Material,
+    ];
 
-    /// 名前と種類と初期値（Issue #36）。値の規則は計算核の入口（`solve`）と、ν は `PoissonRatio` が見る
+    /// 名前と種類と初期値（Issue #36、#135）。値の規則は計算核の入口（`solve`）と、ν は `PoissonRatio`、
+    /// Fc は `Concrete` が見る。開いたときは直接入力で、コンクリートの Fc と ν は初めて選んだときの値
     fn definition(self) -> Definition {
         let number = |initial| Kind::number(false, initial);
         let (name, kind) = match self {
@@ -65,8 +96,21 @@ impl Field for InputField {
             Self::Ly => ("Ly（m）".into(), number("5.0")),
             Self::Thickness => ("t（mm）".into(), number("150")),
             Self::YoungModulus => ("E（N/mm²）".into(), number("22700")),
+            Self::DerivedYoungModulus => ("E（N/mm²）".into(), Kind::ReadOnly),
             Self::PoissonRatio => ("ν".into(), number("0")),
+            Self::ConcretePoissonRatio => ("ν".into(), number("0.2")),
+            Self::DerivedPoissonRatio => ("ν".into(), Kind::ReadOnly),
             Self::Load => ("p（kN/m²）".into(), number("10")),
+            Self::Fc => ("Fc（N/mm²）".into(), number("24")),
+            Self::Material => (
+                "板の材料".into(),
+                Kind::Choice {
+                    options: Material::ALL
+                        .map(|material| (material.symbol(), material.name()))
+                        .to_vec(),
+                    initial: Material::Direct.symbol(),
+                },
+            ),
             Self::Support(edge) => (
                 format!("{edge}（{}）", direction(edge)),
                 Kind::Choice {
@@ -94,21 +138,119 @@ fn direction(edge: Edge) -> &'static str {
     }
 }
 
-/// 入力の Sheet の行。対になる欄を 1 行に 2 組ずつ（スマホで縦に長くしないため）、
-/// 数値の欄の後に向かい合う辺の支持条件
-const ROWS: [[InputField; 2]; 5] = [
-    [InputField::Lx, InputField::Ly],
-    [InputField::Thickness, InputField::YoungModulus],
-    [InputField::PoissonRatio, InputField::Load],
-    [
-        InputField::Support(Edge::X0),
-        InputField::Support(Edge::XLx),
-    ],
-    [
-        InputField::Support(Edge::Y0),
-        InputField::Support(Edge::YLy),
-    ],
-];
+/// 入力の Sheet の行。対になる欄を 1 行に 2 組ずつ（スマホで縦に長くしないため）、数値の欄の後に向かい合う
+/// 辺の支持条件。E と ν の欄は材料によらず同じ場所（t の右と p の左）で、材料のものに替わる。コンクリートは
+/// Fc の欄を ν・p の行の下に 1 欄だけの行で足す（空いた組は `fill` の空き）
+fn rows(material: Material) -> Vec<Vec<InputField>> {
+    let (young_modulus, poisson_ratio) = match material {
+        Material::Concrete => (
+            InputField::DerivedYoungModulus,
+            InputField::ConcretePoissonRatio,
+        ),
+        Material::Steel => (
+            InputField::DerivedYoungModulus,
+            InputField::DerivedPoissonRatio,
+        ),
+        Material::Direct => (InputField::YoungModulus, InputField::PoissonRatio),
+    };
+    let mut rows = vec![
+        vec![InputField::Lx, InputField::Ly],
+        vec![InputField::Thickness, young_modulus],
+        vec![poisson_ratio, InputField::Load],
+    ];
+    if material == Material::Concrete {
+        rows.push(vec![InputField::Fc]);
+    }
+    rows.extend([
+        vec![
+            InputField::Support(Edge::X0),
+            InputField::Support(Edge::XLx),
+        ],
+        vec![
+            InputField::Support(Edge::Y0),
+            InputField::Support(Edge::YLy),
+        ],
+    ]);
+    rows
+}
+
+/// 板の材料の選び方。並びは切り替えの順。Model の板の材料（`PlateMaterial`）の種類で、値は欄が持つ
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Material {
+    Concrete,
+    Steel,
+    Direct,
+}
+
+impl Material {
+    pub const ALL: [Self; 3] = [Self::Concrete, Self::Steel, Self::Direct];
+
+    /// 材料の欄の記号
+    fn symbol(self) -> char {
+        match self {
+            Self::Concrete => 'C',
+            Self::Steel => 'S',
+            Self::Direct => 'D',
+        }
+    }
+
+    /// 材料の欄の記号から。欄は選択肢の記号しか持たないので、必ず材料に戻る
+    fn from_symbol(symbol: char) -> Self {
+        Self::ALL
+            .into_iter()
+            .find(|material| material.symbol() == symbol)
+            .expect("材料の欄は Material の記号")
+    }
+
+    /// 切り替えの名前
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Concrete => "コンクリート",
+            Self::Steel => "鋼材",
+            Self::Direct => "直接入力",
+        }
+    }
+}
+
+/// 選んでいる材料
+pub fn material(inputs: &PlateInputs) -> Material {
+    Material::from_symbol(inputs.choice(InputField::Material))
+}
+
+/// 材料を切り替える。直接入力に切り替えると、E と ν の欄に直前の材料の E と ν を入れる（E は読むだけの欄と
+/// 同じく N/mm² の整数に丸めた値）。直前の材料の値が使えない（コンクリートの Fc か ν が読めないか型が受けない）
+/// ときは、その欄は前のまま。コンクリートの Fc と ν は自分の欄に残るので、コンクリートに戻すと前の値に戻る
+/// （初めてなら初期値の Fc 24、ν 0.2）。値の置き場はページを開いている間だけある
+pub fn switch_material(inputs: &mut PlateInputs, to: Material) {
+    let from = material(inputs);
+    if to == Material::Direct && from != Material::Direct {
+        let mut reading = inputs.reading();
+        let plate_material = plate_material(&mut reading);
+        // ほかの材料の欄は読んでいないので、鋼材ではどちらも使える
+        let young_modulus = (!reading.refused(InputField::Fc))
+            .then(|| young_modulus_text(plate_material.young_modulus()));
+        let poisson_ratio = (!reading.refused(InputField::ConcretePoissonRatio))
+            .then(|| poisson_ratio_text(plate_material.poisson_ratio()));
+        if let Some(text) = young_modulus {
+            inputs.set(InputField::YoungModulus, text);
+        }
+        if let Some(text) = poisson_ratio {
+            inputs.set(InputField::PoissonRatio, text);
+        }
+    }
+    inputs.set(InputField::Material, to.symbol());
+}
+
+/// 材料から導く E の書き方。N/mm² の整数に丸める（有効数字 3 桁の表に揃えない。Fc 24 は 22669）。
+/// 直接入力の欄に移すときも同じ文字
+fn young_modulus_text(young_modulus: Stress) -> String {
+    young_modulus.as_n_per_mm2().round().to_string()
+}
+
+/// 材料から導く ν の書き方（鋼材は 0.3）
+fn poisson_ratio_text(poisson_ratio: PoissonRatio) -> String {
+    poisson_ratio.value().to_string()
+}
 
 /// 支持条件の選び方。並びは選択肢の順
 const SUPPORTS: [Support; 3] = [Support::Fixed, Support::SimplySupported, Support::Free];
@@ -125,24 +267,56 @@ fn support_name(support: Support) -> &'static str {
 /// 入力の Sheet の中身。読めるかは `PlateOutcome` が決める
 pub type PlateInputs = Inputs<InputField>;
 
-/// 入力を Model へ。E と ν の欄は直接入力の材料にする。読めない欄と、`PoissonRatio` が受けない ν は理由を
-/// 集めて初期値で埋める（`Reading`）
+/// 入力を Model へ。読めない欄と、型が受けない値（ν、Fc）は理由を集めて初期値で埋める（`Reading`）
 fn plate(reading: &mut Reading<'_, InputField>) -> Plate {
-    let poisson_ratio = reading.typed(
-        InputField::PoissonRatio,
-        PoissonRatio::new,
-        "0 以上 0.5 未満で入れる",
-    );
     Plate {
         lx: Length::m(reading.number(InputField::Lx)),
         ly: Length::m(reading.number(InputField::Ly)),
         thickness: Length::mm(reading.number(InputField::Thickness)),
-        material: PlateMaterial::Direct {
-            young_modulus: Stress::n_per_mm2(reading.number(InputField::YoungModulus)),
-            poisson_ratio,
-        },
+        material: plate_material(reading),
         load: AreaLoad::kn_per_m2(reading.number(InputField::Load)),
         supports: supports(reading),
+    }
+}
+
+/// 選んでいる材料の欄から板の材料。読むのはその材料の欄だけ。コンクリートは普通コンクリートで、Fc の規則と
+/// 警告は `data::concrete`（Fc 18 未満と 100 超の警告は入力の組に出る）。読むだけの欄の値（コンクリートの E、
+/// 鋼材の E と ν）もここで決める。コンクリートの E は Fc が使えるときだけ
+fn plate_material(reading: &mut Reading<'_, InputField>) -> PlateMaterial {
+    let poisson_ratio = |reading: &mut Reading<'_, InputField>, field| {
+        reading.typed(field, PoissonRatio::new, "0 以上 0.5 未満で入れる")
+    };
+    match Material::from_symbol(reading.choice(InputField::Material)) {
+        Material::Direct => PlateMaterial::Direct {
+            young_modulus: Stress::n_per_mm2(reading.number(InputField::YoungModulus)),
+            poisson_ratio: poisson_ratio(reading, InputField::PoissonRatio),
+        },
+        Material::Concrete => {
+            let concrete = data::concrete(reading, InputField::Fc);
+            let material = PlateMaterial::Concrete {
+                concrete,
+                poisson_ratio: poisson_ratio(reading, InputField::ConcretePoissonRatio),
+            };
+            if !reading.refused(InputField::Fc) {
+                reading.show(
+                    InputField::DerivedYoungModulus,
+                    young_modulus_text(material.young_modulus()),
+                );
+            }
+            material
+        }
+        Material::Steel => {
+            let material = PlateMaterial::Steel;
+            reading.show(
+                InputField::DerivedYoungModulus,
+                young_modulus_text(material.young_modulus()),
+            );
+            reading.show(
+                InputField::DerivedPoissonRatio,
+                poisson_ratio_text(material.poisson_ratio()),
+            );
+            material
+        }
     }
 }
 
@@ -407,7 +581,7 @@ fn figures(value: f64) -> Option<String> {
 /// 分布図の量を切り替えても解き直さない。
 #[component]
 pub(crate) fn KirchhoffPlatePage() -> Element {
-    let inputs = use_inputs::<InputField>();
+    let mut inputs = use_inputs::<InputField>();
     let quantity = use_signal(|| Quantity::W);
     let outcome = use_memo(move || PlateOutcome::from_inputs(&inputs.read()));
     let figure = use_memo(move || {
@@ -421,13 +595,23 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
     let CenterRow { w, mx, my } = readout.center.clone();
     let deflection = readout.deflection_maximum.clone();
     let Balance { reactions, load } = readout.balance.clone();
+    let chosen = material(&inputs.read());
     rsx! {
         Page { route: Route::ToolsKirchhoffPlate {},
             Columns {
                 Column {
                     InputGroup {
                         inputs,
-                        layout: Layout::RowHeads(ROWS.map(|row| row.to_vec()).to_vec()),
+                        switch: rsx! {
+                            Switch {
+                                label: "板の材料",
+                                names: Material::ALL.map(Material::name).to_vec(),
+                                pressed: Material::ALL.iter().position(|m| *m == chosen).expect("材料は ALL に載る"),
+                                symbols: false,
+                                onpress: move |index: usize| switch_material(&mut inputs.write(), Material::ALL[index]),
+                            }
+                        },
+                        layout: Layout::RowHeads(rows(chosen)),
                         record: outcome.read().record.clone(),
                         Block {
                             Caption { "板の中央" }
@@ -554,34 +738,16 @@ fn FigureBlock(quantity: Signal<Quantity>, figure: Option<PlateFigure>) -> Eleme
     }
 }
 
-/// 分布図の量の切替。5 つのボタンを 1 行に並べ、押されているものを `ink` で塗る（選択は墨）。
-/// 器は入力と同じ `line` の枠で、外の角だけ `radius-8`（ボタン）。振る舞いは `dioxus-primitives` の
-/// toggle_group（`aria-pressed`、Tab では組に 1 度だけ止まり、組の中は左右の矢印と Home・End で移る）。
-/// 押されているものをもう一度押しても外さない（いつも 1 つが押されている）。キーボードのフォーカスは
-/// `ink` の内枠（押されて `ink` で塗ったものは `paper`）。外に描く既定の輪は器の `overflow-hidden` に切られ、
-/// 塗ったものの上では見えない
+/// 分布図の量の切替。5 つの量の記号を等幅で並べる（`Switch`）
 #[component]
 fn QuantitySwitch(quantity: Signal<Quantity>) -> Element {
-    let pressed = Quantity::ALL.iter().position(|q| *q == quantity());
     rsx! {
-        ToggleGroup {
-            class: "flex overflow-hidden rounded-8 border border-line",
-            role: "group",
-            aria_label: "分布図の量",
-            horizontal: true,
-            pressed: Some(pressed.into_iter().collect::<HashSet<usize>>()),
-            on_pressed_change: move |pressed: HashSet<usize>| {
-                if let Some(index) = pressed.into_iter().next() {
-                    quantity.set(Quantity::ALL[index]);
-                }
-            },
-            for (index , q) in Quantity::ALL.iter().copied().enumerate() {
-                ToggleItem {
-                    class: "h-6 flex-1 border-r border-line bg-paper font-mono text-num last:border-r-0 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ink aria-pressed:bg-ink aria-pressed:text-paper aria-pressed:focus-visible:outline-paper",
-                    index,
-                    {q.symbol()}
-                }
-            }
+        Switch {
+            label: "分布図の量",
+            names: Quantity::ALL.map(Quantity::symbol).to_vec(),
+            pressed: Quantity::ALL.iter().position(|q| *q == quantity()).expect("量は ALL に載る"),
+            symbols: true,
+            onpress: move |index: usize| quantity.set(Quantity::ALL[index]),
         }
     }
 }
