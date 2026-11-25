@@ -6,7 +6,7 @@
 mod common;
 use common::{assert_within, at, integrated_reaction, plate};
 use rustruct_calc::kirchhoff_plate::{
-    EdgeSample, Maxima, Maximum, Plate, PlateError, PointResponse, SupportType, solve,
+    EdgeSample, Maxima, Maximum, Plate, PlateError, PointResponse, Position, SupportType, solve,
 };
 use rustruct_types::kirchhoff_plate::{Edge, PlateMaterial, Support, Supports};
 use rustruct_types::quantity::{AreaLoad, ForcePerLength, Length, MomentPerLength, Stress};
@@ -466,10 +466,23 @@ fn an_invalid_input_reads_as_what_to_enter() {
     assert_eq!(InvalidInput::Load.to_string(), "数値で入れる");
 }
 
-/// 最大値の位置 (x, y) [mm]。位置の無い最大値なら失敗
-fn position<T>(m: &Maximum<T>, what: &str) -> (f64, f64) {
-    let p = m.position.unwrap_or_else(|| panic!("{what}: 位置が無い"));
+/// 最大値の位置 (x, y) [mm]。最大値が無ければ失敗
+fn position<T>(m: &Option<Maximum<T>>, what: &str) -> (f64, f64) {
+    let p = m
+        .as_ref()
+        .unwrap_or_else(|| panic!("{what}: 位置が無い"))
+        .position;
     (p.x.as_mm(), p.y.as_mm())
+}
+
+/// 曲げモーメントの最大値の値 [N·mm/mm]。最大値が無ければ 0
+fn moment_value(m: &Option<Maximum<MomentPerLength>>) -> f64 {
+    m.map_or(0.0, |m| m.value.as_nmm_per_mm())
+}
+
+/// せん断力の最大値の値 [N/mm]。最大値が無ければ 0
+fn shear_value(m: &Option<Maximum<ForcePerLength>>) -> f64 {
+    m.map_or(0.0, |m| m.value.as_n_per_mm())
 }
 
 #[test]
@@ -486,7 +499,7 @@ fn the_bottom_tension_maxima_of_a_fixed_plate_are_at_the_centre() {
             at_centre.push(("My", m.my_bottom, centre.my.as_nmm_per_mm()));
         } else {
             let (x, y) = position(&m.my_bottom, &what);
-            let value = m.my_bottom.value.as_nmm_per_mm();
+            let value = moment_value(&m.my_bottom);
             assert_within(x, lx / 2.0, 1e-6 * lx, &what);
             assert!(y < ly / 2.0, "{what}: y = {y}");
             assert!(value > centre.my.as_nmm_per_mm(), "{what}");
@@ -500,12 +513,7 @@ fn the_bottom_tension_maxima_of_a_fixed_plate_are_at_the_centre() {
         for (name, maximum, expected) in at_centre {
             let what = format!("{what} の {name}");
             let (x, y) = position(&maximum, &what);
-            assert_within(
-                maximum.value.as_nmm_per_mm(),
-                expected,
-                1e-9 * expected,
-                &what,
-            );
+            assert_within(moment_value(&maximum), expected, 1e-9 * expected, &what);
             assert_within(x, lx / 2.0, 1e-6 * lx, &what);
             assert_within(y, ly / 2.0, 1e-6 * ly, &what);
         }
@@ -526,28 +534,28 @@ fn the_top_tension_and_shear_maxima_of_a_fixed_plate_are_the_edge_maxima() {
         for (name, value, found, expected, middle) in [
             (
                 "Mx",
-                m.mx_top.value.as_nmm_per_mm(),
+                moment_value(&m.mx_top),
                 position(&m.mx_top, "Mx"),
                 x0.moment.value.as_nmm_per_mm(),
                 (0.0, ly / 2.0),
             ),
             (
                 "My",
-                m.my_top.value.as_nmm_per_mm(),
+                moment_value(&m.my_top),
                 position(&m.my_top, "My"),
                 y0.moment.value.as_nmm_per_mm(),
                 (lx / 2.0, 0.0),
             ),
             (
                 "Qx",
-                m.qx.value.as_n_per_mm(),
+                shear_value(&m.qx),
                 position(&m.qx, "Qx"),
                 x0.shear.value.as_n_per_mm(),
                 (0.0, ly / 2.0),
             ),
             (
                 "Qy",
-                m.qy.value.as_n_per_mm(),
+                shear_value(&m.qy),
                 position(&m.qy, "Qy"),
                 y0.shear.value.as_n_per_mm(),
                 (lx / 2.0, 0.0),
@@ -590,7 +598,7 @@ fn a_simply_supported_plate_shows_its_tiny_top_tension_as_it_is() {
             {
                 let what = format!("{what} の {name}");
                 position(&top, &what);
-                let (top, bottom) = (top.value.as_nmm_per_mm(), bottom.value.as_nmm_per_mm());
+                let (top, bottom) = (moment_value(&top), moment_value(&bottom));
                 assert!(top < 0.0 && -top < 5e-3 * bottom, "{what}: {top}");
             }
             for (name, bottom, centre) in [
@@ -599,10 +607,7 @@ fn a_simply_supported_plate_shows_its_tiny_top_tension_as_it_is() {
             ] {
                 let what = format!("{what} の {name}");
                 position(&bottom, &what);
-                assert!(
-                    bottom.value.as_nmm_per_mm() >= centre * (1.0 - 1e-9),
-                    "{what}"
-                );
+                assert!(moment_value(&bottom) >= centre * (1.0 - 1e-9), "{what}");
             }
         }
     }
@@ -638,18 +643,10 @@ type Found = (&'static str, f64, Option<(f64, f64)>);
 
 /// 最大値の 6 つ（曲げモーメントの向きごととせん断力）
 fn bending_and_shear(m: &Maxima) -> [Found; 6] {
-    let moment = |v: &Maximum<MomentPerLength>| {
-        (
-            v.value.as_nmm_per_mm(),
-            v.position.map(|p| (p.x.as_mm(), p.y.as_mm())),
-        )
-    };
-    let shear = |v: &Maximum<ForcePerLength>| {
-        (
-            v.value.as_n_per_mm(),
-            v.position.map(|p| (p.x.as_mm(), p.y.as_mm())),
-        )
-    };
+    let at = |p: Position| (p.x.as_mm(), p.y.as_mm());
+    let moment =
+        |v: &Option<Maximum<MomentPerLength>>| (moment_value(v), v.map(|v| at(v.position)));
+    let shear = |v: &Option<Maximum<ForcePerLength>>| (shear_value(v), v.map(|v| at(v.position)));
     let named = |name, (value, at): (f64, Option<(f64, f64)>)| -> Found { (name, value, at) };
     [
         named("Mx の下側引張", moment(&m.mx_bottom)),
@@ -721,35 +718,27 @@ fn no_point_of_the_plate_exceeds_the_maxima() {
         for p in &interior {
             within(
                 p.mx.as_nmm_per_mm(),
-                m.mx_bottom.value.as_nmm_per_mm(),
+                moment_value(&m.mx_bottom),
                 "Mx の下側引張",
             );
             within(
                 -p.mx.as_nmm_per_mm(),
-                -m.mx_top.value.as_nmm_per_mm(),
+                -moment_value(&m.mx_top),
                 "Mx の上側引張",
             );
             within(
                 p.my.as_nmm_per_mm(),
-                m.my_bottom.value.as_nmm_per_mm(),
+                moment_value(&m.my_bottom),
                 "My の下側引張",
             );
             within(
                 -p.my.as_nmm_per_mm(),
-                -m.my_top.value.as_nmm_per_mm(),
+                -moment_value(&m.my_top),
                 "My の上側引張",
             );
             if !(free && s.near_corner(p.x, p.y)) {
-                within(
-                    p.qx.as_n_per_mm().abs(),
-                    m.qx.value.as_n_per_mm().abs(),
-                    "|Qx|",
-                );
-                within(
-                    p.qy.as_n_per_mm().abs(),
-                    m.qy.value.as_n_per_mm().abs(),
-                    "|Qy|",
-                );
+                within(p.qx.as_n_per_mm().abs(), shear_value(&m.qx).abs(), "|Qx|");
+                within(p.qy.as_n_per_mm().abs(), shear_value(&m.qy).abs(), "|Qy|");
             }
         }
         for edge in Edge::ALL {
@@ -759,19 +748,11 @@ fn no_point_of_the_plate_exceeds_the_maxima() {
                 Edge::Y0 | Edge::YLy => (m.my_bottom, m.my_top, m.qy),
             };
             let moment = e.moment.value.as_nmm_per_mm();
-            within(
-                moment,
-                bottom.value.as_nmm_per_mm(),
-                &format!("{edge} の下側引張"),
-            );
-            within(
-                -moment,
-                -top.value.as_nmm_per_mm(),
-                &format!("{edge} の上側引張"),
-            );
+            within(moment, moment_value(&bottom), &format!("{edge} の下側引張"));
+            within(-moment, -moment_value(&top), &format!("{edge} の上側引張"));
             within(
                 e.shear.value.as_n_per_mm().abs(),
-                shear.value.as_n_per_mm().abs(),
+                shear_value(&shear).abs(),
                 &format!("{edge} のせん断力"),
             );
         }
@@ -783,13 +764,12 @@ fn the_deflection_maximum_is_the_maximum_w_and_an_unloaded_plate_has_no_maxima()
     // 最大値の w は最大たわみそのもの。荷重が 0 の板では、どの量も値 0・位置無し
     let s = solve(&plate(2000.0, 3000.0, 0.2, 10.0, FFSS)).unwrap();
     let (m, d) = (s.maxima(), s.deflection_maximum());
-    assert_eq!(m.w.value, d.w);
+    assert_eq!(m.w.map(|w| w.value), Some(d.w));
     assert_eq!(position(&m.w, "w"), (d.x.as_mm(), d.y.as_mm()));
     let m = solve(&plate(2000.0, 3000.0, 0.2, 0.0, FFSS))
         .unwrap()
         .maxima();
-    assert_eq!(m.w.value.as_mm(), 0.0);
-    assert_eq!(m.w.position, None);
+    assert_eq!(m.w, None);
     for (name, value, at) in bending_and_shear(&m) {
         assert_eq!(value, 0.0, "{name}");
         assert_eq!(at, None, "{name}");

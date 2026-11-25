@@ -172,28 +172,28 @@ pub struct Position {
     pub y: Length,
 }
 
-/// 板全体の最大値の 1 つ（GLOSSARY「最大値」）。値と、その位置。位置が無いのは板のどこにもその量が無いとき
-/// （曲げモーメントはその符号の値が無いとき。荷重が 0 の板など）で、値は 0
+/// 板全体の最大値の 1 つ（GLOSSARY「最大値」）。値と、その位置
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Maximum<T> {
     pub value: T,
-    pub position: Option<Position>,
+    pub position: Position,
 }
 
-/// 板全体の最大値（GLOSSARY、ADR kirchhoff-plate-0010）。符号は [`PointResponse`] と同じ
+/// 板全体の最大値（GLOSSARY、ADR kirchhoff-plate-0010）。符号は [`PointResponse`] と同じ。None は板のどこにも
+/// その量が無いとき（曲げモーメントはその符号の値が無いとき。荷重が 0 の板など）で、値 0 は読む側で出す
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Maxima {
-    /// たわみ。[`Solution::deflection_maximum`] の値と位置
-    pub w: Maximum<Length>,
+    /// たわみ。[`Solution::deflection_maximum`] の値と位置。たわみが 0 なら None
+    pub w: Option<Maximum<Length>>,
     /// Mx の下側引張の最大（正の最大）
-    pub mx_bottom: Maximum<MomentPerLength>,
+    pub mx_bottom: Option<Maximum<MomentPerLength>>,
     /// Mx の上側引張の最大（負で絶対値の最大）
-    pub mx_top: Maximum<MomentPerLength>,
-    pub my_bottom: Maximum<MomentPerLength>,
-    pub my_top: Maximum<MomentPerLength>,
+    pub mx_top: Option<Maximum<MomentPerLength>>,
+    pub my_bottom: Option<Maximum<MomentPerLength>>,
+    pub my_top: Option<Maximum<MomentPerLength>>,
     /// |Qx| が最大の点の Qx（符号つき）
-    pub qx: Maximum<ForcePerLength>,
-    pub qy: Maximum<ForcePerLength>,
+    pub qx: Option<Maximum<ForcePerLength>>,
+    pub qy: Option<Maximum<ForcePerLength>>,
 }
 
 /// 解。入力と、正規化で決まった型、利用者の座標と解き方の座標の換算（写し方を持つ）、代表の向きの板の解き方
@@ -506,7 +506,7 @@ impl Solution {
     /// 曲げモーメントは、ちょうど 0 にならない小さな値が出る）。
     ///
     /// - 曲げモーメントは向きごと（下側引張と上側引張）に取る。取った最大は 0 に丸めずに返し、板のどこにもその
-    ///   符号の値が無い（ちょうど 0 か逆の符号だけの）ときだけ、値 0・位置無し
+    ///   符号の値が無い（ちょうど 0 か逆の符号だけの）ときだけ None
     /// - せん断力は |Q| の最大の点の、符号つきの値。自由辺のある組では隅から辺長の [`CORNER_MARGIN`] 以内の点
     ///   （[`Self::near_corner`]）を除く（ADR kirchhoff-plate-0008）。曲げモーメントは隅まで含める
     /// - 同じ大きさの最大が板を辺に平行な中心線で折り返した点にもあるときは、原点に近い側（y、次に x の小さいほう）
@@ -541,7 +541,10 @@ impl Solution {
             let found = |sign: f64| {
                 search
                     .peak(|r| sign * pick(r))
-                    .map(|(position, r)| (MomentPerLength::nmm_per_mm(pick(&r)), position))
+                    .map(|(position, r)| Maximum {
+                        value: MomentPerLength::nmm_per_mm(pick(&r)),
+                        position,
+                    })
             };
             (found(1.0), found(-1.0))
         };
@@ -553,9 +556,10 @@ impl Solution {
                     pick(r).abs()
                 }
             };
-            search
-                .peak(magnitude)
-                .map(|(position, r)| (ForcePerLength::n_per_mm(pick(&r)), position))
+            search.peak(magnitude).map(|(position, r)| Maximum {
+                value: ForcePerLength::n_per_mm(pick(&r)),
+                position,
+            })
         };
         let (mx_bottom, mx_top) = moment(|r| r.mx.as_nmm_per_mm());
         let (my_bottom, my_top) = moment(|r| r.my.as_nmm_per_mm());
@@ -563,16 +567,16 @@ impl Solution {
         let qy = shear(|r| r.qy.as_n_per_mm());
         let w = self.deflection_maximum();
         Maxima {
-            w: Maximum {
+            w: (w.w.as_mm() != 0.0).then_some(Maximum {
                 value: w.w,
-                position: (w.w.as_mm() != 0.0).then_some(Position { x: w.x, y: w.y }),
-            },
-            mx_bottom: maximum(mx_bottom, MomentPerLength::nmm_per_mm(0.0)),
-            mx_top: maximum(mx_top, MomentPerLength::nmm_per_mm(0.0)),
-            my_bottom: maximum(my_bottom, MomentPerLength::nmm_per_mm(0.0)),
-            my_top: maximum(my_top, MomentPerLength::nmm_per_mm(0.0)),
-            qx: maximum(qx, ForcePerLength::n_per_mm(0.0)),
-            qy: maximum(qy, ForcePerLength::n_per_mm(0.0)),
+                position: Position { x: w.x, y: w.y },
+            }),
+            mx_bottom,
+            mx_top,
+            my_bottom,
+            my_top,
+            qx,
+            qy,
         }
     }
 
@@ -696,20 +700,6 @@ impl Search<'_> {
             },
             self.solution.response(x, y),
         ))
-    }
-}
-
-/// 見つけた最大を [`Maximum`] に。見つからなければ値 0、位置無し
-fn maximum<T>(found: Option<(T, Position)>, zero: T) -> Maximum<T> {
-    match found {
-        Some((value, position)) => Maximum {
-            value,
-            position: Some(position),
-        },
-        None => Maximum {
-            value: zero,
-            position: None,
-        },
     }
 }
 

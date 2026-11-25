@@ -8,9 +8,11 @@ use common::{
     integrated_reaction, navier, plate, rigidity,
 };
 use rustruct_calc::kirchhoff_plate::{
-    Plate, PlateError, PointResponse, Solution, SupportType, TERMS, solve, solve_with_series,
+    Maximum, Plate, PlateError, PointResponse, Solution, SupportType, TERMS, solve,
+    solve_with_series,
 };
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Support, Supports};
+use rustruct_types::quantity::MomentPerLength;
 
 const SSSS: Supports = Supports::all(Support::SimplySupported);
 const FFFF: Supports = Supports::all(Support::Fixed);
@@ -327,6 +329,11 @@ fn the_deflection_maximum_matches_the_series_solutions() {
     }
 }
 
+/// 曲げモーメントの最大値の値 [N·mm/mm]。最大値が無ければ 0
+fn value(m: &Option<Maximum<MomentPerLength>>) -> f64 {
+    m.map_or(0.0, |m| m.value.as_nmm_per_mm())
+}
+
 #[test]
 fn the_bending_maxima_match_the_series_solutions() {
     // 曲げモーメントの向きごとの最大値（Mx・My の下側引張と上側引張）が、参照解の最大と M の許容（0.5 %、
@@ -347,29 +354,24 @@ fn the_bending_maxima_match_the_series_solutions() {
             ];
             let scale = pairs
                 .iter()
-                .map(|(_, r, _)| r.value.as_nmm_per_mm().abs())
+                .map(|(_, r, _)| value(r).abs())
                 .fold(0.0, f64::max);
             for (name, r, f) in pairs {
                 let what = format!("{symbol} 比 {ratio} の {name}");
-                assert_within(
-                    f.value.as_nmm_per_mm(),
-                    r.value.as_nmm_per_mm(),
-                    5e-3 * scale,
-                    &what,
-                );
+                assert_within(value(&f), value(&r), 5e-3 * scale, &what);
                 if symbol == "SSSS" && name.ends_with("上側引張") {
                     continue;
                 }
                 let (pr, pf) = (
-                    r.position
-                        .unwrap_or_else(|| panic!("{what}: 参照解に位置が無い")),
-                    f.position.unwrap_or_else(|| panic!("{what}: 位置が無い")),
+                    r.unwrap_or_else(|| panic!("{what}: 参照解に位置が無い"))
+                        .position,
+                    f.unwrap_or_else(|| panic!("{what}: 位置が無い")).position,
                 );
                 assert_within(pf.x.as_mm(), pr.x.as_mm(), 1e-3 * lx, &what);
                 assert_within(pf.y.as_mm(), pr.y.as_mm(), 1e-3 * ly, &what);
             }
             if symbol == "FFFF" && ratio == 1.5 {
-                let y = f.my_bottom.position.expect("位置").y.as_mm();
+                let y = f.my_bottom.expect("位置").position.y.as_mm();
                 assert!(
                     (1200.0..1300.0).contains(&y),
                     "{symbol} 比 {ratio} の My: y = {y}"
