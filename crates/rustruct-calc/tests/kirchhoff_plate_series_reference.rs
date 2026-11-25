@@ -8,9 +8,11 @@ use common::{
     integrated_reaction, navier, plate, rigidity,
 };
 use rustruct_calc::kirchhoff_plate::{
-    Plate, PlateError, PointResponse, Solution, SupportType, TERMS, solve, solve_with_series,
+    Maximum, Plate, PlateError, PointResponse, Solution, SupportType, TERMS, solve,
+    solve_with_series,
 };
 use rustruct_types::kirchhoff_plate::{Corner, Edge, Support, Supports};
+use rustruct_types::quantity::MomentPerLength;
 
 const SSSS: Supports = Supports::all(Support::SimplySupported);
 const FFFF: Supports = Supports::all(Support::Fixed);
@@ -322,6 +324,58 @@ fn the_deflection_maximum_matches_the_series_solutions() {
             for m in [r, f] {
                 assert_within(m.x.as_mm(), lx / 2.0, 1e-6 * lx, &what);
                 assert_within(m.y.as_mm(), ly / 2.0, 1e-6 * ly, &what);
+            }
+        }
+    }
+}
+
+/// 曲げモーメントの最大値の値 [N·mm/mm]。最大値が無ければ 0
+fn value(m: &Option<Maximum<MomentPerLength>>) -> f64 {
+    m.map_or(0.0, |m| m.value.as_nmm_per_mm())
+}
+
+#[test]
+fn the_bending_maxima_match_the_series_solutions() {
+    // 曲げモーメントの向きごとの最大値（Mx・My の下側引張と上側引張）が、参照解の最大と M の許容（0.5 %、
+    // 板全体の |M| の最大に対して。ADR kirchhoff-plate-0002）で一致し、位置が辺長の 1e-3 で一致する。縦横比 1.5 の
+    // 四辺固定の My の下側引張は、中央をはさむ 2 点のうち原点に近い側（y ≈ 1239 mm）。四辺単純支持の上側引張は、
+    // どちらの解も 0 に丸めない小さな値で（有限要素は辺の上で 0 にならない。ADR kirchhoff-plate-0010）、位置は比べない
+    let lx = 2000.0;
+    for (symbol, supports) in [("SSSS", SSSS), ("FFFF", FFFF)] {
+        for ratio in [1.0, 1.5] {
+            let ly = ratio * lx;
+            let p = plate(lx, ly, 0.2, 10.0, supports);
+            let (r, f) = (reference(&p).maxima(), solve(&p).unwrap().maxima());
+            let pairs = [
+                ("Mx の下側引張", r.mx_bottom, f.mx_bottom),
+                ("Mx の上側引張", r.mx_top, f.mx_top),
+                ("My の下側引張", r.my_bottom, f.my_bottom),
+                ("My の上側引張", r.my_top, f.my_top),
+            ];
+            let scale = pairs
+                .iter()
+                .map(|(_, r, _)| value(r).abs())
+                .fold(0.0, f64::max);
+            for (name, r, f) in pairs {
+                let what = format!("{symbol} 比 {ratio} の {name}");
+                assert_within(value(&f), value(&r), 5e-3 * scale, &what);
+                if symbol == "SSSS" && name.ends_with("上側引張") {
+                    continue;
+                }
+                let (pr, pf) = (
+                    r.unwrap_or_else(|| panic!("{what}: 参照解に位置が無い"))
+                        .position,
+                    f.unwrap_or_else(|| panic!("{what}: 位置が無い")).position,
+                );
+                assert_within(pf.x.as_mm(), pr.x.as_mm(), 1e-3 * lx, &what);
+                assert_within(pf.y.as_mm(), pr.y.as_mm(), 1e-3 * ly, &what);
+            }
+            if symbol == "FFFF" && ratio == 1.5 {
+                let y = f.my_bottom.expect("位置").position.y.as_mm();
+                assert!(
+                    (1200.0..1300.0).contains(&y),
+                    "{symbol} 比 {ratio} の My: y = {y}"
+                );
             }
         }
     }
