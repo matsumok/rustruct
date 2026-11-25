@@ -59,10 +59,8 @@ fn the_page_opens_with_the_initial_inputs_in_the_sheet() {
             "y = Ly（上）",
         ],
     );
-    assert!(
-        text_of(main).contains("ν は 0 を基本とする"),
-        "ν の注記が無い: {main}"
-    );
+    // ν は既定が 0 なので、入力の表の下で案内しない（ADR kirchhoff-plate-0005）
+    assert!(!text_of(main).contains("基本"), "ν の注記がある: {main}");
     for value in ["4.0", "5.0", "150", "22700", "0", "10"] {
         assert!(
             main.contains(&format!("value=\"{value}\"")),
@@ -147,6 +145,14 @@ fn the_signs_are_stated_in_the_notes() {
     ] {
         assert!(text.contains(note), "注記「{note}」が無い: {text}");
     }
+}
+
+#[test]
+fn the_edge_notes_do_not_say_that_m_is_zero_on_simply_supported_and_free_edges() {
+    // 支持条件から明らかなので言わない
+    let text = text_of(element(&render_path("/tools/kirchhoff-plate"), "main"));
+    assert!(text.contains("辺上の絶対値の最大値"), "{text}");
+    assert!(!text.contains("M は 0"), "{text}");
 }
 
 fn inputs(change: impl FnOnce(&mut PlateInputs)) -> PlateInputs {
@@ -384,14 +390,37 @@ fn the_page_shows_the_deflection_figure_after_the_results_with_five_switches() {
     );
     // 図は 1 枚（ライトとダークは CSS 変数で切り替わる）
     assert_eq!(main.matches("<svg xmlns").count(), 1, "{main}");
-    // 4 辺の支持条件を、図の名前と注記で言う
+    // 4 辺の支持条件は図の名前で言う。図の下で縁の読み方は言い直さない（入力の表が支持条件を言う）
     assert!(
         main.contains(
             "aria-label=\"たわみ w の分布図。x = 0 の辺は固定、x = Lx の辺は固定、y = 0 の辺は固定、y = Ly の辺は固定\""
         ),
         "{main}"
     );
-    assert_in_order(&text_of(&main), &["Qy", "固定", "単純支持", "自由"]);
+    let after_switches = &text_of(&main)[text_of(&main).rfind("Qy").unwrap()..];
+    for support in ["固定", "単純支持", "自由"] {
+        assert!(!after_switches.contains(support), "{after_switches}");
+    }
+}
+
+/// ページの、分布図より後の HTML（図の列は最後）
+fn after_the_figure(inputs: PlateInputs) -> String {
+    let main = element(&render_path_with("/tools/kirchhoff-plate", inputs), "main").to_string();
+    let end = main.rfind("</svg>").expect("図がある") + "</svg>".len();
+    main[end..].to_string()
+}
+
+#[test]
+fn the_figure_has_notes_only_when_the_figure_gives_some() {
+    // 自由辺の無い組の図には注記が無く、空の箇条も置かない
+    let fixed = after_the_figure(PlateInputs::default());
+    assert!(!fixed.contains("<ul"), "{fixed}");
+    let free = after_the_figure(three_fixed_one_free());
+    assert_eq!(free.matches("<li").count(), 1, "{free}");
+    assert!(
+        text_of(&free).contains("色の幅は、隅から辺長の 5 % 以内の点を除いて決める"),
+        "{free}"
+    );
 }
 
 #[test]
