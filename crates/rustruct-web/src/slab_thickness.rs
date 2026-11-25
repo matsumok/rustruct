@@ -15,13 +15,12 @@ use rustruct_calc::slab_thickness::{
 mod figure;
 
 pub use figure::{SlabCurves, SlabFigure};
-use rustruct_types::concrete::{Concrete, ConcreteKind};
-use rustruct_types::quantity::{AreaLoad, Length, Stress};
+use rustruct_types::quantity::{AreaLoad, Length};
 
 use crate::Route;
 use crate::chart;
-use crate::data::young_modulus;
-use crate::inputs::{Definition, Field, InputGroup, Inputs, Kind, Layout, Reason};
+use crate::data::{concrete, young_modulus};
+use crate::inputs::{Definition, Field, InputGroup, InputRecord, Inputs, Kind, Layout, use_inputs};
 use crate::page::Page;
 use crate::table::{Block, Caption, Column, Columns, Notes, Table, TableColumn};
 
@@ -125,6 +124,7 @@ impl Field for SlabField {
 pub type SlabInputs = Inputs<SlabField>;
 
 /// 計算核の入口が返す不正な欄を、画面の欄へ。クライテリアが 1 つも無いことは欄をまたぐので `None`
+/// （関わる欄は `SlabField::CRITERIA`）
 fn field_of(reason: InvalidInput) -> Option<SlabField> {
     match reason {
         InvalidInput::FinishLoad => Some(SlabField::FinishLoad),
@@ -141,12 +141,6 @@ fn field_of(reason: InvalidInput) -> Option<SlabField> {
 /// 入力から求めた表示。数値は丸めて文字にしたもの。計算できないときは無し（「—」）
 #[derive(Debug, Clone, PartialEq)]
 pub struct SlabReadout {
-    /// 読めない欄と、その理由。並びは画面の欄の順
-    pub errors: Vec<(SlabField, Reason)>,
-    /// クライテリアが 1 つも無い（変形角とたわみ絶対量が空欄で、表18-1 がオフ）
-    pub no_criteria: bool,
-    /// 計算はできるが、Fc が想定の範囲を外れている
-    pub warning: Option<String>,
     pub shared: SharedRow,
     pub point: PointRow,
 }
@@ -184,7 +178,10 @@ pub struct PointRow {
 /// 計算の結果。入力を 1 回読んで計算核を呼び、結果の表と等厚曲線の素にしたもの。この Tool の入口はここだけ
 #[derive(Debug, Clone, PartialEq)]
 pub struct SlabOutcome {
-    /// 結果の表。読めない欄と、警告も
+    /// 入力の組の記録。クライテリアが 1 つも無い（変形角とたわみ絶対量が空欄で、表18-1 がオフ）ことは、
+    /// クライテリアの 3 欄に関わる欄をまたぐ理由。Fc が想定の範囲を外れていれば警告
+    pub record: InputRecord<SlabField>,
+    /// 結果の表
     pub readout: SlabReadout,
     /// 等厚曲線の素。条件が検査を通り、条件の欄がすべて読めるときだけ
     pub curves: Option<SlabCurves>,
@@ -195,12 +192,7 @@ impl SlabOutcome {
     /// 不正な欄を足す
     pub fn from_inputs(inputs: &SlabInputs) -> Self {
         let mut reading = inputs.reading();
-        let fc = reading.number(SlabField::Fc);
-        let concrete = concrete(fc).unwrap_or_else(|| {
-            reading.refuse(SlabField::Fc, "0 より大きい値を入れる");
-            let initial = reading.initial(SlabField::Fc);
-            concrete(initial.expect("Fc は空欄を受けない")).expect("Fc の初期値は正")
-        });
+        let concrete = concrete(&mut reading, SlabField::Fc);
         let [finish_load, live_load] = [SlabField::FinishLoad, SlabField::LiveLoad]
             .map(|field| AreaLoad::n_per_m2(reading.number(field)));
         let conditions = Conditions {
@@ -215,12 +207,13 @@ impl SlabOutcome {
                 deflection_absolute: reading
                     .optional_number(SlabField::DeflectionAbsolute)
                     .map(Length::mm),
-                min_thickness: inputs.checked(SlabField::MinThickness),
+                min_thickness: reading.checked(SlabField::MinThickness),
             },
         };
         let [x, y] =
             [SlabField::SpanX, SlabField::SpanY].map(|field| Length::m(reading.number(field)));
         let spans = Spans { x, y };
+        let name = reading.text(SlabField::Name).trim().to_string();
 
         // 条件が検査を通れば、検討点はその値で評価する（検査は 1 回）。通らなければ、条件とスパンの不正な欄を
         // いっぺんに集めるのは計算核の `evaluate` に任せる（その中でもう一度検査する）
@@ -229,36 +222,18 @@ impl SlabOutcome {
             Ok(checked) => checked.evaluate(spans),
             Err(_) => evaluate(&conditions, spans),
         };
-        let mut no_criteria = false;
         if let Err(invalid) = &evaluated {
-            for &reason in invalid {
-                match field_of(reason) {
-                    Some(field) => reading.refuse(field, reason.to_string()),
-                    None => no_criteria = true,
-                }
-            }
+            reading.invalid(invalid, field_of, &SlabField::CRITERIA);
         }
-        // 読めないクライテリアは入れてはあるので、「1 つも無い」とは言わない
-        let no_criteria = no_criteria
-            && !reading.refused(SlabField::DeflectionRatio)
-            && !reading.refused(SlabField::DeflectionAbsolute);
-        let errors = reading.errors();
-        let has_error = |field: SlabField| errors.iter().any(|(e, _)| *e == field);
+        let record = reading.finish();
 
         // 共有値は Fc と荷重だけで決まるので、ほかの欄が読めなくても出す
         let shared_fields = [SlabField::Fc, SlabField::FinishLoad, SlabField::LiveLoad];
         let shared = shared_values(concrete, finish_load, live_load)
             .ok()
-            .filter(|_| !shared_fields.into_iter().any(has_error));
-        let warning = if has_error(SlabField::Fc) {
-            None
-        } else {
-            concrete.warning().map(|w| w.to_string())
-        };
-        let conditions_valid = !SlabField::on(SlabSheet::Conditions).any(has_error) && !no_criteria;
-        let spans_valid = !has_error(SlabField::SpanX) && !has_error(SlabField::SpanY);
-
-        let name = inputs.value(SlabField::Name).trim().to_string();
+            .filter(|_| !shared_fields.into_iter().any(|f| record.refused(f)));
+        let conditions_valid = !SlabField::on(SlabSheet::Conditions).any(|f| record.flagged(f));
+        let spans_valid = !record.refused(SlabField::SpanX) && !record.refused(SlabField::SpanY);
 
         // 読めない欄は初期値で埋めて検査を通るので、検査を通っても欄が読めなければ図は描かない
         let curves = checked
@@ -272,19 +247,12 @@ impl SlabOutcome {
         Self {
             curves,
             readout: SlabReadout {
-                point: PointRow::new(evaluated.ok().filter(|_| errors.is_empty())),
-                errors,
-                no_criteria,
-                warning,
+                point: PointRow::new(evaluated.ok().filter(|_| !record.has_reasons())),
                 shared: SharedRow::new(shared),
             },
+            record,
         }
     }
-}
-
-/// Fc から普通コンクリート。`Concrete` が受けない Fc は `None`
-fn concrete(fc: f64) -> Option<Concrete> {
-    Concrete::new(Stress::n_per_mm2(fc), ConcreteKind::Normal).ok()
 }
 
 impl SharedRow {
@@ -344,7 +312,7 @@ fn criterion_name(criterion: Criterion) -> &'static str {
 /// 変わったときの 1 回だけで、結果の表と図が同じ計算の結果を使う。
 #[component]
 pub(crate) fn SlabThicknessPage() -> Element {
-    let inputs = use_signal(SlabInputs::default);
+    let inputs = use_inputs::<SlabField>();
     let outcome = use_memo(move || SlabOutcome::from_inputs(&inputs.read()));
     let figure = use_memo(move || outcome.read().curves.as_ref().map(SlabFigure::new));
     let readout = outcome.read().readout.clone();
@@ -354,14 +322,7 @@ pub(crate) fn SlabThicknessPage() -> Element {
         wp,
     } = readout.shared.clone();
     let point = readout.point.clone();
-    let across = if readout.no_criteria {
-        vec![(
-            SlabField::CRITERIA.to_vec(),
-            InvalidInput::NoCriteria.to_string(),
-        )]
-    } else {
-        Vec::new()
-    };
+    let record = outcome.read().record.clone();
     rsx! {
         Page { route: Route::ToolsSlabThickness {},
             Columns {
@@ -373,9 +334,7 @@ pub(crate) fn SlabThicknessPage() -> Element {
                             "変形角とたわみ絶対量は空欄にすると判定に加えない".into(),
                             "変形増大係数は弾性たわみに乗じる".into(),
                         ],
-                        errors: readout.errors.clone(),
-                        across,
-                        warning: readout.warning.clone(),
+                        record: record.clone(),
                         Block {
                             Caption { "共有値" }
                             Table {
@@ -397,7 +356,7 @@ pub(crate) fn SlabThicknessPage() -> Element {
                         inputs,
                         layout: Layout::ColumnHeads(SlabField::on(SlabSheet::Point).collect()),
                         notes: vec!["Lx・Ly は内法スパン".into()],
-                        errors: readout.errors.clone(),
+                        record,
                         Block {
                             Caption { "必要スラブ厚" }
                             Table {

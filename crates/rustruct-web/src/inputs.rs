@@ -1,10 +1,12 @@
 //! 入力の組（`GLOSSARY.md`「欄」「入力の組」）。決め事は `docs/ui-decisions.md`「入力と表示の区別」「エラーと警告」。
 //!
 //! ページは欄の enum に [`Field`] を実装して、欄ごとの名前・種類・初期値を宣言する。値は [`Inputs`] が
-//! 打ったままの文字で持ち、種類に応じた型で読む。読み取りの規則は文字の話の 4 つ（空欄、3 桁区切りの「,」、
-//! 有限でない数、選択肢に無い記号）、読めない理由の文言は 2 つ（「値を入れる」「数値で入れる」）で、crate は
-//! 使わない。0 や負を受けるかの値の規則は計算核の入口が持ち、ページはその理由を欄に写す（[`Reading::refuse`]）。
-//! 描くのは [`InputGroup`]: Sheet → 注記 → 読めない欄の理由 → 警告の順に `space-1` で積み、
+//! 打ったままの文字で持ち、ページは [`Reading`] を通して種類に応じた型で読む。読み取りの規則は文字の話の
+//! 4 つ（空欄、3 桁区切りの「,」、有限でない数、選択肢に無い記号）、読めない理由の文言は 2 つ（「値を入れる」
+//! 「数値で入れる」）で、crate は使わない。0 や負を受けるかの値の規則は計算核の入口と計算核の型（ν、Fc など）が
+//! 持つ。型が受けない値は [`Reading::typed`] が、入口が返す理由は [`Reading::invalid`] が欄に写す。
+//! 読み取りの結果は [`InputRecord`]（入力の組の記録）の 1 つの値で、計算の結果が持ち、入力の組にそのまま渡る。
+//! 描くのは [`InputGroup`]: Sheet → 注記 → 読めない欄の理由 → 欄をまたぐ理由 → 警告の順に `space-1` で積み、
 //! その下に結果の表を `space-6` 空けて置く。ng の印（見出しと欄の枠）と `aria-label` もここが付ける。
 
 use std::marker::PhantomData;
@@ -158,13 +160,21 @@ impl<F: Field> Inputs<F> {
             .expect("選択の欄は記号を 1 つ持つ")
     }
 
-    /// 欄を順に読み、読めない欄と理由を集める
+    /// 欄を順に読み、入力の組の記録を集める
     pub fn reading(&self) -> Reading<'_, F> {
         Reading {
             inputs: self,
-            errors: Vec::new(),
+            reasons: Vec::new(),
+            across: Vec::new(),
+            warnings: Vec::new(),
         }
     }
+}
+
+/// ページの値の置き場の signal。初めは初期値で、描く前に根の context に `Inputs<F>` があればそれで始める
+/// （打った後の状態の HTML をテストで描くため。`render_path_with`）
+pub(crate) fn use_inputs<F: Field>() -> Signal<Inputs<F>> {
+    use_signal(|| try_consume_context::<Inputs<F>>().unwrap_or_default())
 }
 
 /// 数値の文字を読む。空欄は `blank` なら `None`。読めなければ理由の文言
@@ -184,17 +194,20 @@ fn read_number(text: &str, blank: bool) -> Result<Option<f64>, &'static str> {
         .ok_or("数値で入れる")
 }
 
-/// 欄を読んだ記録。読めない欄と理由を集める。
+/// 欄を読む。ページの `from_inputs` は欄をすべてここから読み、[`Self::finish`] で入力の組の記録にする。
 ///
-/// 読めない欄は、理由を集めたうえで欄の初期値で埋める。ページは埋めた値ごと計算核の入口を呼び、読めた欄の
-/// 値の規則を確かめさせて（読めない欄と読めても不正な欄をいっぺんに出すため）、返った理由を [`Self::refuse`] で
+/// 読めない欄は、理由を集めたうえで欄の初期値で埋める。読めても計算核の型が受けない値（ν、Fc など）は
+/// [`Self::typed`] が理由を足して初期値の型で埋める。ページは埋めた値ごと計算核の入口を呼び、読めた欄の値の
+/// 規則を確かめさせて（読めない欄と読めても不正な欄をいっぺんに出すため）、返った理由を [`Self::invalid`] で
 /// 足す。理由が 1 つでもあるあいだ、その結果は使わない
 pub struct Reading<'a, F: Field> {
     inputs: &'a Inputs<F>,
-    errors: Vec<(F, Reason)>,
+    reasons: Vec<(F, Reason)>,
+    across: Vec<(Vec<F>, Reason)>,
+    warnings: Vec<(Vec<F>, String)>,
 }
 
-impl<F: Field> Reading<'_, F> {
+impl<'a, F: Field> Reading<'a, F> {
     /// 空欄を受けない数値の欄。読めなければ理由を集めて初期値
     pub fn number(&mut self, field: F) -> f64 {
         self.optional_number(field)
@@ -212,29 +225,153 @@ impl<F: Field> Reading<'_, F> {
         }
     }
 
-    /// 数値の欄の初期値。読めた値を計算核の型（ν、Fc など）が受けないときの埋め草
-    pub fn initial(&self, field: F) -> Option<f64> {
+    /// 空欄を受けない数値の欄を、計算核の型にする（`make`）。読めなければ文字の規則の理由、読めても型が
+    /// 受けなければ `reason` を足し、どちらも初期値の型で埋める
+    pub fn typed<T, E>(&mut self, field: F, make: impl Fn(f64) -> Result<T, E>, reason: &str) -> T {
+        if let Ok(value) = make(self.number(field)) {
+            return value;
+        }
+        self.refuse(field, reason);
+        let initial = self.initial(field).expect("空欄を受けない欄の初期値は数");
+        make(initial).unwrap_or_else(|_| panic!("{field:?} の初期値を型が受けない"))
+    }
+
+    /// 文字の欄。打ったままの文字
+    pub fn text(&self, field: F) -> &'a str {
+        assert!(
+            matches!(field.definition().kind, Kind::Text { .. }),
+            "{field:?} は文字の欄でない"
+        );
+        self.inputs.value(field)
+    }
+
+    /// チェックの欄
+    pub fn checked(&self, field: F) -> bool {
+        self.inputs.checked(field)
+    }
+
+    /// 選択の欄。選択肢の記号
+    pub fn choice(&self, field: F) -> char {
+        self.inputs.choice(field)
+    }
+
+    /// 計算核の入口が返した理由を足す。`field_of` が欄に写す理由はその欄の理由に、写らない理由（`None`）は
+    /// `across` の欄に関わる欄をまたぐ理由になる。文言は理由の `Display`
+    pub fn invalid<R: Copy + std::fmt::Display>(
+        &mut self,
+        reasons: &[R],
+        field_of: impl Fn(R) -> Option<F>,
+        across: &[F],
+    ) {
+        for &reason in reasons {
+            match field_of(reason) {
+                Some(field) => self.refuse(field, reason.to_string()),
+                None => {
+                    assert!(
+                        !across.is_empty(),
+                        "欄をまたぐ理由「{reason}」に関わる欄が無い"
+                    );
+                    self.across.push((across.to_vec(), reason.to_string()));
+                }
+            }
+        }
+    }
+
+    /// 警告を足す（計算はできるか、解けないことを言う）。`fields` は警告の関わる欄で、出す組を決める
+    pub fn warn(&mut self, fields: &[F], warning: impl Into<String>) {
+        assert!(!fields.is_empty(), "警告に関わる欄が無い");
+        self.warnings.push((fields.to_vec(), warning.into()));
+    }
+
+    /// 理由のある欄か
+    pub fn refused(&self, field: F) -> bool {
+        self.reasons.iter().any(|(f, _)| *f == field)
+    }
+
+    /// 理由が 1 つでもあるか（欄ごとの理由か、欄をまたぐ理由）
+    pub fn has_reasons(&self) -> bool {
+        !self.reasons.is_empty() || !self.across.is_empty()
+    }
+
+    /// 入力の組の記録にする
+    pub fn finish(mut self) -> InputRecord<F> {
+        let index = Inputs::<F>::index;
+        self.reasons.sort_by_key(|(field, _)| index(*field));
+        let refused: Vec<F> = self.reasons.iter().map(|(f, _)| *f).collect();
+        // 関わる欄のどれかに欄ごとの理由があれば、欄をまたぐ理由は言わない（クライテリアが読めないときに
+        // 「1 つも無い」と言わない）
+        self.across
+            .retain(|(fields, _)| !fields.iter().any(|f| refused.contains(f)));
+        for (fields, _) in self.across.iter_mut().chain(&mut self.warnings) {
+            fields.sort_by_key(|field| index(*field));
+        }
+        InputRecord {
+            reasons: self.reasons,
+            across: self.across,
+            warnings: self.warnings,
+        }
+    }
+
+    /// 理由を足す
+    fn refuse(&mut self, field: F, reason: impl Into<Reason>) {
+        self.reasons.push((field, reason.into()));
+    }
+
+    /// 数値の欄の初期値
+    fn initial(&self, field: F) -> Option<f64> {
         let Kind::Number { blank, initial } = field.definition().kind else {
             panic!("{field:?} は数値の欄でない");
         };
         read_number(initial, blank).unwrap_or_else(|_| panic!("{field:?} の初期値は読める"))
     }
+}
 
-    /// 理由を足す。計算核の入口が返した理由と、ページが決める理由（計算核の型が受けない値など）
-    pub fn refuse(&mut self, field: F, reason: impl Into<Reason>) {
-        self.errors.push((field, reason.into()));
+/// 入力の組の記録（`GLOSSARY.md`「入力の組」）。欄ごとの理由（文字の規則、計算核の型が受けない値、計算核の
+/// 入口の理由）、欄をまたぐ理由と関わる欄、警告と関わる欄。計算の結果が 1 つ持ち、入力の組にそのまま渡す。
+/// 作れるのは [`Reading::finish`] だけ
+#[derive(Debug, Clone, PartialEq)]
+pub struct InputRecord<F> {
+    /// 欄の並び（`Field::ALL`）の順
+    reasons: Vec<(F, Reason)>,
+    /// 関わる欄は欄の並びの順
+    across: Vec<(Vec<F>, Reason)>,
+    /// 関わる欄は欄の並びの順
+    warnings: Vec<(Vec<F>, String)>,
+}
+
+impl<F: Copy + PartialEq> InputRecord<F> {
+    /// 欄ごとの理由。欄の並び（`Field::ALL`）の順
+    pub fn reasons(&self) -> &[(F, Reason)] {
+        &self.reasons
     }
 
-    /// 理由のある欄か
+    /// 欄をまたぐ理由と、関わる欄（欄の並びの順）
+    pub fn across(&self) -> &[(Vec<F>, Reason)] {
+        &self.across
+    }
+
+    /// 警告と、関わる欄（欄の並びの順）
+    pub fn warnings(&self) -> &[(Vec<F>, String)] {
+        &self.warnings
+    }
+
+    /// 理由が 1 つでもあるか。あるあいだ計算の結果の値は無い
+    pub fn has_reasons(&self) -> bool {
+        !self.reasons.is_empty() || !self.across.is_empty()
+    }
+
+    /// その欄に理由があるか（欄の枠が `ng`）
     pub fn refused(&self, field: F) -> bool {
-        self.errors.iter().any(|(f, _)| *f == field)
+        self.reasons.iter().any(|(f, _)| *f == field)
     }
 
-    /// 読めない欄と理由。欄の並び（`F::ALL`）の順
-    pub fn errors(mut self) -> Vec<(F, Reason)> {
-        self.errors
-            .sort_by_key(|(field, _)| Inputs::<F>::index(*field));
-        self.errors
+    /// その欄に理由があるか、欄をまたぐ理由に関わるか（欄の見出しが `ng`）
+    pub fn flagged(&self, field: F) -> bool {
+        self.refused(field)
+            || self
+                .across
+                .iter()
+                .any(|(fields, _)| fields.contains(&field))
     }
 }
 
@@ -258,26 +395,34 @@ impl<F: Field> Layout<F> {
 }
 
 /// 入力の組。Sheet、注記、読めない欄の理由（「欄の名前: 理由」を欄の順に、件数なし）、欄をまたぐ
-/// エラーの文言、警告（「! …」）の順に `space-1` で積み、子（結果の表）をその下に `space-6` 空けて置く。
-/// `errors` はこの Sheet に無い欄のものも受け、自分の欄のものだけを出す。`across` は関わる欄の見出しを `ng` にする
+/// 理由、警告（「! …」）の順に `space-1` で積み、子（結果の表）をその下に `space-6` 空けて置く。
+/// `record` はページの記録をそのまま受け、この Sheet の欄のものだけを出す。欄をまたぐ理由は、関わる欄の
+/// うち最初の欄（`Field::ALL` の順）が載る組に 1 回だけ出し、関わる欄の見出しはそれぞれの組で `ng` にする。
+/// 警告も関わる欄の最初の欄が載る組に出す（色は付けない）
 #[component]
 pub(crate) fn InputGroup<F: Field>(
     inputs: Signal<Inputs<F>>,
     layout: Layout<F>,
     #[props(default)] notes: Vec<String>,
-    #[props(default)] errors: Vec<(F, Reason)>,
-    #[props(default)] across: Vec<(Vec<F>, Reason)>,
-    #[props(default)] warning: Option<String>,
+    record: InputRecord<F>,
     children: Element,
 ) -> Element {
-    let own: Vec<(F, Reason)> = layout
-        .fields()
-        .into_iter()
-        .flat_map(|field| errors.iter().filter(move |(f, _)| *f == field).cloned())
+    let fields = layout.fields();
+    let own: Vec<&(F, Reason)> = fields
+        .iter()
+        .flat_map(|field| record.reasons().iter().filter(move |(f, _)| f == field))
         .collect();
-    let has_error = |field: F| own.iter().any(|(f, _)| *f == field);
-    let head_error =
-        |field: F| has_error(field) || across.iter().any(|(fields, _)| fields.contains(&field));
+    // 関わる欄の最初の欄がこの Sheet に載るもの
+    let here = |list: &'_ [(Vec<F>, String)]| -> Vec<String> {
+        list.iter()
+            .filter(|(involved, _)| involved.first().is_some_and(|f| fields.contains(f)))
+            .map(|(_, text)| text.clone())
+            .collect()
+    };
+    let across = here(record.across());
+    let warnings = here(record.warnings());
+    let has_error = |field: F| record.refused(field);
+    let head_error = |field: F| record.flagged(field);
     rsx! {
         div { class: "flex flex-col gap-6",
             div { class: "flex flex-col gap-1",
@@ -327,10 +472,10 @@ pub(crate) fn InputGroup<F: Field>(
                 for (field , reason) in own.iter() {
                     p { class: "text-label text-ng", "{field.definition().name}: {reason}" }
                 }
-                for (_ , message) in across.iter() {
-                    p { class: "text-label text-ng", "{message}" }
+                for reason in across.iter() {
+                    p { class: "text-label text-ng", "{reason}" }
                 }
-                if let Some(warning) = warning {
+                for warning in warnings.iter() {
                     p { class: "text-label", "! {warning}" }
                 }
             }
@@ -536,15 +681,61 @@ mod tests {
         assert_eq!(inputs.choice(Test::Support), 'R');
     }
 
-    /// `InputGroup` を 1 つ置いたページ。読めない欄を欄の順でなく渡し、Sheet に無い欄の理由も混ぜる。
+    /// 計算核の入口が返す理由の試験用。`Name` は欄に写り、`OneOf` は写らない
+    #[derive(Debug, Clone, Copy)]
+    enum TestInvalid {
+        Name,
+        OneOf,
+    }
+
+    impl std::fmt::Display for TestInvalid {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(match self {
+                Self::Name => "この Sheet に無い欄",
+                Self::OneOf => "どれか 1 つ",
+            })
+        }
+    }
+
+    fn field_of(reason: TestInvalid) -> Option<Test> {
+        match reason {
+            TestInvalid::Name => Some(Test::Name),
+            TestInvalid::OneOf => None,
+        }
+    }
+
+    /// 0 より大きい値だけを受ける計算核の型の代わり
+    #[derive(Debug, PartialEq)]
+    struct Positive(f64);
+
+    fn positive(value: f64) -> Result<Positive, ()> {
+        (value > 0.0).then_some(Positive(value)).ok_or(())
+    }
+
+    /// `InputGroup` を 1 つ置いたページ。読めない欄を欄の順でなく読み、Sheet に無い欄の理由も混ぜる。
     /// 選択の欄は初期値でない 2 つ目の選択肢を選んでおく
     #[component]
     fn GroupPage() -> Element {
         let inputs = use_signal(|| {
             let mut inputs = Inputs::<Test>::new();
             inputs.set(Test::Support, 'S');
+            inputs.set(Test::Load, "");
+            inputs.set(Test::Positive, "x");
             inputs
         });
+        let record = {
+            let inputs = inputs.read();
+            let mut reading = inputs.reading();
+            reading.number(Test::Load);
+            reading.number(Test::Positive);
+            reading.invalid(
+                &[TestInvalid::Name, TestInvalid::OneOf],
+                field_of,
+                &[Test::Table, Test::Ratio],
+            );
+            reading.warn(&[Test::Positive], "想定の外");
+            reading.finish()
+        };
         rsx! {
             InputGroup {
                 inputs,
@@ -554,13 +745,7 @@ mod tests {
                     vec![Test::Table, Test::Support],
                 ]),
                 notes: vec!["注記".into()],
-                errors: vec![
-                    (Test::Load, "値を入れる".into()),
-                    (Test::Positive, "数値で入れる".into()),
-                    (Test::Name, "この Sheet に無い欄".into()),
-                ],
-                across: vec![(vec![Test::Ratio, Test::Table], "どれか 1 つ".into())],
-                warning: Some("想定の外".into()),
+                record,
                 p { "結果の表" }
             }
         }
@@ -669,17 +854,135 @@ mod tests {
         let pressure = reading.number(Test::Pressure);
         let positive = reading.number(Test::Positive);
         assert!(!reading.refused(Test::Load));
-        reading.refuse(Test::Load, "0 以上の値を入れる");
-        assert!(reading.refused(Test::Load));
         assert_eq!((ratio, pressure, positive), (None, -10.0, 4.0));
-        assert_eq!(reading.initial(Test::Load), Some(1800.0));
+        let record = reading.finish();
         assert_eq!(
-            reading.errors(),
-            vec![
+            record.reasons(),
+            [
                 (Test::Positive, "数値で入れる".to_string()),
-                (Test::Load, "0 以上の値を入れる".to_string()),
                 (Test::Ratio, "数値で入れる".to_string()),
             ]
+        );
+        assert!(record.has_reasons());
+    }
+
+    /// 読めても型が受けない値は、渡した文言の理由を足して初期値の型で埋める。読めない値は文字の規則の理由で、
+    /// やはり初期値の型。受ける値はそのまま
+    #[test]
+    fn a_value_the_type_refuses_is_named_and_filled_with_the_initial_value_of_the_type() {
+        let mut inputs = Inputs::<Test>::new();
+        inputs.set(Test::Pressure, "-10");
+        inputs.set(Test::Positive, "x");
+        inputs.set(Test::Load, "2,000");
+        let mut reading = inputs.reading();
+        let reason = "0 より大きい値を入れる";
+        assert_eq!(
+            reading.typed(Test::Pressure, positive, reason),
+            Positive(10.0)
+        );
+        assert_eq!(
+            reading.typed(Test::Positive, positive, reason),
+            Positive(4.0)
+        );
+        assert_eq!(
+            reading.typed(Test::Load, positive, reason),
+            Positive(2000.0)
+        );
+        let record = reading.finish();
+        assert_eq!(
+            record.reasons(),
+            [
+                (Test::Positive, "数値で入れる".to_string()),
+                (Test::Pressure, reason.to_string()),
+            ]
+        );
+    }
+
+    /// 計算核の理由は、写る欄の理由と、写らないものは関わる欄（欄の並びの順）と一緒に欄をまたぐ理由になる
+    #[test]
+    fn the_reasons_of_the_entry_go_to_their_fields_or_across_the_given_fields() {
+        let inputs = Inputs::<Test>::new();
+        let mut reading = inputs.reading();
+        reading.invalid(
+            &[TestInvalid::OneOf, TestInvalid::Name],
+            field_of,
+            &[Test::Table, Test::Ratio],
+        );
+        assert!(reading.refused(Test::Name) && reading.has_reasons());
+        let record = reading.finish();
+        assert_eq!(
+            record.reasons(),
+            [(Test::Name, "この Sheet に無い欄".to_string())]
+        );
+        assert_eq!(
+            record.across(),
+            [(vec![Test::Ratio, Test::Table], "どれか 1 つ".to_string())]
+        );
+        assert!(record.flagged(Test::Ratio) && !record.refused(Test::Ratio));
+        assert!(record.flagged(Test::Name) && !record.flagged(Test::Load));
+    }
+
+    /// 関わる欄のどれかに理由があれば、欄をまたぐ理由は言わない（読めないクライテリアは「無い」と言わない）
+    #[test]
+    fn a_reason_across_fields_is_dropped_when_one_of_them_has_its_own_reason() {
+        let mut inputs = Inputs::<Test>::new();
+        inputs.set(Test::Ratio, "x");
+        let mut reading = inputs.reading();
+        reading.optional_number(Test::Ratio);
+        reading.invalid(&[TestInvalid::OneOf], field_of, &[Test::Ratio, Test::Table]);
+        let record = reading.finish();
+        assert_eq!(record.across(), []);
+        assert_eq!(record.reasons().len(), 1);
+    }
+
+    /// 2 つの Sheet を持つページ。欄をまたぐ理由は Load（上の組）と Table（下の組）に関わり、警告は Support と
+    /// Ratio（どちらも下の組）に関わる
+    #[component]
+    fn TwoGroupsPage() -> Element {
+        let inputs = use_signal(Inputs::<Test>::new);
+        let record = {
+            let inputs = inputs.read();
+            let mut reading = inputs.reading();
+            reading.invalid(&[TestInvalid::OneOf], field_of, &[Test::Table, Test::Load]);
+            reading.warn(&[Test::Support, Test::Ratio], "想定の外");
+            reading.finish()
+        };
+        rsx! {
+            InputGroup {
+                inputs,
+                layout: Layout::RowHeads(vec![vec![Test::Positive], vec![Test::Load]]),
+                record: record.clone(),
+                p { "上の組の結果" }
+            }
+            InputGroup {
+                inputs,
+                layout: Layout::ColumnHeads(vec![Test::Ratio, Test::Table, Test::Support]),
+                record,
+                p { "下の組の結果" }
+            }
+        }
+    }
+
+    /// 欄をまたぐ理由は、関わる欄のうち最初の欄（欄の並びの順）が載る組に 1 回だけ出る。関わる欄の見出しは
+    /// どちらの組でも `ng`。警告も関わる欄の最初の欄が載る組に出る
+    #[test]
+    fn a_reason_across_fields_is_said_once_under_the_group_of_its_first_field() {
+        let mut dom = VirtualDom::new(TwoGroupsPage);
+        dom.rebuild_in_place();
+        let html = dioxus_ssr::render(&dom);
+        let (upper, lower) = html.split_at(html.find("上の組の結果").expect("上の組"));
+        assert_eq!(upper.matches("どれか 1 つ").count(), 1, "{html}");
+        assert_eq!(lower.matches("どれか 1 つ").count(), 0, "{html}");
+        assert_eq!(upper.matches("想定の外").count(), 0, "{html}");
+        assert_eq!(lower.matches("! 想定の外").count(), 1, "{html}");
+        let error = [("data-state", "error")];
+        assert_eq!(count_tags(upper, "th", &error), 1, "{html}");
+        assert_eq!(count_tags(lower, "th", &error), 1, "{html}");
+        // 欄をまたぐ理由の欄は読めているので、欄の枠は `ng` でない
+        assert_eq!(
+            count_tags(&html, "input", &[("aria-invalid", "true")]),
+            0,
+            "{html}"
         );
     }
 }

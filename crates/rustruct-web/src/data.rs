@@ -9,7 +9,9 @@ use rustruct_types::quantity::Stress;
 use rustruct_types::rebar::{BarDesignation, RebarKind};
 
 use crate::Route;
-use crate::inputs::{Definition, Field, InputGroup, Inputs, Kind, Layout, Reason};
+use crate::inputs::{
+    Definition, Field, InputGroup, InputRecord, Inputs, Kind, Layout, Reading, use_inputs,
+};
 use crate::page::{Page, RouteList};
 use crate::table::{
     Block, Caption, Cell, Column, Columns, Divider, Formula, Notes, Table, TableColumn,
@@ -54,21 +56,40 @@ impl Field for ConcreteField {
 /// 入力の中身。読めるかは `ConcreteReadout` が決める
 pub type ConcreteInputs = Inputs<ConcreteField>;
 
-/// Fc の入力から求めた、カルキュレータの表示。数値は丸めて文字にしたもの。
+/// Fc の欄から普通コンクリート。`Concrete` が受けない Fc は「0 より大きい値を入れる」を足して初期値で埋め、
+/// 使える Fc が想定の範囲を外れていれば警告を足す（`Reading`）。コンクリートのページと必要スラブ厚さの
+/// ページが同じ規則を使う
+pub(crate) fn concrete<F: Field>(reading: &mut Reading<'_, F>, fc: F) -> Concrete {
+    let concrete = reading.typed(
+        fc,
+        |fc| Concrete::new(Stress::n_per_mm2(fc), ConcreteKind::Normal),
+        "0 より大きい値を入れる",
+    );
+    if !reading.refused(fc)
+        && let Some(warning) = concrete.warning()
+    {
+        reading.warn(&[fc], warning.to_string());
+    }
+    concrete
+}
+
+/// Fc の入力から求めた、カルキュレータの表示（このページの計算の結果）。数値は丸めて文字にしたもの
 #[derive(Debug, Clone, PartialEq)]
-pub enum ConcreteReadout {
-    Computed {
-        /// 気乾単位体積重量 γ [kN/m³]
-        unit_weight: String,
-        /// ヤング係数 E。書き方は `data::young_modulus`
-        young_modulus: String,
-        /// 許容応力度。`Allowable::ALL` の順
-        allowable_stresses: Vec<AllowableRow>,
-        /// 計算はできるが、Fc が想定の範囲を外れている
-        warning: Option<String>,
-    },
-    /// Fc が使えない。値はすべて「—」。理由は入力の組の文言（欄の名前を含めない）
-    Unusable { error: Reason },
+pub struct ConcreteReadout {
+    /// 入力の組の記録。理由があるときは値が無い（「—」）
+    pub record: InputRecord<ConcreteField>,
+    pub values: Option<ConcreteValues>,
+}
+
+/// Fc が使えるときの値
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConcreteValues {
+    /// 気乾単位体積重量 γ [kN/m³]
+    pub unit_weight: String,
+    /// ヤング係数 E。書き方は `data::young_modulus`
+    pub young_modulus: String,
+    /// 許容応力度。`Allowable::ALL` の順
+    pub allowable_stresses: Vec<AllowableRow>,
 }
 
 impl ConcreteReadout {
@@ -80,25 +101,24 @@ impl ConcreteReadout {
     }
 
     pub fn from_inputs(inputs: &ConcreteInputs) -> Self {
-        match Self::concrete(inputs) {
-            Ok(c) => Self::Computed {
-                unit_weight: fixed(c.unit_weight().as_kn_per_m3(), 1),
-                young_modulus: young_modulus(c.young_modulus()),
-                allowable_stresses: Allowable::ALL
-                    .map(|a| AllowableRow::new(a.name(), a.of(&c)))
-                    .to_vec(),
-                warning: c.warning().map(|w| w.to_string()),
-            },
-            Err(error) => Self::Unusable { error },
-        }
+        let mut reading = inputs.reading();
+        let c = concrete(&mut reading, ConcreteField::Fc);
+        let record = reading.finish();
+        let values = (!record.has_reasons()).then(|| ConcreteValues {
+            unit_weight: fixed(c.unit_weight().as_kn_per_m3(), 1),
+            young_modulus: young_modulus(c.young_modulus()),
+            allowable_stresses: Allowable::ALL
+                .map(|a| AllowableRow::new(a.name(), a.of(&c)))
+                .to_vec(),
+        });
+        Self { record, values }
     }
 
     /// 許容応力度の表の行（名前、長期、短期）。使えないときは値がすべて無し
     fn allowable_rows(&self) -> Vec<Vec<Cell>> {
-        match self {
-            Self::Computed {
-                allowable_stresses, ..
-            } => allowable_stresses
+        match &self.values {
+            Some(values) => values
+                .allowable_stresses
                 .iter()
                 .map(|row| {
                     vec![
@@ -108,7 +128,7 @@ impl ConcreteReadout {
                     ]
                 })
                 .collect(),
-            Self::Unusable { .. } => Allowable::ALL
+            None => Allowable::ALL
                 .map(|a| vec![a.name().into(), None.into(), None.into()])
                 .to_vec(),
         }
@@ -116,35 +136,12 @@ impl ConcreteReadout {
 
     /// (γ, E) の表示。使えないときはすべて無し
     fn values(&self) -> Vec<Cell> {
-        match self {
-            Self::Computed {
-                unit_weight,
-                young_modulus,
-                ..
-            } => vec![unit_weight.clone().into(), young_modulus.clone().into()],
-            Self::Unusable { .. } => vec![None.into(), None.into()],
-        }
-    }
-
-    /// 読めない Fc は文字の規則の理由、`Concrete` が受けない Fc は「0 より大きい値を入れる」
-    fn concrete(inputs: &ConcreteInputs) -> Result<Concrete, Reason> {
-        let fc = inputs.number(ConcreteField::Fc)?;
-        Concrete::new(Stress::n_per_mm2(fc), ConcreteKind::Normal)
-            .map_err(|_| "0 より大きい値を入れる".into())
-    }
-
-    /// 入力の組に渡す、読めない欄と理由
-    fn errors(&self) -> Vec<(ConcreteField, Reason)> {
-        match self {
-            Self::Computed { .. } => Vec::new(),
-            Self::Unusable { error } => vec![(ConcreteField::Fc, error.clone())],
-        }
-    }
-
-    fn warning(&self) -> Option<String> {
-        match self {
-            Self::Computed { warning, .. } => warning.clone(),
-            Self::Unusable { .. } => None,
+        match &self.values {
+            Some(values) => vec![
+                values.unit_weight.clone().into(),
+                values.young_modulus.clone().into(),
+            ],
+            None => vec![None.into(), None.into()],
         }
     }
 }
@@ -268,7 +265,7 @@ fn unit_weight_rows() -> Vec<Vec<Cell>> {
 /// 結果は入力から出た値、根拠は入力に依らない規準の表と式だと、部の見出しで分かるようにする。
 #[component]
 pub(crate) fn ConcretePage() -> Element {
-    let inputs = use_signal(ConcreteInputs::default);
+    let inputs = use_inputs::<ConcreteField>();
     let readout = ConcreteReadout::from_inputs(&inputs.read());
     let values = readout.values();
     let allowable_rows = readout.allowable_rows();
@@ -287,8 +284,7 @@ pub(crate) fn ConcretePage() -> Element {
                     InputGroup {
                         inputs,
                         layout: Layout::RowHeads(vec![vec![ConcreteField::Fc]]),
-                        errors: readout.errors(),
-                        warning: readout.warning(),
+                        record: readout.record.clone(),
                         Table {
                             columns: vec![
                                 TableColumn::number("気乾単位体積重量 γ").unit("kN/m³"),

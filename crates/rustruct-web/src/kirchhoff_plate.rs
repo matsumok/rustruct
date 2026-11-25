@@ -21,7 +21,9 @@ pub use figure::{PlateField, PlateFigure, Quantity};
 
 use crate::Route;
 use crate::chart;
-use crate::inputs::{Definition, Field, InputGroup, Inputs, Kind, Layout, Reading, Reason};
+use crate::inputs::{
+    Definition, Field, InputGroup, InputRecord, Inputs, Kind, Layout, Reading, use_inputs,
+};
 use crate::page::Page;
 use crate::table::{Block, Caption, Column, Columns, NO_VALUE, Notes, Table, TableColumn};
 
@@ -124,14 +126,12 @@ fn support_name(support: Support) -> &'static str {
 pub type PlateInputs = Inputs<InputField>;
 
 /// 入力を Model へ。読めない欄と、`PoissonRatio` が受けない ν は理由を集めて初期値で埋める（`Reading`）
-fn plate(inputs: &PlateInputs, reading: &mut Reading<'_, InputField>) -> Plate {
-    let nu = reading.number(InputField::PoissonRatio);
-    let poisson_ratio = PoissonRatio::new(nu).unwrap_or_else(|_| {
-        reading.refuse(InputField::PoissonRatio, "0 以上 0.5 未満で入れる");
-        let initial = reading.initial(InputField::PoissonRatio);
-        PoissonRatio::new(initial.expect("ν は空欄を受けない"))
-            .expect("ν の初期値は 0 以上 0.5 未満")
-    });
+fn plate(reading: &mut Reading<'_, InputField>) -> Plate {
+    let poisson_ratio = reading.typed(
+        InputField::PoissonRatio,
+        PoissonRatio::new,
+        "0 以上 0.5 未満で入れる",
+    );
     Plate {
         lx: Length::m(reading.number(InputField::Lx)),
         ly: Length::m(reading.number(InputField::Ly)),
@@ -139,25 +139,25 @@ fn plate(inputs: &PlateInputs, reading: &mut Reading<'_, InputField>) -> Plate {
         young_modulus: Stress::n_per_mm2(reading.number(InputField::YoungModulus)),
         poisson_ratio,
         load: AreaLoad::kn_per_m2(reading.number(InputField::Load)),
-        supports: supports(inputs),
+        supports: supports(reading),
     }
 }
 
-/// 計算核の入口が返す不正な欄を、画面の欄へ
-fn field_of(reason: InvalidInput) -> InputField {
-    match reason {
+/// 計算核の入口が返す不正な欄を、画面の欄へ。どれも欄に写る
+fn field_of(reason: InvalidInput) -> Option<InputField> {
+    Some(match reason {
         InvalidInput::Lx => InputField::Lx,
         InvalidInput::Ly => InputField::Ly,
         InvalidInput::Thickness => InputField::Thickness,
         InvalidInput::YoungModulus => InputField::YoungModulus,
         InvalidInput::Load => InputField::Load,
-    }
+    })
 }
 
 /// 4 辺の支持条件の組。選択の欄は選択肢の記号しか持たないので、必ず支持条件に戻る
-fn supports(inputs: &PlateInputs) -> Supports {
+fn supports(reading: &Reading<'_, InputField>) -> Supports {
     let at = |edge| {
-        Support::from_symbol(inputs.choice(InputField::Support(edge)))
+        Support::from_symbol(reading.choice(InputField::Support(edge)))
             .expect("選択肢は SUPPORTS の記号")
     };
     Supports {
@@ -171,10 +171,6 @@ fn supports(inputs: &PlateInputs) -> Supports {
 /// 入力から求めた、結果の表の表示。数値は丸めて文字にしたもの。計算できないときは無し（「—」）
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlateReadout {
-    /// 読めない欄と、その理由
-    pub errors: Vec<(InputField, Reason)>,
-    /// 支持条件の組を解けない理由（不安定か、未対応か）。「!」を付けて出す
-    pub notice: Option<&'static str>,
     /// 板の中央の値
     pub center: CenterRow,
     /// 最大たわみ（ADR kirchhoff-plate-0009）
@@ -266,10 +262,8 @@ pub struct Balance {
 }
 
 impl PlateReadout {
-    fn not_computed(notice: Option<&'static str>) -> Self {
+    fn not_computed() -> Self {
         Self {
-            errors: Vec::new(),
-            notice,
             center: CenterRow {
                 w: None,
                 mx: None,
@@ -320,8 +314,6 @@ impl PlateReadout {
             })
             .to_vec();
         Self {
-            errors: Vec::new(),
-            notice: None,
             center: CenterRow {
                 w: figures(center.w.as_mm()),
                 mx: figures(center.mx.as_knm_per_m()),
@@ -357,7 +349,9 @@ impl PlateReadout {
 /// 計算の結果。入力を 1 回読んで解き、結果の表と分布図の素にしたもの。この Tool の入口はここだけ
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlateOutcome {
-    /// 結果の表。読めない欄と、解けない理由も
+    /// 入力の組の記録。解けない理由（不安定か、未対応か）は警告で、支持条件の欄に関わる
+    pub record: InputRecord<InputField>,
+    /// 結果の表
     pub readout: PlateReadout,
     /// 分布図の評価点の応答。解けなければ無い
     pub field: Option<PlateField>,
@@ -365,37 +359,31 @@ pub struct PlateOutcome {
 
 impl PlateOutcome {
     pub fn from_inputs(inputs: &PlateInputs) -> Self {
-        let not_computed = |notice| Self {
-            readout: PlateReadout::not_computed(Some(notice)),
-            field: None,
-        };
         let mut reading = inputs.reading();
-        let solved = solve(&plate(inputs, &mut reading));
+        let solved = solve(&plate(&mut reading));
         if let Err(PlateError::InvalidInput(invalid)) = &solved {
-            for &reason in invalid {
-                reading.refuse(field_of(reason), reason.to_string());
+            reading.invalid(invalid, field_of, &[]);
+        }
+        let supports = EDGES.map(InputField::Support);
+        let solution = match solved {
+            _ if reading.has_reasons() => None,
+            Ok(solution) => Some(solution),
+            Err(PlateError::Unstable(_)) => {
+                reading.warn(&supports, "この支持条件の組では板を支えられない");
+                None
             }
-        }
-        let errors = reading.errors();
-        if !errors.is_empty() {
-            return Self {
-                readout: PlateReadout {
-                    errors,
-                    ..PlateReadout::not_computed(None)
-                },
-                field: None,
-            };
-        }
-        match solved {
-            Ok(solution) => Self {
-                readout: PlateReadout::computed(&solution),
-                field: Some(PlateField::new(&solution)),
-            },
-            Err(PlateError::Unstable(_)) => not_computed("この支持条件の組では板を支えられない"),
             // 不正な欄は上で欄に写したので来ない。来たら解けないことだけを言う
             Err(PlateError::InvalidInput(_) | PlateError::Singular) => {
-                not_computed("この入力では解けない")
+                reading.warn(InputField::ALL, "この入力では解けない");
+                None
             }
+        };
+        Self {
+            record: reading.finish(),
+            readout: solution
+                .as_ref()
+                .map_or_else(PlateReadout::not_computed, PlateReadout::computed),
+            field: solution.as_ref().map(PlateField::new),
         }
     }
 }
@@ -416,7 +404,7 @@ fn figures(value: f64) -> Option<String> {
 /// 分布図の量を切り替えても解き直さない。
 #[component]
 pub(crate) fn KirchhoffPlatePage() -> Element {
-    let inputs = use_signal(PlateInputs::default);
+    let inputs = use_inputs::<InputField>();
     let quantity = use_signal(|| Quantity::W);
     let outcome = use_memo(move || PlateOutcome::from_inputs(&inputs.read()));
     let figure = use_memo(move || {
@@ -438,8 +426,7 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                         inputs,
                         layout: Layout::RowHeads(ROWS.map(|row| row.to_vec()).to_vec()),
                         notes: vec!["ν は 0 を基本とする".into()],
-                        errors: readout.errors.clone(),
-                        warning: readout.notice.map(String::from),
+                        record: outcome.read().record.clone(),
                         Block {
                             Caption { "板の中央" }
                             Table {
