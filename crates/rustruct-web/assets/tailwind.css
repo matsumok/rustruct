@@ -249,6 +249,9 @@
   }
 }
 @layer utilities {
+  .pointer-events-none {
+    pointer-events: none;
+  }
   .sr-only {
     position: absolute;
     width: 1px;
@@ -349,6 +352,9 @@
   }
   .w-column {
     width: var(--container-column);
+  }
+  .w-fit {
+    width: fit-content;
   }
   .w-full {
     width: 100%;

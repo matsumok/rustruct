@@ -3,12 +3,16 @@
 //! - 見出し（欄の名前）は書けないので `fill`、書けるセルは `paper` に `line` の格子
 //! - 選んだセルは `ink`、読めないセルは `ng` の太い内枠（`outline-2`）で、見出しも `ng`
 //! - 外の角だけ `radius-8`（ツールの入力カード）
+//! - 読むだけの欄と、1 欄だけの行の空きは書けないので `fill`
 //!
-//! 単位は見出しに括弧で書く（「Lx（m）」）。
+//! 単位は見出しに括弧で書く（「Lx（m）」）。入力の組の上の切り替えと、分布図の量の切替（[`Switch`]）もここに置く。
+
+use std::collections::HashSet;
 
 use dioxus::prelude::*;
 use dioxus_primitives::checkbox::{Checkbox, CheckboxIndicator, CheckboxState};
 use dioxus_primitives::select::{Select, SelectList, SelectOption, SelectTrigger};
+use dioxus_primitives::toggle_group::{ToggleGroup, ToggleItem};
 
 use crate::icons::{CheckIcon, ChevronIcon};
 
@@ -60,6 +64,66 @@ pub(crate) fn SheetHead(
 pub(crate) fn SheetCell(children: Element) -> Element {
     rsx! {
         td { class: "border-r border-line p-0 last:border-r-0", {children} }
+    }
+}
+
+/// 行見出しの Sheet で、1 欄だけの行の空いた組（2 組の行と並べるとき）。書けないので `fill`。`span` は埋める列の数
+#[component]
+pub(crate) fn SheetBlank(span: usize) -> Element {
+    rsx! {
+        td { class: "bg-fill", colspan: "{span}" }
+    }
+}
+
+/// Sheet のセルに入れる読むだけの欄（材料から導く E など）。書けないので `fill` の地に、数値の欄と同じ
+/// `num` の等幅で右揃え。枠もフォーカスも持たない（塗り＝書けない、枠＝書ける。README「色」）。
+/// 要素は `output` で、`aria-label` は欄の名前
+#[component]
+pub(crate) fn SheetValue(label: String, value: String) -> Element {
+    rsx! {
+        output {
+            class: "flex h-6 w-full items-center justify-end bg-fill px-2 font-mono text-num",
+            "aria-label": label,
+            {value}
+        }
+    }
+}
+
+/// 1 つだけ押せる切替（分布図の量、Kirchhoff 板の材料）。`names` のボタンを 1 行に等分に並べ、押されているもの
+/// （`pressed` 番目）を `ink` で塗る（選択は墨）。`symbols` なら名前は `num` の等幅（量の記号）、そうでなければ
+/// `body`。器は入力と同じ `line` の枠で、外の角だけ `radius-8`（ボタン）。振る舞いは `dioxus-primitives` の
+/// toggle_group（`aria-pressed`、Tab では組に 1 度だけ止まり、組の中は左右の矢印と Home・End で移る）。
+/// 押されているものをもう一度押しても外さない（いつも 1 つが押されている）。キーボードのフォーカスは
+/// `ink` の内枠（押されて `ink` で塗ったものは `paper`）。外に描く既定の輪は器の `overflow-hidden` に切られ、
+/// 塗ったものの上では見えない
+#[component]
+pub(crate) fn Switch(
+    label: &'static str,
+    names: Vec<&'static str>,
+    pressed: usize,
+    symbols: bool,
+    onpress: EventHandler<usize>,
+) -> Element {
+    rsx! {
+        ToggleGroup {
+            class: "flex overflow-hidden rounded-8 border border-line",
+            role: "group",
+            aria_label: label,
+            horizontal: true,
+            pressed: Some(HashSet::from([pressed])),
+            on_pressed_change: move |pressed: HashSet<usize>| {
+                if let Some(index) = pressed.into_iter().next() {
+                    onpress.call(index);
+                }
+            },
+            for (index , name) in names.into_iter().enumerate() {
+                ToggleItem {
+                    class: "h-6 flex-1 border-r border-line bg-paper last:border-r-0 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ink aria-pressed:bg-ink aria-pressed:text-paper aria-pressed:focus-visible:outline-paper",
+                    index,
+                    span { class: if symbols { "font-mono text-num" } else { "text-body" }, {name} }
+                }
+            }
+        }
     }
 }
 

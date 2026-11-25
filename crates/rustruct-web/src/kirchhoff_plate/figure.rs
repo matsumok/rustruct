@@ -5,13 +5,18 @@
 //! 描く: 固定は辺の線と外側の斜線、単純支持は辺の線だけ、自由は線を引かない。ここは `charta` の `Scene`
 //! までで、SVG にするのはページ（`chart::svg`。色は CSS 変数で書き、図は 1 枚）。
 
+use std::fmt;
+use std::rc::Rc;
+
 use charta::{Grid, Item, Palette, Pt, Scene, Stroke, distribution};
 use numerus::at_place;
 use rustruct_calc::kirchhoff_plate::{CORNER_MARGIN, PointResponse, Solution};
 use rustruct_types::kirchhoff_plate::{Edge, Support, Supports};
+use rustruct_types::quantity::Length;
 
-use super::{EDGES, support_name};
+use super::{EDGES, figures, support_name};
 use crate::COLUMN_WIDTH;
+use crate::chart::PointTerm;
 
 /// 注記に書く、計算核の隅の近くの幅（「5 %」、ADR kirchhoff-plate-0008）。結果の表の注記も使う
 pub(super) fn corner_margin_text() -> String {
@@ -64,15 +69,18 @@ impl Quantity {
         }
     }
 
-    /// 図の名前。単位は括弧で
-    pub fn caption(self) -> &'static str {
+    /// 図の名前の括弧の中の単位
+    fn unit(self) -> &'static str {
         match self {
-            Self::W => "たわみ w（mm）",
-            Self::Mx => "曲げモーメント Mx（kN·m/m）",
-            Self::My => "曲げモーメント My（kN·m/m）",
-            Self::Qx => "せん断力 Qx（kN/m）",
-            Self::Qy => "せん断力 Qy（kN/m）",
+            Self::W => "mm",
+            Self::Mx | Self::My => "kN·m/m",
+            Self::Qx | Self::Qy => "kN/m",
         }
+    }
+
+    /// 図の名前。名前と記号のあとに、単位を括弧で
+    pub fn caption(self) -> String {
+        format!("{} {}（{}）", self.name(), self.symbol(), self.unit())
     }
 
     /// 帯の色。正負のない量（たわみ）は `seq`、正負のある量は `div`（ADR site-0011）
@@ -109,10 +117,28 @@ pub struct PlateField {
     /// 評価点ごとに、色の幅を決めるのに使うか。自由辺のある組では、固定辺と自由辺の隅の発散で幅が決まらない
     /// よう、隅から辺長の 5 % 以内の点（`Solution::near_corner`）を使わない（ADR kirchhoff-plate-0008）
     in_range: Vec<bool>,
+    /// 解。点の値は評価点から補間せず、指した点で解から引く（ADR site-0018）
+    solution: Solved,
+}
+
+/// 解を分布図の素と一緒に持つための包み。解は同じ板から同じに決まるので、板で比べる
+#[derive(Clone)]
+struct Solved(Rc<Solution>);
+
+impl PartialEq for Solved {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.plate() == other.0.plate()
+    }
+}
+
+impl fmt::Debug for Solved {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Solved").field(self.0.plate()).finish()
+    }
 }
 
 impl PlateField {
-    pub(crate) fn new(solution: &Solution) -> Self {
+    pub(crate) fn new(solution: Solution) -> Self {
         let plate = solution.plate();
         let (lx, ly) = (plate.lx.as_m(), plate.ly.as_m());
         let shorter_divisions = |shorter: f64, longer: f64| {
@@ -138,7 +164,35 @@ impl PlateField {
             ny,
             points,
             in_range,
+            solution: Solved(Rc::new(solution)),
         }
+    }
+
+    /// 点の値: 板の上の点 `at`（m、隅 x = 0・y = 0 が原点）の x・y と、`quantity` の値。桁は結果の表と同じ
+    /// 有効数字 3 桁。値は解のその点の値で、板の外なら無し（「—」）
+    pub fn point_value(&self, quantity: Quantity, at: Pt) -> Vec<PointTerm> {
+        let value = self
+            .solution
+            .0
+            .at(Length::m(at[0]), Length::m(at[1]))
+            .and_then(|r| figures(quantity.value(&r)));
+        vec![
+            PointTerm {
+                symbol: "x",
+                value: figures(at[0]),
+                unit: "m",
+            },
+            PointTerm {
+                symbol: "y",
+                value: figures(at[1]),
+                unit: "m",
+            },
+            PointTerm {
+                symbol: quantity.symbol(),
+                value,
+                unit: quantity.unit(),
+            },
+        ]
     }
 }
 
