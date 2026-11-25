@@ -4,16 +4,20 @@
 mod common;
 use charta::{Item, Paint, Palette, Scene};
 use common::markup::count_tags;
+use common::markup::elements;
 use common::{
     Said, assert_in_order, element, flagged_heads, input_groups, paragraphs, said, text_of,
 };
 use numerus::significant;
-use rustruct_calc::kirchhoff_plate::{PointResponse, Solution, solve};
+use rustruct_calc::kirchhoff_plate::{Maximum, PointResponse, Solution, solve};
 use rustruct_types::kirchhoff_plate::{Edge, Plate, PlateMaterial, Support, Supports};
-use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
+use rustruct_types::quantity::{
+    AreaLoad, ForcePerLength, Length, MomentPerLength, PoissonRatio, Stress,
+};
 use rustruct_web::{
-    InputField, Material, PlateFigure, PlateInputs, PlateOutcome, PlateReadout, PointTerm, Pointed,
-    Pointer, Quantity, material, render_path, render_path_with, switch_material,
+    InputField, MAXIMUM_ROWS, Material, MaximumRow, PlateFigure, PlateInputs, PlateOutcome,
+    PlateReadout, PointTerm, Pointed, Pointer, Quantity, material, render_path, render_path_with,
+    switch_material,
 };
 
 #[test]
@@ -87,52 +91,72 @@ fn the_page_opens_with_the_initial_inputs_in_the_sheet() {
             "固定",
             "y = Ly（上）",
             "固定",
-            "板の中央",
+            "最大値",
         ],
     );
 }
 
+/// ページの「最大値」の表の本体の行の、セルの文字（`br` は `\n`、数値の列の小数点揃えの空白は除く）
+fn maxima_table(html: &str) -> Vec<Vec<String>> {
+    let main = element(html, "main");
+    let block = elements(main, "section")
+        .into_iter()
+        .find(|section| text_of(element(section, "h2")) == "最大値")
+        .expect("「最大値」の表がある");
+    elements(element(block, "tbody"), "tr")
+        .into_iter()
+        .map(|row| {
+            elements(row, "td")
+                .into_iter()
+                .map(|cell| {
+                    text_of(&cell.replace("<br/>", "\n"))
+                        .trim_end_matches('\u{2007}')
+                        .to_string()
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// 表の行の名前（改行は `\n`）
+fn row_names() -> Vec<String> {
+    MAXIMUM_ROWS.map(String::from).to_vec()
+}
+
 #[test]
-fn the_page_shows_the_results_of_the_fixed_plate_in_order() {
-    let text = text_of(element(&render_path("/tools/kirchhoff-plate"), "main"));
+fn the_page_shows_the_maxima_of_the_fixed_plate_before_the_figure() {
+    let html = render_path("/tools/kirchhoff-plate");
+    let text = text_of(element(&html, "main"));
     assert_in_order(
         &text,
         &[
-            "板の中央",
-            "w（mm）",
-            "Mx（kN·m/m）",
-            "My（kN·m/m）",
-            "最大たわみ",
-            "w（mm）",
+            "最大値",
+            "値",
             "x（m）",
             "y（m）",
-            "辺の最大値",
-            "M（kN·m/m）",
-            "Q（kN/m）",
-            "V（kN/m）",
-            "x = 0",
-            "x = Lx",
-            "y = 0",
-            "y = Ly",
-            "辺の最大値の位置（m）",
-            "x = 0",
-            "x = Lx",
-            "y = 0",
-            "y = Ly",
-            "隅反力",
-            "x = 0・y = 0",
-            "x = Lx・y = 0",
-            "x = Lx・y = Ly",
-            "x = 0・y = Ly",
-            "釣り合い",
-            "200",
-            "200",
+            "w（mm）",
+            "たわみ w（mm）",
         ],
     );
-    assert!(
-        !text.contains('—'),
-        "四辺固定で計算できない値がある: {text}"
+    // 開いたときの値（四辺固定、Issue #143 の表）
+    let rows = [
+        ["w（mm）", "0.731", "2.00", "2.50"],
+        ["Mx\n下側引張\n（kN·m/m）", "4.33", "2.00", "2.50"],
+        ["Mx\n上側引張\n（kN·m/m）", "-10.6", "0", "2.50"],
+        ["My\n下側引張\n（kN·m/m）", "2.31", "2.00", "2.50"],
+        ["My\n上側引張\n（kN·m/m）", "-8.95", "2.00", "0"],
+        ["Qx\n（kN/m）", "19.7", "0", "2.50"],
+        ["Qy\n（kN/m）", "18.5", "2.00", "0"],
+    ];
+    assert_eq!(
+        maxima_table(&html),
+        rows.map(|row| row.map(String::from).to_vec())
     );
+    // 結果の表は「最大値」の 1 つ
+    for caption in ["板の中央", "最大たわみ", "辺の最大値", "隅反力", "釣り合い"]
+    {
+        assert!(!text.contains(caption), "表「{caption}」がある: {text}");
+    }
     // 「直接入力」は材料の切り替えの名前
     assert!(
         !text.replace("直接入力", "").contains("入力"),
@@ -142,24 +166,53 @@ fn the_page_shows_the_results_of_the_fixed_plate_in_order() {
 }
 
 #[test]
-fn the_signs_are_stated_in_the_notes() {
-    let text = text_of(element(&render_path("/tools/kirchhoff-plate"), "main"));
-    for note in [
-        "たわみは下向きを正",
-        "曲げモーメントは下側が引張になる向きを正",
-        "辺の反力は支える向きを正",
-        "隅反力は板を押さえる向きを正",
-    ] {
-        assert!(text.contains(note), "注記「{note}」が無い: {text}");
+fn the_maxima_are_the_values_of_the_solution_in_three_figures() {
+    // 値と位置は計算核の `Solution::maxima`（ADR kirchhoff-plate-0010）を有効数字 3 桁で書いたもの
+    fn texts<T: Copy>(m: Option<Maximum<T>>, value: fn(T) -> f64) -> [Option<String>; 3] {
+        let m = m.expect("四辺固定ではどれも値がある");
+        [value(m.value), m.position.x.as_m(), m.position.y.as_m()].map(|v| Some(significant(v, 3)))
+    }
+    let maxima = initial_solution().maxima();
+    let moment = MomentPerLength::as_knm_per_m;
+    let shear = ForcePerLength::as_kn_per_m;
+    let expected = [
+        texts(maxima.w, Length::as_mm),
+        texts(maxima.mx_bottom, moment),
+        texts(maxima.mx_top, moment),
+        texts(maxima.my_bottom, moment),
+        texts(maxima.my_top, moment),
+        texts(maxima.qx, shear),
+        texts(maxima.qy, shear),
+    ];
+    let r = readout(|_| {});
+    assert_eq!(
+        r.maxima.iter().map(|m| m.name).collect::<Vec<_>>(),
+        MAXIMUM_ROWS
+    );
+    for (shown, expected) in r.maxima.iter().zip(expected) {
+        assert_eq!(
+            [shown.value.clone(), shown.x.clone(), shown.y.clone()],
+            expected,
+            "{}",
+            shown.name
+        );
     }
 }
 
 #[test]
-fn the_edge_notes_do_not_say_that_m_is_zero_on_simply_supported_and_free_edges() {
-    // 支持条件から明らかなので言わない
+fn the_signs_and_the_coordinates_are_stated_in_the_notes() {
     let text = text_of(element(&render_path("/tools/kirchhoff-plate"), "main"));
-    assert!(text.contains("辺上の絶対値の最大値"), "{text}");
-    assert!(!text.contains("M は 0"), "{text}");
+    assert_in_order(
+        &text,
+        &[
+            "最大値",
+            "たわみは下向きを正とする",
+            "曲げモーメントは下側が引張になる向きを正とする",
+            "せん断力は、Qx は x の、Qy は y の大きい側の断面で下向きに働く向きを正とする",
+            "x、y は隅 x = 0・y = 0 からの座標",
+            "たわみ w（mm）",
+        ],
+    );
 }
 
 fn inputs(change: impl FnOnce(&mut PlateInputs)) -> PlateInputs {
@@ -193,19 +246,20 @@ fn set_all(inputs: &mut PlateInputs, support: Support) {
     }
 }
 
-/// 結果の値がすべて無し（「—」）
+/// 結果の値がすべて無し（「—」）。行の名前は残る
 fn assert_not_computed(r: &PlateReadout) {
-    let c = &r.center;
-    let d = &r.deflection_maximum;
-    let mut values: Vec<&Option<String>> = vec![&c.w, &c.mx, &c.my, &d.w, &d.x, &d.y];
-    for row in &r.edges {
-        for m in [&row.max_moment, &row.max_shear, &row.max_reaction] {
-            values.extend([&m.value, &m.along]);
-        }
-    }
-    values.extend(r.corners.iter().map(|(_, v)| v));
-    values.extend([&r.balance.reactions, &r.balance.load]);
-    assert!(values.iter().all(|v| v.is_none()), "{r:#?}");
+    assert_eq!(
+        r.maxima.iter().map(|m| m.name).collect::<Vec<_>>(),
+        MAXIMUM_ROWS,
+        "{r:#?}"
+    );
+    assert!(
+        r.maxima
+            .iter()
+            .all(|m| m.value.is_none() && m.x.is_none() && m.y.is_none()),
+        "{r:#?}"
+    );
+    assert!(r.corner_notes.is_empty(), "{r:#?}");
 }
 
 #[test]
@@ -219,44 +273,53 @@ fn an_unstable_combination_shows_dashes_and_says_the_plate_is_not_held() {
         }
     );
     assert_not_computed(&o.readout);
+    let mut unstable = PlateInputs::default();
+    set_all(&mut unstable, Support::Free);
+    let rows = maxima_table(&render_path_with("/tools/kirchhoff-plate", unstable));
+    let dashes = |name: &String| vec![name.clone(), "—".into(), "—".into(), "—".into()];
+    assert_eq!(rows, row_names().iter().map(dashes).collect::<Vec<_>>());
 }
 
 #[test]
 fn a_combination_with_a_free_edge_is_solved() {
-    // 不安定な組以外はすべて解ける（ADR kirchhoff-plate-0002）。釣り合いと自由辺の反力は計算核のテスト
+    // 不安定な組以外はすべて解ける（ADR kirchhoff-plate-0002）
     let o = outcome(|i| i.set(InputField::Support(Edge::XLx), Support::Free.symbol()));
     assert_eq!(said(&o.record), Said::default());
-    let r = o.readout;
-    assert!(r.balance.reactions.is_some());
-    // 自由辺の反力は辺の全体で 0 なので、位置は無し
-    let free = &r.edges[1].max_reaction;
-    assert_eq!(
-        [free.value.as_deref(), free.along.as_deref()],
-        [Some("0"), None]
+    assert!(
+        o.readout
+            .maxima
+            .iter()
+            .all(|m| m.value.is_some() && m.x.is_some() && m.y.is_some()),
+        "{:#?}",
+        o.readout
     );
 }
 
 #[test]
-fn a_simply_supported_plate_shows_a_reaction_at_every_corner() {
-    // 隅反力の向きと釣り合いは計算核のテスト（ADR kirchhoff-plate-0007）。ここでは隅ごとの行の名前と、
-    // 値が出ていること
-    let o = outcome(|i| set_all(i, Support::SimplySupported));
-    assert_eq!(said(&o.record), Said::default());
-    let r = o.readout;
-    let names: Vec<&str> = r.corners.iter().map(|(name, _)| name.as_str()).collect();
-    assert_eq!(
-        names,
-        [
-            "x = 0・y = 0",
-            "x = Lx・y = 0",
-            "x = Lx・y = Ly",
-            "x = 0・y = Ly"
-        ]
+fn the_top_tension_of_a_simply_supported_plate_is_the_small_value_of_the_finite_elements_in_e() {
+    // 有限要素の辺の上の値は 0 にならず、そのまま E で書く（#142、#143 の本人の答え）。位置も書く
+    let r = readout(|i| {
+        set_all(i, Support::SimplySupported);
+        i.set(InputField::PoissonRatio, "0.2");
+    });
+    for top in [&r.maxima[2], &r.maxima[4]] {
+        let value = top.value.as_deref().expect("解ける");
+        assert!(value.starts_with('-') && value.contains('E'), "{top:?}");
+        assert!(top.x.is_some() && top.y.is_some(), "{top:?}");
+    }
+}
+
+#[test]
+fn a_moment_with_no_value_of_its_sign_is_zero_with_no_position() {
+    // 板のどこにもその符号の値が無い（荷重 0 の板）ときだけ、値 0 で位置は「—」
+    let html = render_path_with(
+        "/tools/kirchhoff-plate",
+        inputs(|i| i.set(InputField::Load, "0")),
     );
-    assert!(
-        r.corners.iter().all(|(_, v)| v.is_some()),
-        "{:?}",
-        r.corners
+    let zero = |name: &String| vec![name.clone(), "0".into(), "—".into(), "—".into()];
+    assert_eq!(
+        maxima_table(&html),
+        row_names().iter().map(zero).collect::<Vec<_>>()
     );
 }
 
@@ -288,14 +351,30 @@ fn unreadable_fields_are_named_with_their_reasons_and_nothing_is_computed() {
 
 #[test]
 fn an_upward_load_is_computed_with_the_signs_turned() {
+    // 上向きの荷重では、下側引張と上側引張が入れ替わり、値の符号が変わる
     let down = readout(|_| {});
     let up = readout(|i| i.set(InputField::Load, "-10"));
-    let down_w = down.center.w.expect("下向きの荷重で解ける");
-    assert_eq!(up.center.w, Some(format!("-{down_w}")));
-    assert_eq!(
-        [up.balance.reactions.as_deref(), up.balance.load.as_deref()],
-        [Some("-200"); 2]
-    );
+    let turned = |m: &MaximumRow| {
+        let value = m.value.clone().expect("解ける");
+        value
+            .strip_prefix('-')
+            .map_or(format!("-{value}"), String::from)
+    };
+    let at = |m: &MaximumRow| [m.x.clone(), m.y.clone()];
+    for (u, d) in [(0, 0), (1, 2), (2, 1), (3, 4), (4, 3), (5, 5), (6, 6)] {
+        assert_eq!(
+            up.maxima[u].value,
+            Some(turned(&down.maxima[d])),
+            "{}",
+            up.maxima[u].name
+        );
+        assert_eq!(
+            at(&up.maxima[u]),
+            at(&down.maxima[d]),
+            "{}",
+            up.maxima[u].name
+        );
+    }
 }
 
 #[test]
@@ -305,35 +384,10 @@ fn a_swapped_plate_swaps_the_x_and_y_results() {
         i.set(InputField::Lx, "5.0");
         i.set(InputField::Ly, "4.0");
     });
-    assert_eq!(swapped.center.mx, r.center.my);
-    assert_eq!(swapped.edges[0].max_moment, r.edges[2].max_moment);
-    assert_eq!(swapped.edges[2].max_reaction, r.edges[0].max_reaction);
-}
-
-#[test]
-fn the_edge_moment_is_largest_at_the_middle_of_a_fixed_edge() {
-    let r = readout(|_| {});
-    let along: Vec<Option<&str>> = r
-        .edges
-        .iter()
-        .map(|e| e.max_moment.along.as_deref())
-        .collect();
-    assert_eq!(along, ["2.50", "2.50", "2.00", "2.00"].map(Some));
-}
-
-#[test]
-fn the_edge_moment_of_a_simply_supported_edge_is_zero_with_no_position() {
-    let r = readout(|i| set_all(i, Support::SimplySupported));
-    for row in &r.edges {
-        assert_eq!(
-            [
-                row.max_moment.value.as_deref(),
-                row.max_moment.along.as_deref()
-            ],
-            [Some("0"), None],
-            "{}",
-            row.name
-        );
+    // w、Mx と My、Qx と Qy が入れ替わり、位置の x と y も入れ替わる
+    for (s, o) in [(0, 0), (1, 3), (2, 4), (3, 1), (4, 2), (5, 6), (6, 5)] {
+        let (s, o) = (&swapped.maxima[s], &r.maxima[o]);
+        assert_eq!([&s.value, &s.x, &s.y], [&o.value, &o.y, &o.x], "{}", s.name);
     }
 }
 
@@ -380,7 +434,16 @@ fn the_page_shows_the_deflection_figure_after_the_results_with_five_switches() {
     let main = element(&render_path("/tools/kirchhoff-plate"), "main").to_string();
     assert_in_order(
         &text_of(&main),
-        &["釣り合い", "たわみ w（mm）", "w", "Mx", "My", "Qx", "Qy"],
+        &[
+            "最大値",
+            "Qy（kN/m）",
+            "たわみ w（mm）",
+            "w",
+            "Mx",
+            "My",
+            "Qx",
+            "Qy",
+        ],
     );
     // 既定はたわみ。押されている切替は 1 つ
     let quantities = switch_group(&main, "分布図の量");
@@ -625,16 +688,15 @@ fn the_point_value_is_the_value_of_the_solution_at_that_point_for_each_quantity(
             );
         }
     }
-    // 中央の点の値は、結果の表の板の中央の値と同じ文字
-    let center = PlateOutcome::from_inputs(&PlateInputs::default())
+    // 中央の点の値は、「最大値」の表の w と下側引張の Mx・My（四辺固定では中央）と同じ文字
+    let maxima = PlateOutcome::from_inputs(&PlateInputs::default())
         .readout
-        .center;
-    for (quantity, table) in [
-        (Quantity::W, center.w),
-        (Quantity::Mx, center.mx),
-        (Quantity::My, center.my),
-    ] {
-        assert_eq!(field.point_value(quantity, [2.0, 2.5])[2].value, table);
+        .maxima;
+    for (quantity, row) in [(Quantity::W, 0), (Quantity::Mx, 1), (Quantity::My, 3)] {
+        assert_eq!(
+            field.point_value(quantity, [2.0, 2.5])[2].value,
+            maxima[row].value
+        );
     }
 }
 
@@ -751,52 +813,53 @@ fn three_fixed_one_free() -> PlateInputs {
 }
 
 #[test]
-fn the_deflection_maximum_of_the_fixed_plate_is_the_centre() {
-    // 求め方（要素の中まで見る、ADR kirchhoff-plate-0009）は計算核のテスト。ここでは表の値と位置の書き方
-    let r = readout(|_| {});
-    let d = &r.deflection_maximum;
-    assert_eq!(d.w, r.center.w);
-    assert_eq!(
-        [d.x.as_deref(), d.y.as_deref()],
-        [Some("2.00"), Some("2.50")]
-    );
-}
-
-#[test]
 fn with_a_free_edge_the_deflection_maximum_is_on_that_edge() {
-    let r = PlateOutcome::from_inputs(&three_fixed_one_free()).readout;
-    let d = &r.deflection_maximum;
+    // 求め方（要素の中まで見る、ADR kirchhoff-plate-0009）は計算核のテスト。ここでは表の w の行の位置
+    let o = PlateOutcome::from_inputs(&three_fixed_one_free());
+    let d = &o.readout.maxima[0];
     assert_eq!(
         [d.x.as_deref(), d.y.as_deref()],
         [Some("2.50"), Some("4.00")]
     );
     let w = |w: &Option<String>| w.as_deref().expect("解ける").parse::<f64>().unwrap();
-    assert!(w(&d.w) > w(&r.center.w), "{d:?} {:?}", r.center);
+    let center = o.field.unwrap().point_value(Quantity::W, [2.5, 2.0])[2]
+        .value
+        .clone();
+    assert!(w(&d.value) > w(&center), "{d:?} {center:?}");
     // 自由辺を y = 0 に移すと位置は 0
     let mut inputs = three_fixed_one_free();
     inputs.set(InputField::Support(Edge::YLy), Support::Fixed.symbol());
     inputs.set(InputField::Support(Edge::Y0), Support::Free.symbol());
-    let moved = PlateOutcome::from_inputs(&inputs)
-        .readout
-        .deflection_maximum;
+    let moved = PlateOutcome::from_inputs(&inputs).readout.maxima[0].clone();
     assert_eq!(
         [moved.x.as_deref(), moved.y.as_deref()],
         [Some("2.50"), Some("0")]
     );
-    assert_eq!(moved.w, d.w);
+    assert_eq!(moved.value, d.value);
 }
 
 #[test]
-fn a_plate_with_a_free_edge_says_how_the_edge_shear_and_reaction_are_taken() {
-    // 両端から辺長の 5 % を除いて取る規則（ADR kirchhoff-plate-0008）は計算核の `edge_maximum` のテスト。
-    // ここでは注記の文言
+fn a_plate_with_a_free_edge_says_how_the_shear_maximum_is_taken() {
+    // 隅から辺長の 5 % 以内の点を除いて取る規則（ADR kirchhoff-plate-0008）は計算核の `maxima` のテスト。
+    // ここでは注記の文言と、表の注記の後に続くこと
+    let notes = [
+        "固定辺と自由辺の隅では、せん断力が発散する",
+        "せん断力の最大値は、隅から辺長の 5 % 以内の点を除いて取る",
+    ];
     let r = PlateOutcome::from_inputs(&three_fixed_one_free()).readout;
-    assert_eq!(
-        r.edge_notes,
-        [
-            "固定辺と自由辺の隅では、せん断力と辺の反力が発散する",
-            "辺のせん断力と反力の最大値は、隅から辺長の 5 % を除いた範囲で取る",
-        ]
+    assert_eq!(r.corner_notes, notes);
+    let text = text_of(element(
+        &render_path_with("/tools/kirchhoff-plate", three_fixed_one_free()),
+        "main",
+    ));
+    assert_in_order(
+        &text,
+        &[
+            "x、y は隅 x = 0・y = 0 からの座標",
+            notes[0],
+            notes[1],
+            "たわみ w（mm）",
+        ],
     );
 }
 
@@ -804,7 +867,7 @@ fn a_plate_with_a_free_edge_says_how_the_edge_shear_and_reaction_are_taken() {
 fn a_plate_without_a_free_edge_has_no_notes_on_the_corners() {
     for supports in [Support::Fixed, Support::SimplySupported] {
         let r = readout(|i| set_all(i, supports));
-        assert!(r.edge_notes.is_empty(), "{:?}", r.edge_notes);
+        assert!(r.corner_notes.is_empty(), "{:?}", r.corner_notes);
     }
     let text = text_of(element(&render_path("/tools/kirchhoff-plate"), "main"));
     assert!(!text.contains("発散"), "{text}");
@@ -919,7 +982,7 @@ fn the_page_opens_on_direct_input_with_the_material_switch_above_the_sheet() {
         2
     );
     // 切り替えは入力の組のいちばん上（Sheet の前）
-    assert_in_order(&text_of(&main), &["直接入力", "Lx（m）", "板の中央"]);
+    assert_in_order(&text_of(&main), &["直接入力", "Lx（m）", "最大値"]);
     // 直接入力では E と ν は書ける欄で、読むだけの欄も Fc も無い
     assert_eq!(main.matches("<output").count(), 0, "{main}");
     assert!(!main.contains("Fc"), "{main}");
@@ -1061,7 +1124,7 @@ fn an_fc_below_18_is_a_warning_of_the_input_group_and_the_plate_is_still_solved(
         "{group}"
     );
     assert_eq!(flagged_heads(&group), 0, "{group}");
-    assert!(outcome(change).readout.center.w.is_some());
+    assert!(outcome(change).readout.maxima[0].value.is_some());
 }
 
 #[test]

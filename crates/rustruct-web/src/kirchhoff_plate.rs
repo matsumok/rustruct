@@ -9,9 +9,11 @@
 
 use dioxus::prelude::*;
 use numerus::significant;
-use rustruct_calc::kirchhoff_plate::{Extreme, InvalidInput, PlateError, Solution, solve};
-use rustruct_types::kirchhoff_plate::{Corner, Edge, Plate, PlateMaterial, Support, Supports};
-use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
+use rustruct_calc::kirchhoff_plate::{InvalidInput, Maximum, PlateError, Solution, solve};
+use rustruct_types::kirchhoff_plate::{Edge, Plate, PlateMaterial, Support, Supports};
+use rustruct_types::quantity::{
+    AreaLoad, ForcePerLength, Length, MomentPerLength, PoissonRatio, Stress,
+};
 
 mod figure;
 
@@ -28,15 +30,12 @@ use crate::page::Page;
 use crate::sheet::Switch;
 use crate::table::{Block, Caption, Column, Columns, NO_VALUE, Notes, Table, TableColumn};
 
-/// 辺の最大値を取る評価点の分け方。辺を等分する数
-const EDGE_DIVISIONS: usize = 100;
-
-/// 自由辺のある組の、辺の最大値の注記（ADR kirchhoff-plate-0008）
+/// 自由辺のある組の、「最大値」の表の注記（ADR kirchhoff-plate-0008）
 fn corner_notes() -> Vec<String> {
     vec![
-        "固定辺と自由辺の隅では、せん断力と辺の反力が発散する".into(),
+        "固定辺と自由辺の隅では、せん断力が発散する".into(),
         format!(
-            "辺のせん断力と反力の最大値は、隅から辺長の {} を除いた範囲で取る",
+            "せん断力の最大値は、隅から辺長の {} 以内の点を除いて取る",
             corner_margin_text()
         ),
     ]
@@ -125,7 +124,7 @@ impl Field for InputField {
     }
 }
 
-/// 辺の並び。入力の Sheet と結果の表の行の順（左右、上下）
+/// 辺の並び。入力の Sheet の支持条件の順（左右、上下）
 const EDGES: [Edge; 4] = [Edge::X0, Edge::XLx, Edge::Y0, Edge::YLy];
 
 /// 辺の画面での呼び方。図の向き（x は右、y は上）で決める
@@ -348,176 +347,91 @@ fn supports(reading: &Reading<'_, InputField>) -> Supports {
 /// 入力から求めた、結果の表の表示。数値は丸めて文字にしたもの。計算できないときは無し（「—」）
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlateReadout {
-    /// 板の中央の値
-    pub center: CenterRow,
-    /// 最大たわみ（ADR kirchhoff-plate-0009）
-    pub deflection_maximum: DeflectionRow,
-    /// 辺ごとの行。`EDGES` の順
-    pub edges: Vec<EdgeRow>,
-    /// 辺の最大値の表に足す注記。自由辺のある組だけ（ADR kirchhoff-plate-0008）
-    pub edge_notes: Vec<String>,
-    /// 隅ごとの隅反力（kN）。`Corner::ALL` の順
-    pub corners: Vec<(String, Option<String>)>,
-    /// 釣り合い
-    pub balance: Balance,
+    /// 「最大値」の表の行。[`MAXIMUM_ROWS`] の順（w、Mx・My の下側引張と上側引張、Qx、Qy）
+    pub maxima: Vec<MaximumRow>,
+    /// 「最大値」の表に足す注記。自由辺のある組だけ（ADR kirchhoff-plate-0008）
+    pub corner_notes: Vec<String>,
 }
 
-/// 結果の表の、辺の 1 行
+/// 「最大値」の表の 1 行（GLOSSARY「最大値」）
 #[derive(Debug, Clone, PartialEq)]
-pub struct EdgeRow {
-    /// 辺の名前（x = 0 など）
-    pub name: String,
-    /// 辺に直交する方向の曲げモーメントの辺の最大値
-    pub max_moment: Maximum,
-    /// せん断力の辺の最大値
-    pub max_shear: Maximum,
-    /// 辺の反力の辺の最大値
-    pub max_reaction: Maximum,
-}
-
-/// 結果の表の、板の中央の行
-#[derive(Debug, Clone, PartialEq)]
-pub struct CenterRow {
-    /// たわみ（mm）
-    pub w: Option<String>,
-    /// 曲げモーメント（kN·m/m）
-    pub mx: Option<String>,
-    pub my: Option<String>,
-}
-
-/// 結果の表の、最大たわみの行
-#[derive(Debug, Clone, PartialEq)]
-pub struct DeflectionRow {
-    /// たわみ（mm）
-    pub w: Option<String>,
-    /// 位置（m）。隅 x = 0・y = 0 からの座標
+pub struct MaximumRow {
+    /// 行の名前。単位を括弧で付ける。`\n` は表が改行する
+    pub name: &'static str,
+    /// 値（w は mm、曲げモーメントは kN·m/m、せん断力は kN/m）
+    pub value: Option<String>,
+    /// 位置（m）。隅 x = 0・y = 0 からの座標。板のどこにもその値が無いときは無し
     pub x: Option<String>,
     pub y: Option<String>,
 }
 
-/// 辺の最大値の 1 つ
-#[derive(Debug, Clone, PartialEq)]
-pub struct Maximum {
-    /// 絶対値が最大の値（曲げモーメントは kN·m/m、せん断力と辺の反力は kN/m）
-    pub value: Option<String>,
-    /// 辺の始点からの位置（m）。値が辺の全体で 0 のときは無し
-    pub along: Option<String>,
-}
+/// 「最大値」の表の行の名前。並びは表の行の順
+pub const MAXIMUM_ROWS: [&str; 7] = [
+    "w（mm）",
+    "Mx\n下側引張\n（kN·m/m）",
+    "Mx\n上側引張\n（kN·m/m）",
+    "My\n下側引張\n（kN·m/m）",
+    "My\n上側引張\n（kN·m/m）",
+    "Qx\n（kN/m）",
+    "Qy\n（kN/m）",
+];
 
-impl Maximum {
-    /// 計算核の辺の最大値から。`value` は表の単位の値
-    fn of<T: Copy>(extreme: Extreme<T>, value: fn(T) -> f64) -> Self {
-        Self::new(value(extreme.value), extreme.along)
-    }
-
-    fn new(value: f64, along: Length) -> Self {
-        Self {
-            value: figures(value),
-            along: if value == 0.0 {
-                None
-            } else {
-                figures(along.as_m())
+impl MaximumRow {
+    /// 計算核の最大値から。`value` は表の単位の値。板のどこにもその値が無い（`None`）ときは値 0 で位置は無し
+    fn of<T: Copy>(name: &'static str, maximum: Option<Maximum<T>>, value: fn(T) -> f64) -> Self {
+        match maximum {
+            Some(maximum) => Self {
+                name,
+                value: figures(value(maximum.value)),
+                x: figures(maximum.position.x.as_m()),
+                y: figures(maximum.position.y.as_m()),
+            },
+            None => Self {
+                name,
+                value: figures(0.0),
+                x: None,
+                y: None,
             },
         }
     }
 
-    fn not_computed() -> Self {
+    fn not_computed(name: &'static str) -> Self {
         Self {
+            name,
             value: None,
-            along: None,
+            x: None,
+            y: None,
         }
     }
-}
-
-/// 釣り合いの行（kN）
-#[derive(Debug, Clone, PartialEq)]
-pub struct Balance {
-    /// 辺の反力の合計 − 隅反力の合計
-    pub reactions: Option<String>,
-    /// 荷重の合計
-    pub load: Option<String>,
 }
 
 impl PlateReadout {
     fn not_computed() -> Self {
         Self {
-            center: CenterRow {
-                w: None,
-                mx: None,
-                my: None,
-            },
-            deflection_maximum: DeflectionRow {
-                w: None,
-                x: None,
-                y: None,
-            },
-            edges: EDGES
-                .map(|edge| EdgeRow {
-                    name: edge.to_string(),
-                    max_moment: Maximum::not_computed(),
-                    max_shear: Maximum::not_computed(),
-                    max_reaction: Maximum::not_computed(),
-                })
-                .to_vec(),
-            edge_notes: Vec::new(),
-            corners: Corner::ALL
-                .map(|corner| (corner_name(corner), None))
-                .to_vec(),
-            balance: Balance {
-                reactions: None,
-                load: None,
-            },
+            maxima: MAXIMUM_ROWS.map(MaximumRow::not_computed).to_vec(),
+            corner_notes: Vec::new(),
         }
     }
 
     fn computed(solution: &Solution) -> Self {
-        let plate = solution.plate();
-        let center = solution
-            .at(
-                Length::mm(plate.lx.as_mm() / 2.0),
-                Length::mm(plate.ly.as_mm() / 2.0),
-            )
-            .expect("中央は板の上");
-        let deflection = solution.deflection_maximum();
-        let edges = EDGES
-            .map(|edge| {
-                let maximum = solution.edge_maximum::<EDGE_DIVISIONS>(edge);
-                EdgeRow {
-                    name: edge.to_string(),
-                    max_moment: Maximum::of(maximum.moment, |m| m.as_knm_per_m()),
-                    max_shear: Maximum::of(maximum.shear, |q| q.as_kn_per_m()),
-                    max_reaction: Maximum::of(maximum.reaction, |v| v.as_kn_per_m()),
-                }
-            })
-            .to_vec();
+        let maxima = solution.maxima();
+        let [w, mx_bottom, mx_top, my_bottom, my_top, qx, qy] = MAXIMUM_ROWS;
+        let moment = |name, maximum| MaximumRow::of(name, maximum, MomentPerLength::as_knm_per_m);
+        let shear = |name, maximum| MaximumRow::of(name, maximum, ForcePerLength::as_kn_per_m);
         Self {
-            center: CenterRow {
-                w: figures(center.w.as_mm()),
-                mx: figures(center.mx.as_knm_per_m()),
-                my: figures(center.my.as_knm_per_m()),
-            },
-            deflection_maximum: DeflectionRow {
-                w: figures(deflection.w.as_mm()),
-                x: figures(deflection.x.as_m()),
-                y: figures(deflection.y.as_m()),
-            },
-            edges,
-            edge_notes: if plate.supports.has_free_edge() {
+            maxima: vec![
+                MaximumRow::of(w, maxima.w, Length::as_mm),
+                moment(mx_bottom, maxima.mx_bottom),
+                moment(mx_top, maxima.mx_top),
+                moment(my_bottom, maxima.my_bottom),
+                moment(my_top, maxima.my_top),
+                shear(qx, maxima.qx),
+                shear(qy, maxima.qy),
+            ],
+            corner_notes: if solution.plate().supports.has_free_edge() {
                 corner_notes()
             } else {
                 Vec::new()
-            },
-            corners: Corner::ALL
-                .map(|corner| {
-                    (
-                        corner_name(corner),
-                        figures(solution.corner_reaction(corner).as_kn()),
-                    )
-                })
-                .to_vec(),
-            balance: Balance {
-                reactions: figures(solution.net_reaction().as_kn()),
-                load: figures(solution.total_load().as_kn()),
             },
         }
     }
@@ -565,12 +479,6 @@ impl PlateOutcome {
     }
 }
 
-/// 隅の名前。会う 2 辺で呼ぶ（x = 0・y = 0）
-fn corner_name(corner: Corner) -> String {
-    let (x, y) = corner.edges();
-    format!("{x}・{y}")
-}
-
 /// 有効数字 3 桁（Data と同じ）。表の値なので「値か無し」の値
 fn figures(value: f64) -> Option<String> {
     Some(significant(value, 3))
@@ -605,9 +513,6 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
         Some(outcome.field.as_ref()?.point_value(quantity(), pointed.at))
     });
     let readout = outcome.read().readout.clone();
-    let CenterRow { w, mx, my } = readout.center.clone();
-    let deflection = readout.deflection_maximum.clone();
-    let Balance { reactions, load } = readout.balance.clone();
     let chosen = material(&inputs.read());
     rsx! {
         Page { route: Route::ToolsKirchhoffPlate {},
@@ -627,87 +532,31 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
                         layout: Layout::RowHeads(rows(chosen)),
                         record: outcome.read().record.clone(),
                         Block {
-                            Caption { "板の中央" }
+                            Caption { "最大値" }
                             Table {
                                 fixed: true,
                                 columns: vec![
-                                    TableColumn::number("w").unit("mm"),
-                                    TableColumn::number("Mx").unit("kN·m/m"),
-                                    TableColumn::number("My").unit("kN·m/m"),
+                                    TableColumn::name(""),
+                                    TableColumn::number("値"),
+                                    TableColumn::number("x").unit("m"),
+                                    TableColumn::number("y").unit("m"),
                                 ],
-                                rows: vec![vec![w.into(), mx.into(), my.into()]],
+                                rows: readout
+                                    .maxima
+                                    .iter()
+                                    .cloned()
+                                    .map(|row| vec![row.name.into(), row.value.into(), row.x.into(), row.y.into()])
+                                    .collect(),
                             }
                             Notes {
                                 li { "たわみは下向きを正とする" }
                                 li { "曲げモーメントは下側が引張になる向きを正とする" }
+                                li { "せん断力は、Qx は x の、Qy は y の大きい側の断面で下向きに働く向きを正とする" }
+                                li { "x、y は隅 x = 0・y = 0 からの座標" }
+                                for note in readout.corner_notes.iter().cloned() {
+                                    li { {note} }
+                                }
                             }
-                        }
-                    }
-                    Block {
-                        Caption { "最大たわみ" }
-                        Table {
-                            fixed: true,
-                            columns: vec![
-                                TableColumn::number("w").unit("mm"),
-                                TableColumn::number("x").unit("m"),
-                                TableColumn::number("y").unit("m"),
-                            ],
-                            rows: vec![vec![deflection.w.into(), deflection.x.into(), deflection.y.into()]],
-                        }
-                        Notes {
-                            li { "板全体での絶対値の最大値" }
-                            li { "x、y は隅 x = 0・y = 0 からの座標" }
-                        }
-                    }
-                    Block {
-                        Caption { "辺の最大値" }
-                        EdgeTable { edges: readout.edges.clone(), positions: false }
-                        Notes {
-                            li { "辺上の絶対値の最大値" }
-                            li { "M は曲げモーメント、Q はせん断力、V は辺の反力" }
-                            li { "左右の辺の M・Q は Mx・Qx、上下の辺は My・Qy" }
-                            li { "辺の反力は支える向きを正とする" }
-                            for note in readout.edge_notes.iter().cloned() {
-                                li { {note} }
-                            }
-                        }
-                    }
-                    Block {
-                        Caption { "辺の最大値の位置（m）" }
-                        EdgeTable { edges: readout.edges.clone(), positions: true }
-                        Notes {
-                            li { "位置は座標 0 の端からの距離" }
-                        }
-                    }
-                    Block {
-                        Caption { "隅反力" }
-                        Table {
-                            fixed: true,
-                            columns: vec![TableColumn::name("隅"), TableColumn::number("R").unit("kN")],
-                            rows: readout
-                                .corners
-                                .iter()
-                                .cloned()
-                                .map(|(name, reaction)| vec![name.into(), reaction.into()])
-                                .collect(),
-                        }
-                        Notes {
-                            li { "隅反力は板を押さえる向きを正とする" }
-                        }
-                    }
-                    Block {
-                        Caption { "釣り合い" }
-                        Table {
-                            fixed: true,
-                            columns: vec![
-                                TableColumn::number("ΣV − ΣR").unit("kN"),
-                                TableColumn::number("p·Lx·Ly").unit("kN"),
-                            ],
-                            rows: vec![vec![reactions.into(), load.into()]],
-                        }
-                        Notes {
-                            li { "ΣV は辺の反力の合計" }
-                            li { "ΣR は隅反力の合計" }
                         }
                     }
                 }
@@ -769,37 +618,5 @@ fn QuantitySwitch(quantity: Signal<Quantity>) -> Element {
             symbols: true,
             onpress: move |index: usize| quantity.set(Quantity::ALL[index]),
         }
-    }
-}
-
-/// 辺の最大値の表。行は辺、列は M・Q・V。`positions` なら値でなくその位置を並べる。単位は、値の表は
-/// 列の見出しに、位置の表は表の名前に書く
-#[component]
-fn EdgeTable(edges: Vec<EdgeRow>, positions: bool) -> Element {
-    let pick = |m: &Maximum| {
-        if positions {
-            m.along.clone()
-        } else {
-            m.value.clone()
-        }
-    };
-    let heads = [("M", "kN·m/m"), ("Q", "kN/m"), ("V", "kN/m")].map(|(head, unit)| {
-        let column = TableColumn::number(head);
-        if positions { column } else { column.unit(unit) }
-    });
-    let columns = [TableColumn::name("辺")].into_iter().chain(heads).collect();
-    let rows = edges
-        .iter()
-        .map(|row| {
-            vec![
-                row.name.clone().into(),
-                pick(&row.max_moment).into(),
-                pick(&row.max_shear).into(),
-                pick(&row.max_reaction).into(),
-            ]
-        })
-        .collect();
-    rsx! {
-        Table { fixed: true, columns, rows }
     }
 }
