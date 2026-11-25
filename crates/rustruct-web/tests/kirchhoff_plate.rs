@@ -495,6 +495,49 @@ fn the_figure_follows_the_aspect_of_the_plate_within_one_column_and_names_each_s
 }
 
 #[test]
+fn the_figure_holds_the_plate_as_its_plot_inside_the_margin_and_returns_points_of_the_plate() {
+    let mut inputs = PlateInputs::default();
+    inputs.set(InputField::Lx, "8.0");
+    inputs.set(InputField::Ly, "2.0");
+    let scene = figure_of(&inputs, Quantity::W).unwrap().scene;
+    assert_eq!(scene.plots.len(), 1, "{:?}", scene.plots);
+    // 描く範囲は、四辺に同じ幅の縁を残して内側にずれている
+    let [lo, hi] = scene.plots[0].bounds();
+    let m = lo[0];
+    assert!(m > 0.0, "縁 {m}");
+    assert_eq!(
+        [lo[1], scene.width - hi[0], scene.height - hi[1]],
+        [m, m, m],
+        "{lo:?} {hi:?}"
+    );
+    // 描く範囲の 4 隅と中心は、板の 4 隅と中心（y は上が正）
+    let center = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0];
+    for (screen, data) in [
+        ([lo[0], hi[1]], [0.0, 0.0]),
+        ([hi[0], hi[1]], [8.0, 0.0]),
+        ([lo[0], lo[1]], [0.0, 2.0]),
+        ([hi[0], lo[1]], [8.0, 2.0]),
+        (center, [4.0, 1.0]),
+    ] {
+        let (k, p) = scene.locate(screen).expect("板の中");
+        assert_eq!(k, 0);
+        assert!(
+            (p[0] - data[0]).abs() < 1e-12 && (p[1] - data[1]).abs() < 1e-12,
+            "{screen:?} → {p:?}"
+        );
+    }
+    // 縁（支持条件の斜線の所）は当たらない
+    for margin in [
+        [m / 2.0, center[1]],
+        [scene.width - m / 2.0, center[1]],
+        [center[0], m / 2.0],
+        [center[0], scene.height - m / 2.0],
+    ] {
+        assert_eq!(scene.locate(margin), None, "{margin:?}");
+    }
+}
+
+#[test]
 fn the_figure_of_the_initial_inputs_is_at_most_96_497_bytes_of_svg() {
     // 帯を範囲ごとの外周で描く（#128）。上限は、帯をセルと三角形の小片で敷き詰めていたときの 385,989 B の 1/4
     const LIMIT: usize = 96_497;

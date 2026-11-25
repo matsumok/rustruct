@@ -39,6 +39,29 @@ impl Plot {
         ]
     }
 
+    /// 画面の点 → データの点（[`to_screen`](Self::to_screen) の逆）。
+    pub fn to_data(&self, p: Pt) -> Pt {
+        [
+            self.x.0 + (p[0] - self.origin[0]) / self.size[0] * (self.x.1 - self.x.0),
+            self.y.0
+                + (self.origin[1] + self.size[1] - p[1]) / self.size[1] * (self.y.1 - self.y.0),
+        ]
+    }
+
+    /// 画面の点が画面の矩形の中にあるか。枠の線の上（矩形の辺の上）も中に入れる。
+    pub fn contains(&self, p: Pt) -> bool {
+        let [lo, hi] = self.bounds();
+        (lo[0]..=hi[0]).contains(&p[0]) && (lo[1]..=hi[1]).contains(&p[1])
+    }
+
+    /// 画面の矩形を `by` だけずらしたもの。データの矩形はそのまま。
+    pub fn shifted(self, by: Pt) -> Self {
+        Self {
+            origin: [self.origin[0] + by[0], self.origin[1] + by[1]],
+            ..self
+        }
+    }
+
     /// 画面の矩形の左上と右下。
     pub fn bounds(&self) -> [Pt; 2] {
         [
@@ -67,10 +90,11 @@ fn number_width(digits: usize) -> f64 {
 }
 
 /// 枠、内向きの目盛り（四辺）、下と左の目盛りの数値、軸の名前。`digits` は数値の幅の見込み
-/// （[`Plot::margins`] に渡したものと同じ）。
+/// （[`Plot::margins`] に渡したものと同じ）。シーンは描く範囲として `plot` を持つ。
 pub fn axes(plot: &Plot, x_name: &str, y_name: &str, digits: usize) -> Scene {
     let [lo, hi] = plot.bounds();
     let mut scene = Scene::new(hi[0], hi[1]);
+    scene.plots.push(*plot);
     let mut ticks: Vec<Vec<Pt>> = Vec::new();
     let text = |x: f64, y: f64, s: String, font: Font, anchor: Anchor, rotate: f64| Item::Text {
         x,
@@ -201,6 +225,65 @@ mod tests {
         assert_eq!(p.to_screen([3.0, 4.0]), [50.0, 210.0]);
         assert_eq!(p.to_screen([5.0, 6.0]), [250.0, 10.0]);
         assert_eq!(p.to_screen([4.0, 5.0]), [150.0, 110.0]);
+    }
+
+    #[test]
+    fn screen_corners_and_center_map_back_to_the_data_corners_and_center() {
+        let p = plot();
+        let data = [[3.0, 4.0], [5.0, 4.0], [3.0, 6.0], [5.0, 6.0], [4.0, 5.0]];
+        let screen = [
+            [50.0, 210.0],
+            [250.0, 210.0],
+            [50.0, 10.0],
+            [250.0, 10.0],
+            [150.0, 110.0],
+        ];
+        for (d, s) in data.into_iter().zip(screen) {
+            assert_eq!(p.to_data(s), d);
+            assert_eq!(p.to_data(p.to_screen(d)), d);
+        }
+        // 割り切れない範囲でも、写して戻すと元の点
+        let odd = Plot {
+            x: (0.1, 7.3),
+            y: (-2.9, 1.7),
+            origin: [13.7, 5.3],
+            size: [191.3, 117.9],
+        };
+        for d in [
+            [0.1, -2.9],
+            [7.3, -2.9],
+            [0.1, 1.7],
+            [7.3, 1.7],
+            [3.7, -0.6],
+        ] {
+            let back = odd.to_data(odd.to_screen(d));
+            assert!(
+                (back[0] - d[0]).abs() < 1e-12 && (back[1] - d[1]).abs() < 1e-12,
+                "{d:?} → {back:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_screen_rectangle_contains_its_edges_but_not_what_lies_outside() {
+        let p = plot();
+        for inside in [[50.0, 10.0], [250.0, 210.0], [50.0, 110.0], [150.0, 210.0]] {
+            assert!(p.contains(inside), "{inside:?}");
+        }
+        for outside in [[49.9, 110.0], [250.1, 110.0], [150.0, 9.9], [150.0, 210.1]] {
+            assert!(!p.contains(outside), "{outside:?}");
+        }
+    }
+
+    #[test]
+    fn the_axes_scene_holds_its_plot_and_its_numbers_and_names_hit_nothing() {
+        let scene = axes(&plot(), "Lx（m）", "Ly（m）", 3);
+        assert_eq!(scene.plots, [plot()]);
+        assert_eq!(scene.locate([150.0, 110.0]), Some((0, [4.0, 5.0])));
+        assert_eq!(scene.locate([50.0, 10.0]), Some((0, [3.0, 6.0])));
+        for (x, y, s, ..) in texts(&scene) {
+            assert_eq!(scene.locate([x, y]), None, "{s}");
+        }
     }
 
     #[test]

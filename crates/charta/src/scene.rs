@@ -1,6 +1,11 @@
 //! 描き手に依存しない小さなシーン: パス・矩形・円・文字だけ。色は役割名で持ち、描くときにテーマで引く。
 //!
 //! 中間表現の全体（点の記号の一揃い、格子の場、座標変換の段）はまだ作らない。分布図と等厚曲線の図に要る 4 種だけ。
+//!
+//! シーンは絵と一緒に描く範囲（[`Plot`]）の列を持ち、画面の点がどの描く範囲に当たるかを決めて、データの点に
+//! 戻す（当たり判定。ADR charta-0001）。当たる物は描く範囲だけ。
+
+use crate::plot::Plot;
 
 /// 画面の座標。x は右、y は下が正（SVG と同じ）。
 pub type Pt = [f64; 2];
@@ -126,6 +131,8 @@ pub struct Scene {
     pub width: f64,
     pub height: f64,
     pub items: Vec<Item>,
+    /// 描く範囲。画面の矩形はこのシーンの座標で、絵と同じ所にある。
+    pub plots: Vec<Plot>,
 }
 
 impl Scene {
@@ -134,12 +141,24 @@ impl Scene {
             width,
             height,
             items: Vec::new(),
+            plots: Vec::new(),
         }
     }
 
-    /// `other` の中身を、その原点が `at` に来るようにずらして足す（図の周りに縁を取るときなど）。
+    /// シーンの座標の点 `p` が当たった描く範囲の番号（[`plots`](Self::plots) の何番目か）と、そのデータの点。
+    /// 枠の線の上の点も当たる。範囲が重なる所では先の範囲に当たる。どの範囲にも当たらなければ `None`。
+    pub fn locate(&self, p: Pt) -> Option<(usize, Pt)> {
+        self.plots
+            .iter()
+            .position(|plot| plot.contains(p))
+            .map(|k| (k, self.plots[k].to_data(p)))
+    }
+
+    /// `other` の中身と描く範囲を、その原点が `at` に来るようにずらして足す（図の周りに縁を取るときなど）。
     /// `other` の大きさは使わない。
     pub fn place(&mut self, other: Scene, at: Pt) {
+        self.plots
+            .extend(other.plots.into_iter().map(|plot| plot.shifted(at)));
         let shift = |p: Pt| [p[0] + at[0], p[1] + at[1]];
         self.items.extend(other.items.into_iter().map(|item| {
             match item {
@@ -209,10 +228,63 @@ impl Scene {
     }
 }
 
-/// 継ぎ目: シーンを別のシーンに置くと、形は変わらず位置だけずれる。
+/// 継ぎ目: シーンを別のシーンに置くと、形は変わらず位置だけずれる。描く範囲も一緒にずれ、画面の点から
+/// 当たった描く範囲とデータの点を返す。
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0〜2 × 0〜1 のデータを、`origin` から 200 × 100 に写す範囲だけを持つシーン
+    fn with_plot(origin: Pt) -> Scene {
+        let mut scene = Scene::new(origin[0] + 200.0, origin[1] + 100.0);
+        scene.plots.push(Plot {
+            x: (0.0, 2.0),
+            y: (0.0, 1.0),
+            origin,
+            size: [200.0, 100.0],
+        });
+        scene
+    }
+
+    #[test]
+    fn a_point_in_the_plot_returns_its_data_point_and_one_outside_returns_none() {
+        let scene = with_plot([10.0, 20.0]);
+        assert_eq!(scene.locate([110.0, 70.0]), Some((0, [1.0, 0.5])));
+        // 枠の線の上は当たる
+        assert_eq!(scene.locate([10.0, 120.0]), Some((0, [0.0, 0.0])));
+        assert_eq!(scene.locate([210.0, 20.0]), Some((0, [2.0, 1.0])));
+        for outside in [[5.0, 70.0], [215.0, 70.0], [110.0, 15.0], [110.0, 125.0]] {
+            assert_eq!(scene.locate(outside), None, "{outside:?}");
+        }
+        assert_eq!(Scene::new(100.0, 100.0).locate([50.0, 50.0]), None);
+    }
+
+    #[test]
+    fn a_placed_scene_returns_the_same_data_point_for_the_shifted_screen_point() {
+        let inner = with_plot([10.0, 20.0]);
+        let mut outer = Scene::new(400.0, 300.0);
+        outer.place(inner.clone(), [30.0, 40.0]);
+        assert_eq!(outer.plots.len(), 1);
+        for p in [[10.0, 20.0], [210.0, 120.0], [110.0, 70.0], [37.0, 101.0]] {
+            let shifted = [p[0] + 30.0, p[1] + 40.0];
+            assert!(inner.locate(p).is_some());
+            assert_eq!(outer.locate(shifted), inner.locate(p), "{p:?}");
+        }
+        // ずれた先の外は当たらない（置く前なら当たった点）
+        assert_eq!(outer.locate([110.0, 70.0 + 40.0 + 60.0]), None);
+    }
+
+    #[test]
+    fn with_two_plots_each_point_returns_the_number_of_the_plot_it_hits() {
+        let mut scene = Scene::new(500.0, 150.0);
+        scene.place(with_plot([0.0, 0.0]), [10.0, 10.0]);
+        scene.place(with_plot([0.0, 0.0]), [260.0, 40.0]);
+        assert_eq!(scene.locate([110.0, 60.0]), Some((0, [1.0, 0.5])));
+        assert_eq!(scene.locate([360.0, 90.0]), Some((1, [1.0, 0.5])));
+        assert_eq!(scene.locate([260.0, 140.0]), Some((1, [0.0, 0.0])));
+        // 2 つの範囲の間
+        assert_eq!(scene.locate([235.0, 60.0]), None);
+    }
 
     #[test]
     fn text_width_counts_latin_and_digits_as_six_tenths_and_others_as_one() {
