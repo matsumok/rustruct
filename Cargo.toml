@@ -39,3 +39,5 @@ rust_decimal_macros = { version = "1.40" }
 dioxus = { version = "0.7", features = ["fullstack", "router"] }
 dioxus-ssr = { version = "0.7" }
 web-sys = { version = "0.3" }
+katex = { version = "0.4" }
+pulldown-cmark = { version = "0.13", default-features = false }

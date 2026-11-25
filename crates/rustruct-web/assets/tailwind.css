@@ -63,6 +63,7 @@
     --text-body--font-weight: 400;
     --text-prose: 15px;
     --text-prose--line-height: 28px;
+    --text-prose--font-weight: 400;
     --text-label: 11px;
     --text-label--line-height: 16px;
     --text-label--font-weight: 400;
@@ -323,6 +324,9 @@
   .hidden {
     display: none;
   }
+  .inline {
+    display: inline;
+  }
   .inline-block {
     display: inline-block;
   }
@@ -379,6 +383,9 @@
   }
   .transform {
     transform: var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,);
+  }
+  .list-decimal {
+    list-style-type: decimal;
   }
   .list-disc {
     list-style-type: disc;
@@ -580,6 +587,11 @@
     line-height: var(--tw-leading, var(--text-path--line-height));
     font-weight: var(--tw-font-weight, var(--text-path--font-weight));
   }
+  .text-prose {
+    font-size: var(--text-prose);
+    line-height: var(--tw-leading, var(--text-prose--line-height));
+    font-weight: var(--tw-font-weight, var(--text-prose--font-weight));
+  }
   .text-title {
     font-size: var(--text-title);
     line-height: var(--tw-leading, var(--text-title--line-height));
@@ -616,6 +628,13 @@
   .blur {
     --tw-blur: blur(8px);
     filter: var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,);
+  }
+  .\*\:not-last\:mr-3 {
+    :is(& > *) {
+      &:not(*:last-child) {
+        margin-right: var(--spacing-3);
+      }
+    }
   }
   .group-aria-checked\:border-ink {
     &:is(:where(.group)[aria-checked="true"] *) {

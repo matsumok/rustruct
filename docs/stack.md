@@ -34,7 +34,7 @@
 - コントラスト検査は Rust のテストとして tokens.json を読んで行い、CI で回す。WCAG 比（usage に書かれた 3:1 / 4.5:1）を必須、APCA を警告として出す。最初の一本には含めない
 - フォントは IBM Plex Sans JP と Plex Mono。まず Google Fonts CDN
 - ナビゲーションは「住所で組む」。上のバーに wordmark、各項目にパスを添える。サイドバーは未決のまま作らない
-- Note は Markdown をリポジトリに置き、ビルド時に Rust で HTML にする。数式は KaTeX をライブラリとして使う
+- 説明書と Note の本文は Markdown をリポジトリに置き、ビルド時に Rust で HTML にする（ADR site-0019）。置き場は `crates/rustruct-web/content/<住所>.md`（`/tools/kirchhoff-plate/manual` は `content/tools/kirchhoff-plate/manual.md`、Note は `content/notes/<名前>.md`）。`build.rs` がフォルダを歩き、pulldown-cmark で読んで、式（`$…$` と `$$…$$`）を KaTeX（`katex` クレート、QuickJS で動かす）の MathML だけで組み、住所と HTML の組を `$OUT_DIR/content.rs` に書く。変換は `src/markdown.rs` の純粋関数で、ページ（`src/prose.rs`）は住所から本文を引いて置くだけ。ブラウザでは Markdown も KaTeX も動かさず、KaTeX の CSS もフォントも配信物に入れない
 
 ## 配信
 

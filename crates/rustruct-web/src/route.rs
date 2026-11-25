@@ -6,6 +6,7 @@ use dioxus::prelude::*;
 use crate::data::{ConcretePage, DataIndex, RebarPage};
 use crate::kirchhoff_plate::KirchhoffPlatePage;
 use crate::page::{Home, NotFound, RootPage, SectionPage};
+use crate::prose::ProsePage;
 use crate::shell::Frame;
 use crate::slab_thickness::SlabThicknessPage;
 use crate::tools::{Domain, ToolsIndex};
@@ -42,6 +43,8 @@ mod routes {
             Tools {},
             #[route("/tools/kirchhoff-plate", KirchhoffPlatePage)]
             ToolsKirchhoffPlate {},
+            #[route("/tools/kirchhoff-plate/manual", ProsePage)]
+            ToolsKirchhoffPlateManual {},
             #[route("/tools/slab-thickness", SlabThicknessPage)]
             ToolsSlabThickness {},
             #[route("/data", DataIndex)]
@@ -95,6 +98,10 @@ impl Route {
                 "Kirchhoff 板の曲げ",
                 "長方形の板の、たわみ・曲げモーメント・反力。",
             ),
+            Route::ToolsKirchhoffPlateManual {} => (
+                "Kirchhoff 板の曲げの説明書",
+                "Kirchhoff 板の曲げの仮定と式、結果に出る量。",
+            ),
             Route::ToolsSlabThickness {} => (
                 "必要スラブ厚さ",
                 "四辺固定の RC スラブの、たわみと表18-1 から決まる必要厚さ。",
@@ -126,7 +133,11 @@ impl Route {
             Route::ToolsKirchhoffPlate {} => Listing::Tools(Domain::Mechanics),
             Route::ToolsSlabThickness {} => Listing::Tools(Domain::Rc),
             Route::DataConcrete {} | Route::DataRebar {} => Listing::Data,
-            Route::Home {} | Route::Root {} | Route::NotFound { .. } => Listing::Nowhere,
+            // 説明書は一覧に載せず、Tool のページの見出しの下とメニューの木から行く
+            Route::Home {}
+            | Route::ToolsKirchhoffPlateManual {}
+            | Route::Root {}
+            | Route::NotFound { .. } => Listing::Nowhere,
         }
     }
 
@@ -194,6 +205,15 @@ impl Route {
             .collect()
     }
 
+    /// このページの説明書（住所が一段下の `manual` のページ）。Tool のページは見出しの下からリンクする。
+    /// ルーターの住所一覧から導く
+    pub(crate) fn manual(&self) -> Option<Route> {
+        let address = format!("{self}/manual");
+        self.children()
+            .into_iter()
+            .find(|r| r.to_string() == address)
+    }
+
     /// `other` がこのページか、その下のページか。not-found はどこにも入らない（ADR site-0001 の規則）。
     pub(crate) fn holds(&self, other: &Route) -> bool {
         if matches!(other, Route::NotFound { .. }) {
@@ -201,5 +221,28 @@ impl Route {
         }
         let (base, path) = (self.to_string(), other.to_string());
         path == base || path.starts_with(&format!("{base}/"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 説明書は Tool のページの一段下で、メニューの木ではその枝に出て、`/tools` の一覧には出ない
+    #[test]
+    fn the_manual_is_a_child_of_its_tool_and_not_on_the_tools_list() {
+        let tool = Route::ToolsKirchhoffPlate {};
+        let manual = Route::ToolsKirchhoffPlateManual {};
+        assert_eq!(tool.children(), std::slice::from_ref(&manual));
+        assert_eq!(tool.manual(), Some(manual.clone()));
+        assert!(!Route::Tools {}.children().contains(&manual));
+        for domain in [Domain::Rc, Domain::Mechanics] {
+            assert!(
+                !Route::tools_in(domain).any(|r| r == manual),
+                "{domain:?} の一覧に説明書がある"
+            );
+        }
+        assert_eq!(manual.manual(), None);
+        assert_eq!(Route::ToolsSlabThickness {}.manual(), None);
     }
 }

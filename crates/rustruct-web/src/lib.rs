@@ -10,6 +10,10 @@ use dioxus::prelude::*;
 #[cfg(test)]
 mod theme;
 
+/// 本文の Markdown → HTML の変換。build.rs が使う。lib には test のときだけ入れて検査する。
+#[cfg(test)]
+mod markdown;
+
 /// 描いた HTML を読む道具（開きタグと属性、要素の範囲、本文、`<title>`）。SSG の出力の検査とテストが使う
 #[cfg(not(target_arch = "wasm32"))]
 pub mod markup;
@@ -46,6 +50,9 @@ mod kirchhoff_plate;
 
 /// Tool「必要スラブ厚さ」のページ。
 mod slab_thickness;
+
+/// 説明書のページ（`content/` の Markdown をビルドで HTML にした本文）。
+mod prose;
 
 /// ヘッダーのボタンのアイコン（Carbon）。
 mod icons;

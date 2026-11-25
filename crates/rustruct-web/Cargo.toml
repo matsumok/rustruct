@@ -28,9 +28,13 @@ web-sys = { workspace = true, features = ["Document", "Element", "HtmlElement", 
 
 [build-dependencies]
 serde_json.workspace = true
+katex.workspace = true
+pulldown-cmark.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+katex.workspace = true
+pulldown-cmark.workspace = true
 
 [features]
 default = []

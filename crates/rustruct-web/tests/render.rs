@@ -194,6 +194,7 @@ fn ssg_paths_are_the_static_routes_and_the_not_found_page() {
             "/",
             "/tools",
             "/tools/kirchhoff-plate",
+            "/tools/kirchhoff-plate/manual",
             "/tools/slab-thickness",
             "/data",
             "/data/concrete",
@@ -233,6 +234,10 @@ fn title_is_page_name_then_site_name() {
         (
             "/tools/kirchhoff-plate",
             "Kirchhoff 板の曲げ · rustruct.matsumok.com",
+        ),
+        (
+            "/tools/kirchhoff-plate/manual",
+            "Kirchhoff 板の曲げの説明書 · rustruct.matsumok.com",
         ),
         (
             "/tools/slab-thickness",
@@ -405,10 +410,108 @@ fn page_body_does_not_repeat_the_address() {
     for path in [
         "/studies",
         "/tools/kirchhoff-plate",
+        "/tools/kirchhoff-plate/manual",
         "/data/concrete",
         "/root",
     ] {
         let body = text_of(element(&render_path(path), "main"));
         assert!(!body.contains(path), "{path} の本文に住所がある: {body}");
     }
+}
+
+/// 本文（`<main>`）の見出しの次の兄弟（同じ親の中で見出しのすぐ後）に置いたリンク（見出しの右のバッジ）:
+/// (href, 文字, aria-label)。見出しの閉じタグのすぐ後がリンクの開きタグでなければ `None`
+fn badge_after_heading(html: &str) -> Option<(String, String, String)> {
+    let main = element(html, "main");
+    let after = &main[main.find("</h1>").expect("h1 が無い") + "</h1>".len()..];
+    if !after.trim_start().starts_with("<a ") {
+        return None;
+    }
+    let tag = tags(after).into_iter().next()?;
+    let a = element(after, "a");
+    Some((
+        tag.get("href")?.to_string(),
+        text_of(a),
+        tag.get("aria-label")?.to_string(),
+    ))
+}
+
+#[test]
+fn the_tool_page_has_a_badge_to_its_manual_right_after_the_heading() {
+    assert_eq!(
+        badge_after_heading(&render_path("/tools/kirchhoff-plate")),
+        Some((
+            "/tools/kirchhoff-plate/manual".to_string(),
+            "説明書".to_string(),
+            "Kirchhoff 板の曲げの説明書".to_string(),
+        ))
+    );
+    // 見出しは見出しの文字だけ（バッジは見出しの外）
+    assert_eq!(
+        h1_text(&render_path("/tools/kirchhoff-plate")),
+        "Kirchhoff 板の曲げ"
+    );
+    // 説明書のないページには置かない
+    for path in ["/tools/slab-thickness", "/tools/kirchhoff-plate/manual"] {
+        assert_eq!(
+            badge_after_heading(&render_path(path)),
+            None,
+            "{path} にバッジがある"
+        );
+    }
+}
+
+#[test]
+fn the_manual_is_headed_and_reached_through_its_tool_in_the_breadcrumb() {
+    let html = render_path("/tools/kirchhoff-plate/manual");
+    assert_eq!(h1_text(&html), "Kirchhoff 板の曲げの説明書");
+    assert_eq!(
+        breadcrumb(&html),
+        vec![
+            (Some("/tools".to_string()), "/tools".to_string()),
+            (
+                Some("/tools/kirchhoff-plate".to_string()),
+                "/kirchhoff-plate".to_string()
+            ),
+            (None, "/manual".to_string()),
+        ]
+    );
+    assert!(
+        !text_of(&render_path("/tools")).contains("/tools/kirchhoff-plate/manual"),
+        "/tools の一覧に説明書がある"
+    );
+}
+
+/// 説明書の式は描いた HTML の中で MathML に組まれていて、TeX の書き方は本文に残らない。
+/// ブラウザで組む道具は読まない（読込むスクリプトは Tool のページと同じ）
+#[test]
+fn the_manual_formulas_are_typeset_in_the_html_without_more_scripts() {
+    let html = render_path("/tools/kirchhoff-plate/manual");
+    let article = element(element(&html, "main"), "article");
+    assert_eq!(text_of(element(article, "h2")), "1 仮定と式");
+    let headings: Vec<String> = elements(article, "h3").into_iter().map(text_of).collect();
+    assert_eq!(headings, ["仮定", "曲げ剛性とたわみの式", "結果に出る量"]);
+    let display = count_tags(article, "math", &[("display", "block")]);
+    assert!(display > 0, "別行の式が無い");
+    assert!(count_tags(article, "math", &[]) > display, "文中の式が無い");
+    let shown = text_of(&strip_annotations(article));
+    for raw in ["$", "\\frac", "\\nabla"] {
+        assert!(
+            !shown.contains(raw),
+            "本文に組んでいない {raw} が残っている: {shown}"
+        );
+    }
+    assert!(!html.to_lowercase().contains("katex"), "KaTeX を読んでいる");
+    assert_eq!(
+        count_tags(&html, "script", &[]),
+        count_tags(&render_path("/tools/kirchhoff-plate"), "script", &[]),
+        "読込むスクリプトが Tool のページと違う"
+    );
+}
+
+/// MathML の注釈（TeX の書き方を残す `annotation`）を外した HTML
+fn strip_annotations(html: &str) -> String {
+    elements(html, "annotation")
+        .into_iter()
+        .fold(html.to_string(), |html, a| html.replace(a, ""))
 }
