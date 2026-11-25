@@ -5,7 +5,7 @@
 use std::f64::consts::PI;
 
 use rustruct_calc::kirchhoff_plate::{EdgeSample, Plate, PointResponse, Solution};
-use rustruct_types::kirchhoff_plate::{Corner, Edge, Supports};
+use rustruct_types::kirchhoff_plate::{Corner, Edge, PlateMaterial, Supports};
 use rustruct_types::quantity::{AreaLoad, Length, PoissonRatio, Stress};
 
 /// 打ち切り・離散化の誤差を許す比較。`tolerance` は絶対値で、呼ぶ側が値と理由を書く
@@ -17,14 +17,16 @@ pub fn assert_within(actual: f64, expected: f64, tolerance: f64, what: &str) {
     );
 }
 
-/// 辺長は mm、p は kN/m²。t = 100 mm、E = 20 000 N/mm²
+/// 辺長は mm、p は kN/m²。t = 100 mm、材料は直接入力で E = 20 000 N/mm²
 pub fn plate(lx: f64, ly: f64, nu: f64, p: f64, supports: Supports) -> Plate {
     Plate {
         lx: Length::mm(lx),
         ly: Length::mm(ly),
         thickness: Length::mm(100.0),
-        young_modulus: Stress::n_per_mm2(20_000.0),
-        poisson_ratio: PoissonRatio::new(nu).unwrap(),
+        material: PlateMaterial::Direct {
+            young_modulus: Stress::n_per_mm2(20_000.0),
+            poisson_ratio: PoissonRatio::new(nu).unwrap(),
+        },
         load: AreaLoad::kn_per_m2(p),
         supports,
     }
@@ -33,8 +35,8 @@ pub fn plate(lx: f64, ly: f64, nu: f64, p: f64, supports: Supports) -> Plate {
 /// 曲げ剛性 D = E t³ / (12 (1 − ν²)) [N·mm]
 pub fn rigidity(plate: &Plate) -> f64 {
     let t = plate.thickness.as_mm();
-    plate.young_modulus.as_n_per_mm2() * t * t * t
-        / (12.0 * (1.0 - plate.poisson_ratio.value().powi(2)))
+    plate.material.young_modulus().as_n_per_mm2() * t * t * t
+        / (12.0 * (1.0 - plate.material.poisson_ratio().value().powi(2)))
 }
 
 pub fn at(s: &Solution, x: f64, y: f64) -> PointResponse {
@@ -70,7 +72,7 @@ pub fn navier(plate: &Plate, x: f64, y: f64, max: usize) -> Navier {
     let (p, d, nu) = (
         plate.load.as_n_per_mm2(),
         rigidity(plate),
-        plate.poisson_ratio.value(),
+        plate.material.poisson_ratio().value(),
     );
     let mut r = Navier {
         w: 0.0,
