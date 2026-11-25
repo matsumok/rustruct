@@ -14,13 +14,15 @@ use crate::grid::Grid;
 use crate::label::{Candidate, Label, cross, place};
 use crate::levels::{edges, format_level, step_of};
 use crate::palette::Palette;
+use crate::plot::Plot;
 use crate::scene::{Item, Pt, Scene, Stroke};
 
 /// 等値線の太さ。ADR site-0011。
 pub const LINE_WIDTH: f64 = 0.25;
 pub use crate::label::{HALO_WIDTH, LABEL_SIZE};
 
-/// グリッドの値を `width` の幅の図にする。高さはグリッドの縦横比から導く。
+/// グリッドの値を `width` の幅の図にする。高さはグリッドの縦横比から導く。図の全体が描く範囲で、
+/// シーンはそれを持つ（グリッドの範囲を、原点を左上とする図の矩形に写す）。
 /// `range` は帯の境を決める値の範囲（最小、最大）で、ふつうは `Grid::range`。範囲の外の値は両端の帯の色で
 /// 振り切れ、等値線は引かない。`steps` は帯の段数の目安（`Palette::default_steps` が既定）。
 pub fn distribution(
@@ -32,11 +34,11 @@ pub fn distribution(
 ) -> Scene {
     let (x0, x1, y0, y1) = grid.extent();
     let height = width * (y1 - y0) / (x1 - x0);
-    let to_screen = |p: Pt| -> Pt {
-        [
-            (p[0] - x0) / (x1 - x0) * width,
-            height - (p[1] - y0) / (y1 - y0) * height,
-        ]
+    let plot = Plot {
+        x: (x0, x1),
+        y: (y0, y1),
+        origin: [0.0, 0.0],
+        size: [width, height],
     };
 
     let edges = edges(palette, range.0, range.1, steps);
@@ -45,6 +47,7 @@ pub fn distribution(
     let (isolines, bands) = contour(grid, levels);
 
     let mut scene = Scene::new(width, height);
+    scene.plots.push(plot);
     for (k, band) in bands.iter().enumerate() {
         if band.polygons.is_empty() {
             continue;
@@ -53,7 +56,7 @@ pub fn distribution(
             subpaths: band
                 .polygons
                 .iter()
-                .map(|poly| poly.iter().map(|&p| to_screen(p)).collect())
+                .map(|poly| poly.iter().map(|&p| plot.to_screen(p)).collect())
                 .collect(),
             closed: true,
             fill: Some(palette.band_paint(k, bands.len())),
@@ -69,7 +72,7 @@ pub fn distribution(
         let lines: Vec<Vec<Pt>> = iso
             .lines
             .iter()
-            .map(|line| line.iter().map(|&p| to_screen(p)).collect())
+            .map(|line| line.iter().map(|&p| plot.to_screen(p)).collect())
             .collect();
         scene.items.push(Item::Path {
             subpaths: lines.clone(),
@@ -331,6 +334,24 @@ mod tests {
         let scene = distribution(&grid, Palette::Seq, grid.range(), 10, 100.0);
         let p = parts(&scene);
         assert_eq!((p.bands.len(), p.lines.len(), p.labels.len()), (1, 0, 0));
+    }
+
+    #[test]
+    fn the_whole_figure_is_one_plot_whose_corners_and_center_return_the_grid_corners_and_center() {
+        let scene = distribution(&bump(), Palette::Seq, bump().range(), 10, 200.0);
+        assert_eq!(scene.plots.len(), 1);
+        let corners = [
+            ([0.0, 300.0], [0.0, 0.0]),
+            ([200.0, 300.0], [2.0, 0.0]),
+            ([0.0, 0.0], [0.0, 3.0]),
+            ([200.0, 0.0], [2.0, 3.0]),
+            ([100.0, 150.0], [1.0, 1.5]),
+        ];
+        for (screen, data) in corners {
+            assert_eq!(scene.locate(screen), Some((0, data)), "{screen:?}");
+        }
+        assert_eq!(scene.locate([-0.1, 150.0]), None);
+        assert_eq!(scene.locate([100.0, 300.1]), None);
     }
 
     #[test]
