@@ -3,7 +3,7 @@
 ## Contexts
 
 - [サイト全体](./GLOSSARY.md): 四部構成と分野、利用者、Model と限定データ。どの Tool にも共通する言葉
-- [材料](./docs/materials/GLOSSARY.md): コンクリートと鉄筋。複数の Tool が共有する
+- [材料](./docs/materials/GLOSSARY.md): コンクリートと鉄筋と鋼材。複数の Tool が共有する
 - [スラブ](./docs/slab/GLOSSARY.md): 長方形の RC スラブの形（内法スパン・スラブ厚）。RC スラブの Tool が共有する
 - [必要スラブ厚さ](./docs/tools/slab-thickness/GLOSSARY.md): RC 二方向スラブ（四辺固定）の必要スラブ厚と等厚曲線
 - [Kirchhoff 板](./docs/tools/kirchhoff-plate/GLOSSARY.md): 長方形の等厚な板（辺ごとに支持条件を選ぶ）の、等分布荷重によるたわみと応力の分布。材料に依らない
