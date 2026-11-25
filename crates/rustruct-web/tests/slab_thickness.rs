@@ -3,12 +3,21 @@
 
 mod common;
 use charta::{Font, Item, Pt, Scene};
+use common::markup::count_tags;
 use common::{
     Said, assert_in_order, element, flagged_heads, input_groups, paragraphs, said, text_of,
 };
+use numerus::fixed;
+use rustruct_calc::slab_thickness::{Conditions, CriteriaSet, Spans, check};
+use rustruct_types::concrete::{Concrete, ConcreteKind};
+use rustruct_types::quantity::{AreaLoad, Length, Stress};
 use rustruct_web::{
-    SlabField, SlabFigure, SlabInputs, SlabOutcome, SlabReadout, render_path, render_path_with,
+    PointTerm, Pointed, Pointer, SlabField, SlabFigure, SlabInputs, SlabOutcome, SlabReadout,
+    render_path, render_path_with,
 };
+
+/// 図の下の点の値の行の、何も指していないときの読み方の文
+const HINT: &str = "図を指すとその点の値を出す";
 
 #[test]
 fn tools_lists_slab_thickness_under_the_rc_heading_before_mechanics() {
@@ -635,8 +644,15 @@ fn an_unreadable_criterion_is_not_called_missing() {
 
 #[test]
 fn the_initial_groups_say_nothing() {
-    for group in groups(|_| {}) {
-        assert_eq!(paragraphs(&group), Vec::<String>::new(), "{group}");
+    let [conditions, point] = groups(|_| {});
+    assert_eq!(
+        paragraphs(&conditions),
+        Vec::<String>::new(),
+        "{conditions}"
+    );
+    // 検討点の組の後ろは図の列で、段落は点の値の行（読み方の文）だけ
+    assert_eq!(paragraphs(&point), [HINT], "{point}");
+    for group in [conditions, point] {
         assert_eq!(flagged_heads(&group), 0, "{group}");
     }
 }
@@ -674,5 +690,182 @@ fn the_fc_warning_is_said_under_the_conditions_only() {
     let [conditions, point] = groups(|i| i.set(SlabField::Fc, "12"));
     assert_eq!(paragraphs(&conditions), ["! Fc が下限 18 N/mm² に満たない"]);
     assert_eq!(flagged_heads(&conditions), 0, "{conditions}");
-    assert_eq!(paragraphs(&point), Vec::<String>::new(), "{point}");
+    // 検討点の組の後ろは図の列で、段落は点の値の行（読み方の文）だけ
+    assert_eq!(paragraphs(&point), [HINT], "{point}");
+}
+
+// 点の値（Issue #139）
+
+/// 初期値の条件（Fc 24、仕上げ 1000 N/m²、積載 1800 N/m²、変形増大係数 16、変形角 1/400）を、計算核で
+/// 直接 Lx・Ly（m）で計算した必要スラブ厚。結果の表と同じ小数 1 桁の文字。値が出なければ無し
+fn core_thickness(x: f64, y: f64) -> Option<String> {
+    let conditions = Conditions {
+        concrete: Concrete::new(Stress::n_per_mm2(24.0), ConcreteKind::Normal).unwrap(),
+        finish_load: AreaLoad::n_per_m2(1000.0),
+        live_load: AreaLoad::n_per_m2(1800.0),
+        amplification: 16.0,
+        criteria: CriteriaSet {
+            deflection_ratio: Some(1.0 / 400.0),
+            deflection_absolute: None,
+            min_thickness: false,
+        },
+    };
+    check(&conditions)
+        .unwrap()
+        .evaluate(Spans {
+            x: Length::m(x),
+            y: Length::m(y),
+        })
+        .ok()
+        .map(|ev| fixed(ev.required_thickness.as_mm(), 1))
+}
+
+/// 点の値の項を「Lx = 4.00 m」の形の文字に（値が無ければ「—」）
+fn terms_text(terms: &[PointTerm]) -> Vec<String> {
+    terms
+        .iter()
+        .map(|t| {
+            let value = t.value.clone().unwrap_or_else(|| "—".into());
+            format!("{} = {value} {}", t.symbol, t.unit)
+        })
+        .collect()
+}
+
+/// 図の描く範囲の、左から `fx`、下から `fy` の割合の画面の点
+fn screen_at(scene: &Scene, fx: f64, fy: f64) -> Pt {
+    let [lo, hi] = scene.plots[0].bounds();
+    [lo[0] + fx * (hi[0] - lo[0]), hi[1] - fy * (hi[1] - lo[1])]
+}
+
+/// 図の画面の点 `screen` に止めた、指した点
+fn pinned_at(scene: &Scene, screen: Pt) -> Pointer {
+    let (plot, at) = scene.locate(screen).expect("描く範囲の中");
+    Pointer::Pinned(Pointed { plot, at })
+}
+
+#[test]
+fn the_point_value_is_the_required_thickness_of_the_core_at_that_lx_and_ly() {
+    let curves = outcome(|_| {}).curves.expect("初期値で図が出る");
+    for [x, y] in [[4.0, 5.0], [3.0, 4.0], [3.37, 5.82], [5.0, 6.0], [4.6, 4.1]] {
+        assert_eq!(
+            terms_text(&curves.point_value([x, y])),
+            [
+                format!("Lx = {} m", fixed(x, 2)),
+                format!("Ly = {} m", fixed(y, 2)),
+                format!("t_req = {} mm", core_thickness(x, y).unwrap()),
+            ],
+            "{x} {y}"
+        );
+    }
+    // 検討点の値は、結果の表の必要スラブ厚と同じ文字
+    assert_eq!(
+        curves.point_value([4.0, 5.0])[2].value,
+        readout(|_| {}).point.required_thickness
+    );
+    // 図の上の点から当てても同じ（範囲は 3〜5 m × 4〜6 m。左から 1/4、下から 3/4 は Lx 3.5 m、Ly 5.5 m）
+    let scene = figure(|_| {}).unwrap().scene;
+    let at = pinned_at(&scene, screen_at(&scene, 0.25, 0.75))
+        .point()
+        .unwrap()
+        .at;
+    assert_eq!(
+        terms_text(&curves.point_value(at)),
+        [
+            "Lx = 3.50 m".to_string(),
+            "Ly = 5.50 m".into(),
+            format!("t_req = {} mm", core_thickness(3.5, 5.5).unwrap()),
+        ]
+    );
+}
+
+#[test]
+fn a_point_where_the_core_gives_no_value_reads_a_dash() {
+    // 0.3 m 四方: 範囲は -0.7〜1.3 m で、0 以下のスパンを含む
+    let change = |i: &mut SlabInputs| {
+        i.set(SlabField::SpanX, "0.3");
+        i.set(SlabField::SpanY, "0.3");
+    };
+    let scene = figure(change).expect("小さなスパンでも図は出る").scene;
+    let curves = outcome(change).curves.unwrap();
+    for screen in [screen_at(&scene, 0.1, 0.6), screen_at(&scene, 0.6, 0.1)] {
+        let at = pinned_at(&scene, screen).point().unwrap().at;
+        assert!(at[0] <= 0.0 || at[1] <= 0.0, "{at:?}");
+        assert_eq!(core_thickness(at[0], at[1]), None);
+        let terms = curves.point_value(at);
+        assert_eq!(terms[2].value, None, "{at:?}");
+        assert_eq!(terms_text(&terms)[2], "t_req = — mm");
+        // Lx・Ly は出す
+        assert!(terms[0].value.is_some() && terms[1].value.is_some());
+    }
+    let at = pinned_at(&scene, screen_at(&scene, 0.6, 0.6))
+        .point()
+        .unwrap()
+        .at;
+    assert_eq!(
+        curves.point_value(at)[2].value,
+        core_thickness(at[0], at[1])
+    );
+    assert!(curves.point_value(at)[2].value.is_some());
+}
+
+#[test]
+fn a_pinned_point_is_kept_across_the_inputs_and_cleared_when_the_view_moves_away() {
+    let scene = figure(|_| {}).unwrap().scene;
+    // 範囲は 3〜5 m × 4〜6 m。左から 3/4、下から 1/4 は Lx 4.5 m、Ly 4.5 m
+    let pinned = pinned_at(&scene, screen_at(&scene, 0.75, 0.25));
+    let at = pinned.point().unwrap().at;
+    assert!(
+        (at[0] - 4.5).abs() < 1e-9 && (at[1] - 4.5).abs() < 1e-9,
+        "{at:?}"
+    );
+    let initial = outcome(|_| {}).curves.unwrap().point_value(at);
+
+    // 条件を変えても範囲は同じで、同じ点の値を出し直す
+    let heavier = |i: &mut SlabInputs| i.set(SlabField::LiveLoad, "3600");
+    assert_eq!(pinned.within(&figure(heavier).unwrap().scene), pinned);
+    let again = outcome(heavier).curves.unwrap().point_value(at);
+    assert_eq!(terms_text(&again[..2]), ["Lx = 4.50 m", "Ly = 4.50 m"]);
+    assert_ne!(again[2], initial[2]);
+
+    // 検討点を少し動かすと範囲も動くが、点が中にあれば残る（範囲は 3.2〜5.2 m × 4〜6 m）
+    let nudged = |i: &mut SlabInputs| i.set(SlabField::SpanX, "4.2");
+    assert_eq!(pinned.within(&figure(nudged).unwrap().scene), pinned);
+
+    // 検討点が動いて範囲が 7〜9 m 四方になると、点は外に出て消える
+    let moved = figure(|i| {
+        i.set(SlabField::SpanX, "8");
+        i.set(SlabField::SpanY, "8");
+    })
+    .unwrap()
+    .scene;
+    assert_eq!(pinned.within(&moved), Pointer::Nothing);
+}
+
+#[test]
+fn the_page_says_how_to_point_between_the_figure_and_its_notes() {
+    // 図を描く前（SSG）は読み方の文。十字線の層は無く、図は読み上げの名前の付いた img
+    let main = element(&render_path("/tools/slab-thickness"), "main").to_string();
+    assert_in_order(
+        &text_of(&main),
+        &[
+            "必要スラブ厚の等厚曲線（mm）",
+            HINT,
+            "曲線は 10 mm ごと、色は 20 mm ごと",
+        ],
+    );
+    assert_eq!(count_tags(&main, "figure", &[("role", "img")]), 1, "{main}");
+    assert_eq!(main.matches("<svg xmlns").count(), 1, "{main}");
+    // 条件が読めず図を描かないときは、読み方の文も無い
+    for change in [
+        (|i: &mut SlabInputs| i.set(SlabField::Fc, "")) as fn(&mut SlabInputs),
+        |i| i.set(SlabField::DeflectionRatio, ""),
+    ] {
+        let main = element(
+            &render_path_with("/tools/slab-thickness", inputs(change)),
+            "main",
+        )
+        .to_string();
+        assert!(main.contains("条件が読めるまで図は描かない"), "{main}");
+        assert!(!main.contains(HINT), "{main}");
+    }
 }
