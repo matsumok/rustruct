@@ -5,9 +5,11 @@
 
 mod common;
 use common::{assert_within, at, integrated_reaction, plate};
-use rustruct_calc::kirchhoff_plate::{EdgeSample, Plate, PlateError, SupportType, solve};
+use rustruct_calc::kirchhoff_plate::{
+    EdgeSample, Maxima, Maximum, Plate, PlateError, PointResponse, SupportType, solve,
+};
 use rustruct_types::kirchhoff_plate::{Edge, PlateMaterial, Support, Supports};
-use rustruct_types::quantity::{AreaLoad, Length, Stress};
+use rustruct_types::quantity::{AreaLoad, ForcePerLength, Length, MomentPerLength, Stress};
 
 const FFFF: Supports = Supports::all(Support::Fixed);
 /// 三辺固定、y = Ly の辺が自由
@@ -462,4 +464,328 @@ fn an_invalid_input_reads_as_what_to_enter() {
         assert_eq!(reason.to_string(), "0 より大きい値を入れる", "{reason:?}");
     }
     assert_eq!(InvalidInput::Load.to_string(), "数値で入れる");
+}
+
+/// 最大値の位置 (x, y) [mm]。位置の無い最大値なら失敗
+fn position<T>(m: &Maximum<T>, what: &str) -> (f64, f64) {
+    let p = m.position.unwrap_or_else(|| panic!("{what}: 位置が無い"));
+    (p.x.as_mm(), p.y.as_mm())
+}
+
+#[test]
+fn the_bottom_tension_maxima_of_a_fixed_plate_are_at_the_centre() {
+    // 四辺固定。下側引張の最大が板の中央の値に一致し（1e-9）、位置が中央（辺長の 1e-6）。縦横比 1.5 の長い辺の
+    // 向きの My は、中央でなく y = Ly/2 について対称な 2 点が最大で（級数解でも同じ）、原点に近い側を返す
+    for (lx, ly) in [(2000.0, 2000.0), (2000.0, 3000.0)] {
+        let s = solve(&plate(lx, ly, 0.2, 10.0, FFFF)).unwrap();
+        let m = s.maxima();
+        let centre = at(&s, lx / 2.0, ly / 2.0);
+        let what = format!("{lx} × {ly}");
+        let mut at_centre = vec![("Mx", m.mx_bottom, centre.mx.as_nmm_per_mm())];
+        if lx == ly {
+            at_centre.push(("My", m.my_bottom, centre.my.as_nmm_per_mm()));
+        } else {
+            let (x, y) = position(&m.my_bottom, &what);
+            let value = m.my_bottom.value.as_nmm_per_mm();
+            assert_within(x, lx / 2.0, 1e-6 * lx, &what);
+            assert!(y < ly / 2.0, "{what}: y = {y}");
+            assert!(value > centre.my.as_nmm_per_mm(), "{what}");
+            assert_within(
+                at(&s, x, ly - y).my.as_nmm_per_mm(),
+                value,
+                1e-9 * value,
+                &format!("{what} の y について裏返した点"),
+            );
+        }
+        for (name, maximum, expected) in at_centre {
+            let what = format!("{what} の {name}");
+            let (x, y) = position(&maximum, &what);
+            assert_within(
+                maximum.value.as_nmm_per_mm(),
+                expected,
+                1e-9 * expected,
+                &what,
+            );
+            assert_within(x, lx / 2.0, 1e-6 * lx, &what);
+            assert_within(y, ly / 2.0, 1e-6 * ly, &what);
+        }
+    }
+}
+
+#[test]
+fn the_top_tension_and_shear_maxima_of_a_fixed_plate_are_the_edge_maxima() {
+    // 四辺固定。上側引張の Mx と Qx の最大は x = 0 の辺の、My と Qy は y = 0 の辺の辺の最大値に一致し、位置は
+    // その辺の中央（対辺の同じ大きさの最大より原点に近い）。辺に直交する座標はちょうど辺の上
+    for (lx, ly) in [(2000.0, 2000.0), (2000.0, 3000.0)] {
+        let s = solve(&plate(lx, ly, 0.2, 10.0, FFFF)).unwrap();
+        let m = s.maxima();
+        let (x0, y0) = (
+            s.edge_maximum::<100>(Edge::X0),
+            s.edge_maximum::<100>(Edge::Y0),
+        );
+        for (name, value, found, expected, middle) in [
+            (
+                "Mx",
+                m.mx_top.value.as_nmm_per_mm(),
+                position(&m.mx_top, "Mx"),
+                x0.moment.value.as_nmm_per_mm(),
+                (0.0, ly / 2.0),
+            ),
+            (
+                "My",
+                m.my_top.value.as_nmm_per_mm(),
+                position(&m.my_top, "My"),
+                y0.moment.value.as_nmm_per_mm(),
+                (lx / 2.0, 0.0),
+            ),
+            (
+                "Qx",
+                m.qx.value.as_n_per_mm(),
+                position(&m.qx, "Qx"),
+                x0.shear.value.as_n_per_mm(),
+                (0.0, ly / 2.0),
+            ),
+            (
+                "Qy",
+                m.qy.value.as_n_per_mm(),
+                position(&m.qy, "Qy"),
+                y0.shear.value.as_n_per_mm(),
+                (lx / 2.0, 0.0),
+            ),
+        ] {
+            let what = format!("{lx} × {ly} の {name}");
+            assert_within(value, expected, 1e-9 * expected.abs(), &what);
+            assert_within(found.0, middle.0, 1e-6 * lx, &what);
+            assert_within(found.1, middle.1, 1e-6 * ly, &what);
+            if middle.0 == 0.0 {
+                assert_eq!(found.0, 0.0, "{what}");
+            } else {
+                assert_eq!(found.1, 0.0, "{what}");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_simply_supported_plate_has_no_top_tension() {
+    // 四辺単純支持。上側引張の曲げはどこにも無く、値 0・位置無し。下側引張は中央の値以上（長い辺の向きの
+    // 曲げモーメントは、縦横比と ν によって中央の外が最大になる。級数解でも同じ）
+    for nu in [0.0, 0.2] {
+        for (lx, ly) in [(2000.0, 2000.0), (2000.0, 3000.0), (5000.0, 2000.0)] {
+            let s = solve(&plate(
+                lx,
+                ly,
+                nu,
+                10.0,
+                Supports::all(Support::SimplySupported),
+            ))
+            .unwrap();
+            let m = s.maxima();
+            let centre = at(&s, lx / 2.0, ly / 2.0);
+            let what = format!("ν = {nu} {lx} × {ly}");
+            for (name, top) in [("Mx", m.mx_top), ("My", m.my_top)] {
+                assert_eq!(top.value.as_nmm_per_mm(), 0.0, "{what} の {name}");
+                assert_eq!(top.position, None, "{what} の {name}");
+            }
+            for (name, bottom, centre) in [
+                ("Mx", m.mx_bottom, centre.mx.as_nmm_per_mm()),
+                ("My", m.my_bottom, centre.my.as_nmm_per_mm()),
+            ] {
+                let what = format!("{what} の {name}");
+                position(&bottom, &what);
+                assert!(
+                    bottom.value.as_nmm_per_mm() >= centre * (1.0 - 1e-9),
+                    "{what}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn with_a_free_edge_the_shear_maxima_avoid_the_corners() {
+    // 三辺固定一辺自由。固定辺と自由辺の隅で発散するせん断力の最大は、隅から辺長の 5 % 以内に無い
+    // （ADR kirchhoff-plate-0008）。自由辺をどの辺に置いても
+    for edge in Edge::ALL {
+        let mut supports = FFFF;
+        match edge {
+            Edge::X0 => supports.x0 = Support::Free,
+            Edge::XLx => supports.x_lx = Support::Free,
+            Edge::Y0 => supports.y0 = Support::Free,
+            Edge::YLy => supports.y_ly = Support::Free,
+        }
+        let s = solve(&plate(2000.0, 3000.0, 0.2, 10.0, supports)).unwrap();
+        let m = s.maxima();
+        for (name, q) in [("Qx", m.qx), ("Qy", m.qy)] {
+            let what = format!("{edge} が自由の {name}");
+            let (x, y) = position(&q, &what);
+            assert!(
+                !s.near_corner(Length::mm(x), Length::mm(y)),
+                "{what}: ({x}, {y})"
+            );
+        }
+    }
+}
+
+/// 最大値の名前・値（内部の単位）・位置 (x, y) [mm]
+type Found = (&'static str, f64, Option<(f64, f64)>);
+
+/// 最大値の 6 つ（曲げモーメントの向きごととせん断力）
+fn bending_and_shear(m: &Maxima) -> [Found; 6] {
+    let moment = |v: &Maximum<MomentPerLength>| {
+        (
+            v.value.as_nmm_per_mm(),
+            v.position.map(|p| (p.x.as_mm(), p.y.as_mm())),
+        )
+    };
+    let shear = |v: &Maximum<ForcePerLength>| {
+        (
+            v.value.as_n_per_mm(),
+            v.position.map(|p| (p.x.as_mm(), p.y.as_mm())),
+        )
+    };
+    let named = |name, (value, at): (f64, Option<(f64, f64)>)| -> Found { (name, value, at) };
+    [
+        named("Mx の下側引張", moment(&m.mx_bottom)),
+        named("Mx の上側引張", moment(&m.mx_top)),
+        named("My の下側引張", moment(&m.my_bottom)),
+        named("My の上側引張", moment(&m.my_top)),
+        named("Qx", shear(&m.qx)),
+        named("Qy", shear(&m.qy)),
+    ]
+}
+
+#[test]
+fn mirrored_supports_give_mirrored_maxima() {
+    // 対称でない組（x = 0 と y = 0 が固定、x = Lx が単純支持、y = Ly が自由）と、それを x について裏返した組。
+    // 各値の位置は x について裏返しに、値は同じになる（Qx は x の向きが逆になるので符号が変わる）
+    let (lx, ly) = (3000.0, 2000.0);
+    let supports = Supports {
+        x0: Support::Fixed,
+        y0: Support::Fixed,
+        x_lx: Support::SimplySupported,
+        y_ly: Support::Free,
+    };
+    let mirrored = Supports {
+        x0: supports.x_lx,
+        x_lx: supports.x0,
+        ..supports
+    };
+    let m = solve(&plate(lx, ly, 0.2, 10.0, supports)).unwrap().maxima();
+    let n = solve(&plate(lx, ly, 0.2, 10.0, mirrored)).unwrap().maxima();
+    for ((name, a, at_a), (_, b, at_b)) in
+        bending_and_shear(&m).into_iter().zip(bending_and_shear(&n))
+    {
+        let (pa, pb) = (
+            at_a.unwrap_or_else(|| panic!("{name}: 位置が無い")),
+            at_b.unwrap_or_else(|| panic!("裏返した {name}: 位置が無い")),
+        );
+        let sign = if name == "Qx" { -1.0 } else { 1.0 };
+        assert_within(b, sign * a, 1e-9 * a.abs(), name);
+        assert_within(pb.0, lx - pa.0, 1e-6 * lx, &format!("{name} の裏返した x"));
+        assert_within(pb.1, pa.1, 1e-6 * ly, &format!("{name} の裏返した y"));
+    }
+}
+
+#[test]
+fn no_point_of_the_plate_exceeds_the_maxima() {
+    // 19 型すべてで、内部のグリッドの点と辺の評価点のどれも、向きごとの最大値を超えない（取りこぼさない）。
+    // 辺の評価点は辺に直交する方向の曲げモーメントとせん断力を見る。自由辺のある組のせん断力は、隅から辺長の
+    // 5 % 以内の点を除く（ADR kirchhoff-plate-0008）。超える幅は丸めの 1e-9（その量の最大に対して）
+    for ty in SupportType::ALL.into_iter().filter(|ty| ty.is_stable()) {
+        let s = solve(&plate(2000.0, 3000.0, 0.2, 10.0, ty.representative())).unwrap();
+        let m = s.maxima();
+        let free = s.plate().supports.has_free_edge();
+        let (lx, ly) = (2000.0, 3000.0);
+        let interior: Vec<PointResponse> = s
+            .grid(20, 20)
+            .into_iter()
+            .filter(|p| {
+                let (x, y) = (p.x.as_mm(), p.y.as_mm());
+                x > 0.0 && x < lx && y > 0.0 && y < ly
+            })
+            .collect();
+        let within = |value: f64, maximum: f64, what: &str| {
+            assert!(
+                value <= maximum + 1e-9 * maximum.abs().max(1.0),
+                "{} の {what}: {value} が最大 {maximum} を超える",
+                ty.symbol()
+            );
+        };
+        for p in &interior {
+            within(
+                p.mx.as_nmm_per_mm(),
+                m.mx_bottom.value.as_nmm_per_mm(),
+                "Mx の下側引張",
+            );
+            within(
+                -p.mx.as_nmm_per_mm(),
+                -m.mx_top.value.as_nmm_per_mm(),
+                "Mx の上側引張",
+            );
+            within(
+                p.my.as_nmm_per_mm(),
+                m.my_bottom.value.as_nmm_per_mm(),
+                "My の下側引張",
+            );
+            within(
+                -p.my.as_nmm_per_mm(),
+                -m.my_top.value.as_nmm_per_mm(),
+                "My の上側引張",
+            );
+            if !(free && s.near_corner(p.x, p.y)) {
+                within(
+                    p.qx.as_n_per_mm().abs(),
+                    m.qx.value.as_n_per_mm().abs(),
+                    "|Qx|",
+                );
+                within(
+                    p.qy.as_n_per_mm().abs(),
+                    m.qy.value.as_n_per_mm().abs(),
+                    "|Qy|",
+                );
+            }
+        }
+        for edge in Edge::ALL {
+            let e = s.edge_maximum::<100>(edge);
+            let (bottom, top, shear) = match edge {
+                Edge::X0 | Edge::XLx => (m.mx_bottom, m.mx_top, m.qx),
+                Edge::Y0 | Edge::YLy => (m.my_bottom, m.my_top, m.qy),
+            };
+            let moment = e.moment.value.as_nmm_per_mm();
+            within(
+                moment,
+                bottom.value.as_nmm_per_mm(),
+                &format!("{edge} の下側引張"),
+            );
+            within(
+                -moment,
+                -top.value.as_nmm_per_mm(),
+                &format!("{edge} の上側引張"),
+            );
+            within(
+                e.shear.value.as_n_per_mm().abs(),
+                shear.value.as_n_per_mm().abs(),
+                &format!("{edge} のせん断力"),
+            );
+        }
+    }
+}
+
+#[test]
+fn the_deflection_maximum_is_the_maximum_w_and_an_unloaded_plate_has_no_maxima() {
+    // 最大値の w は最大たわみそのもの。荷重が 0 の板では、どの量も値 0・位置無し
+    let s = solve(&plate(2000.0, 3000.0, 0.2, 10.0, FFSS)).unwrap();
+    let (m, d) = (s.maxima(), s.deflection_maximum());
+    assert_eq!(m.w.value, d.w);
+    assert_eq!(position(&m.w, "w"), (d.x.as_mm(), d.y.as_mm()));
+    let m = solve(&plate(2000.0, 3000.0, 0.2, 0.0, FFSS))
+        .unwrap()
+        .maxima();
+    assert_eq!(m.w.value.as_mm(), 0.0);
+    assert_eq!(m.w.position, None);
+    for (name, value, at) in bending_and_shear(&m) {
+        assert_eq!(value, 0.0, "{name}");
+        assert_eq!(at, None, "{name}");
+    }
 }

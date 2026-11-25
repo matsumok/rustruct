@@ -328,6 +328,44 @@ fn the_deflection_maximum_matches_the_series_solutions() {
 }
 
 #[test]
+fn the_bending_maxima_match_the_series_solutions() {
+    // 曲げモーメントの向きごとの最大値（Mx・My の下側引張と上側引張）が、参照解の最大と M の許容（0.5 %、
+    // 板全体の |M| の最大に対して。ADR kirchhoff-plate-0002）で一致する。四辺単純支持の上側引張はどちらも値 0・位置無し
+    let lx = 2000.0;
+    for (symbol, supports) in [("SSSS", SSSS), ("FFFF", FFFF)] {
+        for ratio in [1.0, 1.5] {
+            let p = plate(lx, ratio * lx, 0.2, 10.0, supports);
+            let (r, f) = (reference(&p).maxima(), solve(&p).unwrap().maxima());
+            let pairs = [
+                ("Mx の下側引張", r.mx_bottom, f.mx_bottom),
+                ("Mx の上側引張", r.mx_top, f.mx_top),
+                ("My の下側引張", r.my_bottom, f.my_bottom),
+                ("My の上側引張", r.my_top, f.my_top),
+            ];
+            let scale = pairs
+                .iter()
+                .map(|(_, r, _)| r.value.as_nmm_per_mm().abs())
+                .fold(0.0, f64::max);
+            for (name, r, f) in pairs {
+                let what = format!("{symbol} 比 {ratio} の {name}");
+                assert_within(
+                    f.value.as_nmm_per_mm(),
+                    r.value.as_nmm_per_mm(),
+                    5e-3 * scale,
+                    &what,
+                );
+                assert_eq!(f.position.is_some(), r.position.is_some(), "{what}");
+                assert_eq!(
+                    f.position.is_none(),
+                    symbol == "SSSS" && name.ends_with("上側引張"),
+                    "{what}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 #[ignore = "参照解との差、分割数を倍にしたときの差、計算時間を出す。cargo test --release -- --ignored --nocapture で見る"]
 fn report_deviations_and_timing() {
     use rustruct_calc::kirchhoff_plate::{DIVISIONS, solve_with_divisions};

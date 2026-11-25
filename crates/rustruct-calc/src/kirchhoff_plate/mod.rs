@@ -1,8 +1,8 @@
 //! Kirchhoff 板の曲げ。言葉は `docs/tools/kirchhoff-plate/GLOSSARY.md`、判断は同じ所の ADR。
 //!
 //! 公開の入口は [`solve`] 一つ。入力（[`Plate`]）から [`Solution`] を得て、点の応答、等間隔グリッドの
-//! 応答、辺に沿った辺の反力の分布とその合計、辺の最大値、最大たわみ（ADR kirchhoff-plate-0009）、隅ごとの隅反力、荷重の合計と
-//! 釣り合いを取る。
+//! 応答、辺に沿った辺の反力の分布とその合計、辺の最大値、最大たわみ（ADR kirchhoff-plate-0009）、板全体の最大値
+//! （ADR kirchhoff-plate-0010）、隅ごとの隅反力、荷重の合計と釣り合いを取る。
 //! 隅の近くの値の見せ方（ADR kirchhoff-plate-0008）の規則もここが持ち（[`CORNER_MARGIN`]、[`Solution::edge_maximum`]、
 //! [`Solution::near_corner`]）、画面と照合はそれを呼ぶ。公開の座標は隅が原点
 //! （x は 0 から Lx、y は 0 から Ly）。符号は ADR kirchhoff-plate-0004。
@@ -33,13 +33,23 @@ use rustruct_types::quantity::{Force, ForcePerLength, Length, MomentPerLength};
 
 use frame::Frame;
 pub use series::TERMS;
-use solver::{Derivatives, EdgePoint, Solver};
+use solver::{Derivatives, EdgePoint, Solver, refine};
 use support_type::RepresentativeResponse;
 pub use support_type::SupportType;
 
 /// 有限要素の短い辺の分割数。長い辺は辺長に合わせて増やす（`finite_element`）。利用者の入力にも Model にも
 /// 持たない定数で、値は分割数を倍にしたときの変化が収まることで決めた（ADR kirchhoff-plate-0006）
 pub const DIVISIONS: usize = 40;
+
+/// 板全体の最大値（[`Solution::maxima`]）を探す格子の、短い辺の等分の数。長い辺は辺長に合わせて増やし（偶数）、
+/// [`MAXIMA_GRID_LIMIT`] で抑える。格子の点から最大の点を選び、接する目の中で詰める（ADR kirchhoff-plate-0010）
+const MAXIMA_GRID: usize = 40;
+
+/// 板全体の最大値を探す格子の、長い辺の等分の数の上限
+const MAXIMA_GRID_LIMIT: usize = 400;
+
+/// 同じ大きさとみなす幅と、0 とみなす幅。最大の値に対する比（ADR kirchhoff-plate-0009、ADR kirchhoff-plate-0010）
+const SAME: f64 = 1e-9;
 
 /// 隅の近くとして除く幅。辺長に対する比。自由辺のある組で、分布図の色の幅と、辺のせん断力・辺の反力の
 /// 最大値から除く（ADR kirchhoff-plate-0008）。照合で除く幅と同じ（ADR kirchhoff-plate-0002）
@@ -153,6 +163,37 @@ pub struct DeflectionMaximum {
     pub x: Length,
     pub y: Length,
     pub w: Length,
+}
+
+/// 板の上の点の位置。隅が原点
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Position {
+    pub x: Length,
+    pub y: Length,
+}
+
+/// 板全体の最大値の 1 つ（GLOSSARY「最大値」）。値と、その位置。位置が無いのは板のどこにもその量が無いときで、
+/// 値は 0（四辺単純支持の上側引張の Mx など。荷重が 0 の板ではどの量も）
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Maximum<T> {
+    pub value: T,
+    pub position: Option<Position>,
+}
+
+/// 板全体の最大値（GLOSSARY、ADR kirchhoff-plate-0010）。符号は [`PointResponse`] と同じ
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Maxima {
+    /// たわみ。[`Solution::deflection_maximum`] の値と位置
+    pub w: Maximum<Length>,
+    /// Mx の下側引張の最大（正の最大）
+    pub mx_bottom: Maximum<MomentPerLength>,
+    /// Mx の上側引張の最大（負で絶対値の最大）
+    pub mx_top: Maximum<MomentPerLength>,
+    pub my_bottom: Maximum<MomentPerLength>,
+    pub my_top: Maximum<MomentPerLength>,
+    /// |Qx| が最大の点の Qx（符号つき）
+    pub qx: Maximum<ForcePerLength>,
+    pub qy: Maximum<ForcePerLength>,
 }
 
 /// 解。入力と、正規化で決まった型、利用者の座標と解き方の座標の換算（写し方を持つ）、代表の向きの板の解き方
@@ -443,7 +484,6 @@ impl Solution {
     /// 詰めた点（ADR kirchhoff-plate-0009）。同じ大きさの最大が板を辺に平行な中心線で折り返した点にもあるとき（対辺がともに
     /// 自由な板など）は、原点に近い側（y、次に x の小さいほう）を返す
     pub fn deflection_maximum(&self) -> DeflectionMaximum {
-        let (lx, ly) = (self.plate.lx.as_mm(), self.plate.ly.as_mm());
         let (xi, eta) = self.solver.deflection_maximum();
         let (x, y) = self.frame.user_point(xi, eta);
         let w = |x: f64, y: f64| {
@@ -452,19 +492,131 @@ impl Solution {
                 .w
                 .as_mm()
         };
-        let found = w(x, y);
-        // 折り返した点の |w| が丸めの幅で等しければ同じ大きさの最大とみなす
-        const SAME: f64 = 1e-9;
-        let (x, y) = [(x, y), (lx - x, y), (x, ly - y), (lx - x, ly - y)]
-            .into_iter()
-            .filter(|&(px, py)| (w(px, py).abs() - found.abs()).abs() <= SAME * found.abs())
-            .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.total_cmp(&b.0)))
-            .expect("見つけた点そのものは残る");
+        let (x, y) = self.nearer_origin(|x, y| w(x, y).abs(), x, y);
         DeflectionMaximum {
             x: Length::mm(x),
             y: Length::mm(y),
             w: Length::mm(w(x, y)),
         }
+    }
+
+    /// 板全体の最大値（ADR kirchhoff-plate-0010）。たわみは [`Self::deflection_maximum`]。曲げモーメントとせん断力は、
+    /// 板を等分した格子（短い辺を 40 等分）の点から最大の点を選び、その点に接する目の中を [`Self::at`] の値で詰める
+    /// （詰め方は最大たわみと同じ）。辺の上の点では、境界条件で 0 の曲げモーメント（単純支持の辺では Mx・My の
+    /// どちらも、自由辺では辺に直交する方向のもの）をちょうど 0 とする。
+    ///
+    /// - 曲げモーメントは向きごと（下側引張と上側引張）に取る。格子で見たその向きの最大が、その曲げの |M| の
+    ///   最大の 1e-9 倍以下なら、値 0・位置無し
+    /// - せん断力は |Q| の最大の点の、符号つきの値。自由辺のある組では隅から辺長の [`CORNER_MARGIN`] 以内の点
+    ///   （[`Self::near_corner`]）を除く（ADR kirchhoff-plate-0008）。曲げモーメントは隅まで含める
+    /// - 同じ大きさの最大が板を辺に平行な中心線で折り返した点にもあるときは、原点に近い側（y、次に x の小さいほう）
+    pub fn maxima(&self) -> Maxima {
+        let (lx, ly) = (self.plate.lx.as_mm(), self.plate.ly.as_mm());
+        let (short, long) = (lx.min(ly), lx.max(ly));
+        let long_divisions =
+            (2 * (MAXIMA_GRID as f64 * long / short / 2.0).ceil() as usize).min(MAXIMA_GRID_LIMIT);
+        let (nx, ny) = if lx <= ly {
+            (MAXIMA_GRID, long_divisions)
+        } else {
+            (long_divisions, MAXIMA_GRID)
+        };
+        let positions = |length: f64, n: usize| -> Vec<f64> {
+            (0..=n).map(|k| length * k as f64 / n as f64).collect()
+        };
+        let (xs, ys) = (positions(lx, nx), positions(ly, ny));
+        let grid: Vec<PointResponse> = ys
+            .iter()
+            .flat_map(|&y| xs.iter().map(move |&x| (x, y)))
+            .map(|(x, y)| self.bounded_at(x, y))
+            .collect();
+        let free = self.plate.supports.has_free_edge();
+        let search = Search {
+            solution: self,
+            xs: &xs,
+            ys: &ys,
+            grid: &grid,
+        };
+
+        let moment = |pick: fn(&PointResponse) -> f64| {
+            let scale = grid.iter().map(|r| pick(r).abs()).fold(0.0, f64::max);
+            let found = |sign: f64| {
+                search
+                    .peak(|r| sign * pick(r), SAME * scale)
+                    .map(|(position, r)| (MomentPerLength::nmm_per_mm(pick(&r)), position))
+            };
+            (found(1.0), found(-1.0))
+        };
+        let shear = |pick: fn(&PointResponse) -> f64| {
+            let magnitude = |r: &PointResponse| {
+                if free && self.near_corner(r.x, r.y) {
+                    f64::NEG_INFINITY
+                } else {
+                    pick(r).abs()
+                }
+            };
+            let scale = grid.iter().map(magnitude).fold(0.0, f64::max);
+            search
+                .peak(magnitude, SAME * scale)
+                .map(|(position, r)| (ForcePerLength::n_per_mm(pick(&r)), position))
+        };
+        let (mx_bottom, mx_top) = moment(|r| r.mx.as_nmm_per_mm());
+        let (my_bottom, my_top) = moment(|r| r.my.as_nmm_per_mm());
+        let qx = shear(|r| r.qx.as_n_per_mm());
+        let qy = shear(|r| r.qy.as_n_per_mm());
+        let w = self.deflection_maximum();
+        Maxima {
+            w: Maximum {
+                value: w.w,
+                position: (w.w.as_mm() != 0.0).then_some(Position { x: w.x, y: w.y }),
+            },
+            mx_bottom: maximum(mx_bottom, MomentPerLength::nmm_per_mm(0.0)),
+            mx_top: maximum(mx_top, MomentPerLength::nmm_per_mm(0.0)),
+            my_bottom: maximum(my_bottom, MomentPerLength::nmm_per_mm(0.0)),
+            my_top: maximum(my_top, MomentPerLength::nmm_per_mm(0.0)),
+            qx: maximum(qx, ForcePerLength::n_per_mm(0.0)),
+            qy: maximum(qy, ForcePerLength::n_per_mm(0.0)),
+        }
+    }
+
+    /// 点 (x, y) [mm] の応答。辺の上では、境界条件で 0 の曲げモーメントをちょうど 0 にする（単純支持の辺では
+    /// 辺に沿ってたわみが 0 で、辺に直交する方向の曲げモーメントも 0 なので、Mx・My のどちらも。自由辺では辺に
+    /// 直交する方向のもの）。有限要素はこの条件を弱い形でしか満たさず、辺の上の値は 0 にならない（[`Self::edge`]
+    /// と同じ）。辺の上かは座標がちょうど 0 か辺長か
+    fn bounded_at(&self, x: f64, y: f64) -> PointResponse {
+        let (lx, ly) = (self.plate.lx.as_mm(), self.plate.ly.as_mm());
+        let mut r = self.at(Length::mm(x), Length::mm(y)).expect("板の上の点");
+        let zero = MomentPerLength::nmm_per_mm(0.0);
+        for (edge, on) in [
+            (Edge::X0, x == 0.0),
+            (Edge::XLx, x == lx),
+            (Edge::Y0, y == 0.0),
+            (Edge::YLy, y == ly),
+        ] {
+            if !on {
+                continue;
+            }
+            let normal_x = matches!(edge, Edge::X0 | Edge::XLx);
+            match self.plate.supports.at(edge) {
+                Support::SimplySupported => (r.mx, r.my) = (zero, zero),
+                Support::Free if normal_x => r.mx = zero,
+                Support::Free => r.my = zero,
+                Support::Fixed => {}
+            }
+        }
+        r
+    }
+
+    /// 点 (x, y) [mm] で `magnitude` が最大のとき、板を辺に平行な中心線で折り返した点（3 つ）にも同じ大きさ
+    /// （差が [`SAME`] の幅）の最大があれば、原点に近い側（y、次に x の小さいほう）を返す。節点や格子を探す順と
+    /// 写し方（ADR kirchhoff-plate-0003）で、どちらが出るかが組ごとに変わらないようにするため
+    fn nearer_origin(&self, magnitude: impl Fn(f64, f64) -> f64, x: f64, y: f64) -> (f64, f64) {
+        let (lx, ly) = (self.plate.lx.as_mm(), self.plate.ly.as_mm());
+        let found = magnitude(x, y);
+        [(x, y), (lx - x, y), (x, ly - y), (lx - x, ly - y)]
+            .into_iter()
+            .filter(|&(px, py)| (magnitude(px, py) - found).abs() <= SAME * found.abs())
+            .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.total_cmp(&b.0)))
+            .expect("見つけた点そのものは残る")
     }
 
     /// 隅から辺長の [`CORNER_MARGIN`] 以内の点か（x と y のどちらも、端から辺長の 5 % より端に寄っている）。
@@ -533,6 +685,60 @@ impl Solution {
                 reaction,
             },
         }
+    }
+}
+
+/// 板全体の最大値を探す格子と、その点の応答（[`Solution::bounded_at`]。y の小さい行から、行の中は x の小さい順）
+struct Search<'a> {
+    solution: &'a Solution,
+    xs: &'a [f64],
+    ys: &'a [f64],
+    grid: &'a [PointResponse],
+}
+
+impl Search<'_> {
+    /// `objective`（大きいほど最大。除く点は負の無限大）が最大の点の位置と応答。格子の点から最大の点を選び
+    /// （同じ値なら先の点）、接する目の中で詰め、折り返した点の同じ大きさの最大から原点に近い側を選ぶ。格子で
+    /// 見た最大が `floor` 以下なら None
+    fn peak(
+        &self,
+        objective: impl Fn(&PointResponse) -> f64,
+        floor: f64,
+    ) -> Option<(Position, PointResponse)> {
+        let nx = self.xs.len();
+        let (best, value) = self.grid.iter().map(&objective).enumerate().fold(
+            (0, f64::NEG_INFINITY),
+            |(bk, bv), (k, v)| {
+                if v > bv { (k, v) } else { (bk, bv) }
+            },
+        );
+        if value <= floor {
+            return None;
+        }
+        let at = |x: f64, y: f64| objective(&self.solution.bounded_at(x, y));
+        let (x, y) = refine(at, self.xs, self.ys, (best % nx, best / nx));
+        let (x, y) = self.solution.nearer_origin(at, x, y);
+        Some((
+            Position {
+                x: Length::mm(x),
+                y: Length::mm(y),
+            },
+            self.solution.bounded_at(x, y),
+        ))
+    }
+}
+
+/// 見つけた最大を [`Maximum`] に。見つからなければ値 0、位置無し
+fn maximum<T>(found: Option<(T, Position)>, zero: T) -> Maximum<T> {
+    match found {
+        Some((value, position)) => Maximum {
+            value,
+            position: Some(position),
+        },
+        None => Maximum {
+            value: zero,
+            position: None,
+        },
     }
 }
 
