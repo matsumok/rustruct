@@ -830,11 +830,21 @@ fn concrete_shows_fc_and_nu_to_write_and_e_to_read_as_an_integer() {
         count_tags(&group, "input", &[("aria-label", "E（N/mm²）")]),
         0
     );
-    // Fc の行の空いた組は書けない空き
+    // Fc の行の空いた組は、2 列にまたがる何も無いセル（書く欄も読む欄も文字も無い）
+    let fc_row = common::markup::elements(&group, "tr")
+        .into_iter()
+        .find(|row| row.contains("Fc（N/mm²）"))
+        .unwrap_or_else(|| panic!("Fc の行が無い: {group}"));
+    let blanks: Vec<&str> = common::markup::elements(fc_row, "td")
+        .into_iter()
+        .filter(|cell| count_tags(cell, "td", &[("colspan", "2")]) == 1)
+        .collect();
+    assert_eq!(blanks.len(), 1, "{fc_row}");
+    assert_eq!(text_of(blanks[0]), "", "{fc_row}");
     assert_eq!(
-        count_tags(&group, "td", &[("colspan", "2"), ("class", "bg-fill")]),
-        1,
-        "{group}"
+        count_tags(blanks[0], "input", &[]) + count_tags(blanks[0], "output", &[]),
+        0,
+        "{fc_row}"
     );
     assert_eq!(paragraphs(&group), Vec::<String>::new(), "{group}");
 }
