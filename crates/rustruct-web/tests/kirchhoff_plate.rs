@@ -433,7 +433,7 @@ fn the_figure_has_notes_only_when_the_figure_gives_some() {
 
 #[test]
 fn each_switch_names_its_figure_with_the_unit() {
-    let names: Vec<(&str, &str)> = Quantity::ALL
+    let names: Vec<(&str, String)> = Quantity::ALL
         .iter()
         .map(|q| (q.symbol(), q.caption()))
         .collect();
@@ -446,6 +446,7 @@ fn each_switch_names_its_figure_with_the_unit() {
             ("Qx", "せん断力 Qx（kN/m）"),
             ("Qy", "せん断力 Qy（kN/m）"),
         ]
+        .map(|(symbol, caption)| (symbol, caption.to_string()))
     );
 }
 

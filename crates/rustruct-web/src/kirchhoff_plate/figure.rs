@@ -78,15 +78,9 @@ impl Quantity {
         }
     }
 
-    /// 図の名前。単位は括弧で
-    pub fn caption(self) -> &'static str {
-        match self {
-            Self::W => "たわみ w（mm）",
-            Self::Mx => "曲げモーメント Mx（kN·m/m）",
-            Self::My => "曲げモーメント My（kN·m/m）",
-            Self::Qx => "せん断力 Qx（kN/m）",
-            Self::Qy => "せん断力 Qy（kN/m）",
-        }
+    /// 図の名前。名前と記号のあとに、単位を括弧で
+    pub fn caption(self) -> String {
+        format!("{} {}（{}）", self.name(), self.symbol(), self.unit())
     }
 
     /// 帯の色。正負のない量（たわみ）は `seq`、正負のある量は `div`（ADR site-0011）

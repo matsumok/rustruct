@@ -9,7 +9,7 @@ use charta::{Colors, Scene, Theme, to_svg};
 mod pointed;
 
 pub use pointed::{PointTerm, Pointed, Pointer};
-pub(crate) use pointed::{PointValue, PointedFigure};
+pub(crate) use pointed::{PointValue, PointedFigure, use_pointer};
 
 mod table {
     include!(concat!(env!("OUT_DIR"), "/chart_theme.rs"));

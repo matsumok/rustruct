@@ -24,6 +24,7 @@ pub struct Pointed {
 }
 
 /// 図の上で指しているもの。入力や量を変えても保ち、図を描き直したら [`within`](Self::within) で確かめる
+/// （置き場は [`use_pointer`]）
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Pointer {
     #[default]
@@ -80,6 +81,20 @@ impl Pointer {
             _ => self,
         }
     }
+}
+
+/// 指しているものの置き場。`within` は今の図で点を確かめる（[`Pointer::within`]）。`within` が読む図が
+/// 変わるたびに確かめ、描く範囲の外に出た点は消す（図を戻しても点は戻らない）。点が動いても確かめ直さない
+pub(crate) fn use_pointer(mut within: impl FnMut(Pointer) -> Pointer + 'static) -> Signal<Pointer> {
+    let mut pointer = use_signal(Pointer::default);
+    use_effect(move || {
+        let now = *pointer.peek();
+        let kept = within(now);
+        if kept != now {
+            pointer.set(kept);
+        }
+    });
+    pointer
 }
 
 /// 画面の点の当たり判定。`offset` は図の矩形の左上からの表示の座標、`shown` は表示の大きさ。表示の大きさと
@@ -274,6 +289,37 @@ mod tests {
         smaller.plots[0].x = (0.0, 2.5);
         assert_eq!(pinned.within(&smaller), Pointer::Nothing);
         assert_eq!(Pointer::Nothing.within(&scene), Pointer::Nothing);
+    }
+
+    /// 図と指しているものの置き場を、試す側に context で渡す
+    #[component]
+    fn Pointing() -> Element {
+        let scene = use_signal(figure);
+        let pointer = use_pointer(move |p| p.within(&scene.read()));
+        use_context_provider(|| (scene, pointer));
+        rsx! {}
+    }
+
+    #[test]
+    fn a_point_dropped_by_a_smaller_figure_does_not_come_back_when_the_figure_grows_again() {
+        let mut dom = VirtualDom::new(Pointing);
+        dom.rebuild_in_place();
+        let (mut scene, mut pointer) = dom.in_scope(
+            ScopeId::APP,
+            consume_context::<(Signal<Scene>, Signal<Pointer>)>,
+        );
+        let pinned = Pointer::Pinned(at(3.0, 1.5).unwrap());
+        dom.in_runtime(|| pointer.set(pinned));
+        dom.render_immediate_to_vec();
+        // 辺長を変えて図を描き直す（x の範囲を 0〜x にする）。描き直したあとの指しているもの
+        let mut redraw = |x: f64| {
+            dom.in_runtime(|| scene.write().plots[0].x = (0.0, x));
+            dom.render_immediate_to_vec();
+            dom.in_runtime(|| *pointer.peek())
+        };
+        assert_eq!(redraw(5.0), pinned);
+        assert_eq!(redraw(2.5), Pointer::Nothing);
+        assert_eq!(redraw(4.0), Pointer::Nothing);
     }
 
     #[test]

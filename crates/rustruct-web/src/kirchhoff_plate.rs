@@ -19,7 +19,7 @@ use figure::corner_margin_text;
 pub use figure::{PlateField, PlateFigure, Quantity};
 
 use crate::Route;
-use crate::chart::{self, PointTerm, PointValue, PointedFigure, Pointer};
+use crate::chart::{self, PointTerm, PointValue, PointedFigure, Pointer, use_pointer};
 use crate::data;
 use crate::inputs::{
     Definition, Field, InputGroup, InputRecord, Inputs, Kind, Layout, Reading, use_inputs,
@@ -578,13 +578,12 @@ fn figures(value: f64) -> Option<String> {
 
 /// `/tools/kirchhoff-plate`。入力の Sheet のすぐ下に結果の表を続けた列と、分布図の列（ADR site-0006）。
 /// 「入力」「結果」の部の見出しは置かず、表の見出しで区切る。解くのは入力が変わったときだけで、
-/// 分布図の量を切り替えても解き直さない。図の上で指した点は入力や量を変えても保ち、点の値を出し直す
-/// （ADR site-0018）。ページは指した点を読まず、読むのは十字線の層と点の値の行だけ
+/// 分布図の量を切り替えても解き直さない。図の上で指した点は入力や量を変えても保ち、点の値を出し直す。
+/// 板の外に出たら消す（ADR site-0018）。ページは指した点を読まず、読むのは十字線の層と点の値の行だけ
 #[component]
 pub(crate) fn KirchhoffPlatePage() -> Element {
     let mut inputs = use_inputs::<InputField>();
     let quantity = use_signal(|| Quantity::W);
-    let pointer = use_signal(Pointer::default);
     let outcome = use_memo(move || PlateOutcome::from_inputs(&inputs.read()));
     let figure = use_memo(move || {
         outcome
@@ -592,6 +591,12 @@ pub(crate) fn KirchhoffPlatePage() -> Element {
             .field
             .as_ref()
             .map(|field| PlateFigure::new(field, quantity()))
+    });
+    let pointer = use_pointer(move |p| {
+        figure
+            .read()
+            .as_ref()
+            .map_or(p, |figure| p.within(&figure.scene))
     });
     let point_value = use_memo(move || {
         let figure = figure.read();
